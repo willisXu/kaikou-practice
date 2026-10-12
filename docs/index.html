@@ -1,0 +1,2417 @@
+<title>開口練習室</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@900&text=%E9%96%8B%E5%8F%A3&display=swap">
+<style>
+:root{
+  /* Layout: one 760px column. Brand row, a sticky tab bar, then one working panel per tab.
+     The log is a stamp card (a ringed stamp marks a day that met the plan); the coach is a chat with a sticky composer. */
+  --paper:#EEF2EF;
+  --surface:#FFFFFF;
+  --surface-2:#F4F7F5;
+  --ink:#15201B;
+  --muted:#55655D;
+  --line:#D1DAD4;
+  --line-strong:#7D8D85;
+  --accent:#1E5C48;
+  --accent-strong:#154535;
+  --accent-soft:#DCEAE3;
+  --on-accent:#FFFFFF;
+  --pen:#B42318;
+  --pen-soft:#FCE9E6;
+  --warn:#8A5200;
+  --warn-soft:#FBEFD9;
+  --scrim:rgba(8,18,14,.5);
+  --shadow:0 1px 2px rgba(16,32,26,.06),0 6px 18px rgba(16,32,26,.07);
+  --font-display:"Bricolage Grotesque","PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  --font-body:"Atkinson Hyperlegible","PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --font-seal:"Noto Serif TC","Noto Serif CJK TC","Songti TC","PMingLiU",serif;
+  --r:12px;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0D1311;--surface:#151D1A;--surface-2:#1A2420;--ink:#E2EAE6;--muted:#95A79E;--line:#29362F;--line-strong:#5E7067;
+    --accent:#63C39D;--accent-strong:#86D6B5;--accent-soft:#17332A;--on-accent:#05190F;
+    --pen:#F2877A;--pen-soft:#3A1A16;--warn:#E5B35A;--warn-soft:#2D230F;--scrim:rgba(0,0,0,.62);
+    --shadow:0 1px 2px rgba(0,0,0,.45),0 6px 18px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0D1311;--surface:#151D1A;--surface-2:#1A2420;--ink:#E2EAE6;--muted:#95A79E;--line:#29362F;--line-strong:#5E7067;
+  --accent:#63C39D;--accent-strong:#86D6B5;--accent-soft:#17332A;--on-accent:#05190F;
+  --pen:#F2877A;--pen-soft:#3A1A16;--warn:#E5B35A;--warn-soft:#2D230F;--scrim:rgba(0,0,0,.62);
+  --shadow:0 1px 2px rgba(0,0,0,.45),0 6px 18px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-padding-top:calc(76px + env(safe-area-inset-top,0px));scroll-padding-bottom:var(--sp-bottom,24px)}
+html,body{background:var(--paper)}
+body{color:var(--ink);font-family:var(--font-body);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+h1,h2,h3{margin:0;line-height:1.3;text-wrap:balance}
+p{margin:0}
+a{color:var(--accent)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.app{max-width:760px;margin:0 auto;padding-inline:16px;padding-block:12px 40px}
+.muted{color:var(--muted)}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.mt6{margin-top:6px}.mt12{margin-top:12px}
+
+/* brand */
+.brand-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:4px 12px}
+.brand{display:flex;align-items:center;gap:12px;flex:none}
+.seal{display:inline-flex;align-items:center;justify-content:center;flex:none;width:40px;height:46px;border-radius:8px;background:var(--accent);color:var(--on-accent);font-family:var(--font-seal);font-weight:900;font-size:15px;line-height:1.1;letter-spacing:.1em;writing-mode:vertical-rl;transform:rotate(-5deg);box-shadow:inset 0 0 0 2px var(--accent),inset 0 0 0 3.5px var(--on-accent)}
+.brand-name{font-size:21px;font-weight:700;letter-spacing:.08em}
+.brand-sub{display:block;font-family:var(--font-mono);font-size:12px;color:var(--muted);letter-spacing:.02em}
+.brand-right{display:flex;flex:1 1 auto;align-items:center;justify-content:flex-end;gap:4px;min-width:0}
+.sync{min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--muted);white-space:nowrap}
+.sync::before{content:"";display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:var(--muted);vertical-align:1px}
+.sync.ok::before{background:var(--accent)}
+.sync.warn{color:var(--warn)}.sync.warn::before{background:var(--warn)}
+.sync.err{color:var(--pen)}.sync.err::before{background:var(--pen)}
+
+/* tabs */
+.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;padding:4px;margin-bottom:16px;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+.tabs button{min-height:42px;padding:8px 4px;border:0;border-radius:10px;background:transparent;color:var(--muted);font-weight:700;font-size:15px;letter-spacing:.06em;cursor:pointer}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-selected="true"]{background:var(--accent);color:var(--on-accent)}
+
+/* shared blocks */
+.panel{display:grid;gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;overflow-wrap:anywhere}
+.card-title{font-size:17px;font-weight:700}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}
+.section-title{margin:8px 2px -6px;font-size:13px;font-weight:700;letter-spacing:.14em;color:var(--muted)}
+.eyebrow{font-size:13px;font-weight:700;letter-spacing:.12em;color:var(--accent)}
+.help{font-size:14px;color:var(--muted)}
+.empty{padding:6px 0;font-size:15px;color:var(--muted)}
+.notice{padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn);font-size:14px}
+.tag{display:inline-block;padding:0 8px;border-radius:99px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-family:var(--font-mono);font-size:12px;line-height:1.75;white-space:nowrap;font-weight:500}
+.tag.on{border-color:var(--accent);background:transparent;color:var(--accent)}
+.link{display:inline-flex;align-items:center;gap:4px;color:var(--accent);font-size:15px;font-weight:700;text-decoration:none}
+.link:hover{text-decoration:underline}
+.ico{display:inline-flex;width:14px;height:14px}.ico svg{width:100%;height:100%}
+
+/* controls */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:42px;padding:8px 16px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:15px;font-weight:700;white-space:nowrap;text-decoration:none;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.primary:hover{background:var(--accent-strong);border-color:var(--accent-strong)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--accent);padding-inline:8px}
+.btn.ghost:hover{background:var(--surface-2)}
+.btn.small{min-height:34px;padding:4px 12px;font-size:14px}
+.btn.big{min-height:50px;padding:10px 24px;font-size:17px}
+.btn.danger{color:var(--pen);border-color:var(--pen)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.icon-btn{display:inline-grid;place-items:center;flex:none;width:38px;height:38px;padding:0;border-radius:10px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer}
+.icon-btn:hover{color:var(--accent);background:var(--surface-2)}
+.icon-btn svg{width:20px;height:20px}
+.icon-btn[aria-pressed="true"]{color:var(--accent)}
+.icon-btn.danger{color:var(--pen);border-color:var(--pen)}
+.icon-btn.sm{width:34px;height:34px}
+.seg{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:11px;border:1px solid var(--line);background:var(--surface-2)}
+.seg button{min-height:34px;padding:5px 12px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:14px;font-weight:700;white-space:nowrap;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.input{width:100%;min-height:44px;padding:10px 12px;border-radius:10px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font-size:16px}
+.input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+textarea.input{resize:vertical;line-height:1.5}
+.field{display:grid;gap:8px}
+.label{font-size:14px;font-weight:700;letter-spacing:.04em;color:var(--muted)}
+.inline-form{display:flex;gap:8px;margin-top:12px}
+.inline-form .input{flex:1;min-width:0}
+
+/* today */
+.head{display:grid;gap:12px}
+.head-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px 12px;flex-wrap:wrap}
+.date-big{margin-top:2px;font-size:24px;font-weight:700}
+.mins-row{display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap}
+.mins{font-family:var(--font-display);font-size:16px;color:var(--muted);font-variant-numeric:tabular-nums}
+.mins b{font-size:34px;font-weight:700;letter-spacing:-.01em;color:var(--ink)}
+.meter{height:8px;border-radius:99px;background:var(--accent-soft);overflow:hidden}
+.meter span{display:block;height:100%;border-radius:inherit;background:var(--accent);transition:width .35s ease}
+.streak{display:inline-flex;align-items:baseline;gap:4px;font-size:14px;color:var(--muted)}
+.streak b{font-family:var(--font-display);font-size:19px;color:var(--ink);font-variant-numeric:tabular-nums}
+.stamp-chip{display:inline-flex;align-items:center;padding:1px 12px;border:2px solid var(--accent);border-radius:99px;color:var(--accent);font-size:14px;font-weight:700;letter-spacing:.1em;transform:rotate(-5deg)}
+.stamped{animation:stamp .5s cubic-bezier(.2,.9,.25,1.2) both}
+@keyframes stamp{0%{opacity:0;transform:scale(1.9) rotate(-18deg)}70%{opacity:1;transform:scale(.94) rotate(-4deg)}100%{opacity:1;transform:scale(1) rotate(-5deg)}}
+.list{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.item{display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;padding:14px 16px;border-top:1px solid var(--line)}
+.item:first-child{border-top:0}
+.check{display:grid;place-items:center;width:30px;height:30px;margin-top:1px;padding:0;border-radius:8px;border:2px solid var(--line-strong);background:var(--surface);color:var(--on-accent);cursor:pointer;transition:background .15s,border-color .15s}
+.check:hover{border-color:var(--accent)}
+.check svg{width:18px;height:18px;opacity:0;transform:scale(.5);transition:opacity .15s,transform .15s}
+.check[aria-checked="true"]{background:var(--accent);border-color:var(--accent)}
+.check[aria-checked="true"] svg{opacity:1;transform:none}
+.check:disabled{opacity:.55;cursor:wait}
+.item-top{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap}
+.item-name{font-size:17px;font-weight:700}
+.item[data-done="true"] .item-name{color:var(--muted)}
+.item-how{margin-top:4px;font-size:15px;color:var(--muted)}
+.item-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-top:10px}
+.item-note{margin-top:6px;font-size:14px;font-weight:700;color:var(--accent)}
+.inbox-list{display:grid;margin-top:10px}
+.inbox-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.inbox-row p{overflow-wrap:anywhere}
+.row-acts{display:flex;align-items:center;gap:4px}
+
+/* coach: start */
+.modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.mode{display:grid;align-content:start;gap:4px;padding:14px;border-radius:var(--r);border:1.5px solid var(--line);background:var(--surface);text-align:left;cursor:pointer}
+.mode:hover{border-color:var(--accent)}
+.mode b{font-size:17px}
+.mode span{font-size:14px;color:var(--muted)}
+.mode[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{min-height:38px;padding:6px 14px;border-radius:99px;border:1px solid var(--line);background:var(--surface);font-size:15px;cursor:pointer}
+.chip:hover{border-color:var(--accent)}
+.chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);font-weight:700}
+.start-row{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
+.tips{display:grid;gap:8px;margin-top:10px;padding-left:20px;font-size:15px;color:var(--muted)}
+.tips b{color:var(--ink)}
+.kbd{padding:0 6px;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;background:var(--surface-2);color:var(--ink);font-family:var(--font-mono);font-size:13px;white-space:nowrap}
+.pick-list{display:grid;gap:6px;margin-top:6px}
+.pick{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;border-radius:10px;border:1px dashed var(--accent);background:var(--surface);text-align:left;cursor:pointer}
+.pick:hover{background:var(--accent-soft)}
+.pick>span:first-child{min-width:0;overflow-wrap:anywhere}
+.pick .link{flex:none;white-space:nowrap}
+
+/* coach: chat */
+.chat-bar{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;padding:12px 14px}
+.chat-title{min-width:0}
+.chat-title b{display:block;font-size:16px;overflow-wrap:anywhere}
+.chat-title small{font-size:13px;color:var(--muted)}
+.chat-acts{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.msgs{display:flex;flex-direction:column;gap:16px;padding-block:14px 4px}
+.msg{display:flex;flex-direction:column;gap:6px;max-width:88%;min-width:0}
+.msg.c{align-self:flex-start}
+.msg.m{align-self:flex-end;align-items:flex-end}
+.bubble{padding:10px 14px;border-radius:16px;font-size:17px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.msg.c .bubble{background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:5px}
+.msg.m .bubble{background:var(--accent-soft);border-bottom-right-radius:5px}
+.msg.m.ex .bubble{opacity:.6}
+.bubble .bl{white-space:pre-wrap}
+.bubble>*+*{margin-top:6px}
+.cut,.ex-note{font-size:13px;color:var(--muted)}
+.msg-acts{display:flex;align-items:center;gap:2px;margin-left:-6px}
+.zh{padding:0 4px;font-size:15px;color:var(--muted)}
+.opt{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;padding-top:6px;border-top:1px dashed var(--line)}
+.bubble>.opt:first-child{padding-top:0;border-top:0}
+.opt-k{padding:0 6px;border:1px solid var(--accent);border-radius:6px;color:var(--accent);font-size:12px;font-weight:700;line-height:1.7;white-space:nowrap}
+.opt-en{font-weight:700;min-width:0}
+.opt-acts,.fix-acts,.phrase-acts{display:flex;align-items:center}
+.fixes{display:grid;gap:10px;width:100%;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:15px;overflow-wrap:anywhere}
+.fix-head{font-size:12px;font-weight:700;letter-spacing:.12em;color:var(--pen)}
+.fix-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:start}
+.fix-row>div{min-width:0}
+.fix-row+.fix-row{padding-top:10px;border-top:1px solid var(--line)}
+.fix-you{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--pen);text-decoration-thickness:1.5px}
+.fix-better{font-size:16px;font-weight:700}
+.fix-why{font-size:14px;color:var(--muted)}
+.ok-badge{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:700;color:var(--accent)}
+.ok-badge svg{width:14px;height:14px}
+.typing{display:inline-flex;align-items:center;gap:5px;padding:6px 2px}
+.typing i{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:blink 1.2s infinite both}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+.coach-note{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--pen-soft);color:var(--pen);font-size:14px;font-weight:700}
+.hints{display:grid;gap:8px;margin-top:6px}
+.hints:empty{display:none}
+.hints-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px;color:var(--muted)}
+.hint{display:grid;gap:2px;padding:10px 12px;border-radius:12px;border:1px dashed var(--accent);background:var(--surface);text-align:left;cursor:pointer}
+.hint:hover{background:var(--accent-soft)}
+.hint-en{font-size:16px;font-weight:700}
+.hint small{font-size:14px;color:var(--muted)}
+.hint-loading{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
+.composer{position:sticky;bottom:0;z-index:15;margin-top:8px;padding-top:8px;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px));background:var(--paper)}
+.tip{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 6px;font-size:13px;color:var(--muted)}
+.composer-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"hint text send";align-items:end;gap:6px;padding:6px;border-radius:16px;border:1px solid var(--line);background:var(--surface);box-shadow:var(--shadow)}
+#hint-btn{grid-area:hint;align-self:center}
+#msg-input{grid-area:text}
+#send-btn{grid-area:send}
+.composer-row:focus-within{border-color:var(--accent)}
+.composer textarea{display:block;width:100%;min-height:42px;max-height:170px;padding:8px 4px;border:0;outline:0;resize:none;background:transparent;font-size:17px;line-height:1.45}
+.composer textarea:focus-visible{outline:none}
+.send{display:grid;place-items:center;width:42px;height:42px;border:0;border-radius:12px;background:var(--accent);color:var(--on-accent);cursor:pointer}
+.send svg{width:22px;height:22px}
+.send:disabled{opacity:.45;cursor:not-allowed}
+.send.stop{background:var(--ink);color:var(--paper)}
+
+/* coach: review */
+.review-meta{font-family:var(--font-mono);font-size:13px;color:var(--muted)}
+.bullets{display:grid;gap:4px;margin:8px 0 0;padding-left:20px}
+.pat{display:grid;gap:2px;padding:10px 0;border-top:1px solid var(--line)}
+.pat>*,.phrase-acts>span{min-width:0}
+.pat:first-of-type{border-top:0}
+.phrase{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:10px 0;border-top:1px solid var(--line)}
+.phrase:first-child{border-top:0}
+.phrase>div:first-child{min-width:0}
+.phrase-en{font-size:17px;font-weight:700;overflow-wrap:anywhere}
+.phrase-zh{font-size:15px;color:var(--muted)}
+.phrase-ex{font-size:14px;font-style:italic;color:var(--muted)}
+.use{display:inline-block;margin-left:8px;padding:0 6px;border-radius:6px;border:1px solid var(--line);background:var(--surface-2);font-size:12px;color:var(--muted);vertical-align:1px}
+.center{display:grid;justify-items:center;gap:12px;padding-block:28px;text-align:center}
+.spinner{width:34px;height:34px;border-radius:50%;border:3px solid var(--accent-soft);border-top-color:var(--accent);animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* log */
+.month-nav{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.month-title{font-family:var(--font-display);font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.stat{padding:12px 14px;border-radius:var(--r);border:1px solid var(--line);background:var(--surface)}
+.stat b{display:block;font-family:var(--font-display);font-size:30px;line-height:1.15;font-variant-numeric:tabular-nums}
+.stat span{font-size:13px;color:var(--muted)}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;max-width:520px}
+.dow{padding-bottom:2px;text-align:center;font-size:12px;font-weight:700;color:var(--muted)}
+.day{position:relative;display:grid;place-items:center;min-width:0;aspect-ratio:1;padding:0;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-family:var(--font-mono);font-size:14px;cursor:pointer}
+.day:hover{border-color:var(--accent)}
+.day.out{visibility:hidden}
+.day.future{opacity:.4;cursor:default}
+.day.future:hover{border-color:var(--line)}
+.day.s1::after{content:"";position:absolute;left:50%;bottom:14%;width:6px;height:6px;margin-left:-3px;border-radius:50%;background:var(--accent)}
+.day.s2{color:var(--accent);font-weight:600}
+.day.s2::before{content:"";position:absolute;inset:11%;border-radius:50%;border:2px solid var(--accent);box-shadow:inset 0 0 0 2px var(--surface),inset 0 0 0 3px var(--accent);transform:rotate(-14deg);opacity:.9}
+.day.today{outline:2px solid var(--ink);outline-offset:-2px}
+.day.today:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.day.sel{background:var(--accent-soft)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:12px;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.lg{position:relative;display:inline-block;width:16px;height:16px}
+.lg.s0{border:1px solid var(--line);border-radius:4px;background:var(--surface)}
+.lg.s1::after{content:"";position:absolute;inset:5px;border-radius:50%;background:var(--accent)}
+.lg.s2{border:2px solid var(--accent);border-radius:50%}
+.sess{display:grid;gap:6px;padding:12px 0;border-top:1px solid var(--line)}
+.sess:first-child{border-top:0}
+.sess-top{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap}
+details summary{cursor:pointer;color:var(--accent);font-size:14px;font-weight:700}
+details[open] summary{margin-bottom:6px}
+
+/* toast + dialog */
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:60;max-width:calc(100% - 32px);padding:10px 16px;border-radius:12px;background:var(--ink);color:var(--paper);font-size:15px;font-weight:700;text-align:center;box-shadow:var(--shadow);transform:translateX(-50%)}
+.toast.show{animation:toastin .25s ease both}
+@keyframes toastin{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+dialog{width:min(560px,calc(100% - 32px));max-height:calc(100% - 32px);padding:0;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+dialog::backdrop{background:var(--scrim,rgba(0,0,0,.5))}
+.sheet{display:grid;gap:18px;padding:18px}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.row>label{min-width:3em;font-size:14px;font-weight:700;color:var(--muted)}
+.row select{flex:1;min-width:0}
+.switch{display:flex;align-items:center;gap:10px;font-size:15px;cursor:pointer}
+.switch input{width:20px;height:20px;accent-color:var(--accent)}
+input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
+.sheet-foot{display:flex;justify-content:flex-end}
+
+@media (max-width:600px){
+  .modes{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .brand-sub{display:none}
+  .date-big{font-size:22px}
+}
+@media (max-width:360px){
+  .day{font-size:12px}
+  .day.s2::before{inset:5%}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+</style>
+
+<div class="app" id="app">
+  <header class="brand-row">
+    <div class="brand">
+      <span class="seal" aria-hidden="true">開口</span>
+      <div>
+        <h1 class="brand-name"><span class="sr-only">開口</span>練習室</h1>
+        <span class="brand-sub">speak up · /spiːk ʌp/</span>
+      </div>
+    </div>
+    <div class="brand-right">
+      <span id="sync" class="sync">載入中…</span>
+      <button id="btn-settings" type="button" class="icon-btn" aria-label="設定" title="設定"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="15" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="分頁">
+    <button type="button" role="tab" id="t-today" data-tab="today" aria-controls="tab-today" aria-selected="true">今日</button>
+    <button type="button" role="tab" id="t-coach" data-tab="coach" aria-controls="tab-coach" aria-selected="false" tabindex="-1">教練</button>
+    <button type="button" role="tab" id="t-log" data-tab="log" aria-controls="tab-log" aria-selected="false" tabindex="-1">紀錄</button>
+    <button type="button" role="tab" id="t-saved" data-tab="saved" aria-controls="tab-saved" aria-selected="false" tabindex="-1">收藏</button>
+  </nav>
+
+  <main>
+    <section id="tab-today" class="tab panel" role="tabpanel" aria-labelledby="t-today">
+      <div id="today-dyn" class="panel"></div>
+      <h2 class="section-title">隨手記</h2>
+      <section class="card" aria-labelledby="inbox-title">
+        <h3 id="inbox-title" class="card-title">說不出口的句子</h3>
+        <p class="help mt6">想說卻說不出來的話先記下來，中文也可以，之後交給教練學說法。</p>
+        <form id="inbox-form" class="inline-form">
+          <input id="inbox-input" class="input" maxlength="200" autocomplete="off" placeholder="例如：這個功能下週才能上線" aria-label="說不出口的句子">
+          <button class="btn" type="submit">記下來</button>
+        </form>
+        <div id="inbox-list" class="inbox-list"></div>
+      </section>
+    </section>
+
+    <section id="tab-coach" class="tab" role="tabpanel" aria-labelledby="t-coach" hidden>
+      <div id="coach-dyn"></div>
+      <div id="composer" class="composer" hidden>
+        <div id="composer-tip" class="tip"><span>用說的：手機切到英文鍵盤點麥克風，電腦按 <span class="kbd">Win + H</span>，說完再送出。</span><button type="button" id="tip-close" class="btn ghost small">知道了</button></div>
+        <div class="composer-row">
+          <button id="hint-btn" type="button" class="icon-btn" aria-label="不知道怎麼回？看提示" title="不知道怎麼回？"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 17.5h6M10 20.5h4M12 3.5a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2h5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <textarea id="msg-input" rows="1" placeholder="先大聲說，再用聽寫打進來…" aria-label="你的回覆"></textarea>
+          <button id="send-btn" type="button" class="send" aria-label="送出"></button>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-log" class="tab" role="tabpanel" aria-labelledby="t-log" hidden>
+      <div id="log-dyn" class="panel"></div>
+    </section>
+
+    <section id="tab-saved" class="tab panel" role="tabpanel" aria-labelledby="t-saved" hidden>
+      <div id="starters"></div>
+      <section class="card" aria-labelledby="mine-title">
+        <div class="card-head">
+          <h2 id="mine-title" class="card-title">我的收藏 <span id="mine-count" class="tag"></span></h2>
+          <button id="copy-anki" type="button" class="btn small">複製成 Anki 格式</button>
+        </div>
+        <p class="help mt6">複製後貼到記事本存成 .txt，再用 Anki 的「匯入檔案」，欄位分隔選 Tab。</p>
+        <input id="saved-search" class="input mt12" type="search" autocomplete="off" placeholder="搜尋英文或中文" aria-label="搜尋收藏">
+        <div id="copy-fallback" class="mt12" hidden></div>
+        <div id="saved-list" class="mt6"></div>
+      </section>
+    </section>
+  </main>
+</div>
+
+<dialog id="settings" aria-labelledby="set-title">
+  <form id="settings-form" class="sheet">
+    <div class="sheet-head">
+      <h2 id="set-title" class="card-title">設定</h2>
+      <button type="button" id="set-close" class="icon-btn" aria-label="關閉"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    </div>
+    <div class="field">
+      <span class="label" id="set-level-label">教練說話程度</span>
+      <div id="set-level" class="seg" role="group" aria-labelledby="set-level-label"></div>
+      <p class="help">A2 用很短的句子；B1 日常用語；B2 像母語同事一樣自然。</p>
+    </div>
+    <div class="field">
+      <label class="label" for="set-about">關於我（給教練參考）</label>
+      <textarea id="set-about" class="input" rows="3" maxlength="600"></textarea>
+      <p class="help">職業、興趣、最近在忙的事，中英文都可以。教練會用來找話題。</p>
+    </div>
+    <div class="field" id="set-voice-field">
+      <span class="label">朗讀</span>
+      <label class="switch"><input type="checkbox" id="set-auto"> 教練回覆時自動朗讀</label>
+      <div class="row"><label for="set-accent">口音</label><select id="set-accent" class="input"><option value="en-US">美式英文</option><option value="en-GB">英式英文</option></select></div>
+      <div class="row"><label for="set-voice">聲音</label><select id="set-voice" class="input"></select></div>
+      <div class="row"><label for="set-rate">語速</label><input type="range" id="set-rate" min="0.7" max="1.2" step="0.05"><output id="set-rate-out" class="mono" for="set-rate"></output><button type="button" id="set-test" class="btn small">試聽</button></div>
+    </div>
+    <p id="set-no-voice" class="help" hidden>這個瀏覽器不支援朗讀。</p>
+    <div class="field">
+      <span class="label">資料存放</span>
+      <p id="set-store" class="help"></p>
+    </div>
+    <div class="sheet-foot"><button type="button" id="set-done" class="btn primary">完成</button></div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" aria-hidden="true" hidden></div>
+<div id="sr-live" class="sr-only" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+
+/* ================= helpers ================= */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const pad = n => String(n).padStart(2, '0');
+const dkey = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+const mkey = d => d.getFullYear() + '-' + pad(d.getMonth() + 1);
+const parseD = k => { const p = String(k).split('-').map(Number); return new Date(p[0], p[1] - 1, p[2] || 1); };
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const weekStart = d => addDays(d, -((d.getDay() + 6) % 7));
+const todayKey = () => dkey(new Date());
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
+const fmtDate = d => (d.getMonth() + 1) + '月' + d.getDate() + '日 星期' + WD[d.getDay()];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const newId = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-5);
+const clone = o => JSON.parse(JSON.stringify(o));
+const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const cjkRatio = s => {
+  const t = String(s || '').replace(/[\s\d\p{P}]/gu, '');
+  if (!t) return 0;
+  return (t.match(/[㐀-鿿豈-﫿]/g) || []).length / t.length;
+};
+const isEnglish = s => cjkRatio(s) < 0.3;
+function hashId(prefix, s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return prefix + (h >>> 0).toString(36);
+}
+function deepMerge(a, b) {
+  const out = Object.assign({}, a);
+  for (const [k, v] of Object.entries(b || {})) {
+    if (v && typeof v === 'object' && !Array.isArray(v) && out[k] && typeof out[k] === 'object' && !Array.isArray(out[k])) out[k] = deepMerge(out[k], v);
+    else out[k] = v;
+  }
+  return out;
+}
+function el(tag, props, ...kids) {
+  const n = document.createElement(tag);
+  if (props) {
+    for (const [k, v] of Object.entries(props)) {
+      if (v === null || v === undefined || v === false) continue;
+      if (k === 'class') n.className = v;
+      else if (k === 'text') n.textContent = v;
+      else if (k === 'html') n.innerHTML = v; // static icon markup only
+      else if (k === 'value') n.value = v;
+      else if (k === 'checked') n.checked = !!v;
+      else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v === true ? '' : String(v));
+    }
+  }
+  for (const c of kids.flat(Infinity)) {
+    if (c === null || c === undefined || c === false) continue;
+    n.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return n;
+}
+// Replace a container's children and keep keyboard focus on the matching control (data-fk) when it is rebuilt.
+function fill(node, ...kids) {
+  if (!node) return;
+  const ae = document.activeElement;
+  const fk = ae && ae !== document.body && node.contains(ae) && ae.dataset ? ae.dataset.fk : null;
+  let caret = null;
+  if (fk && /^(INPUT|TEXTAREA)$/.test(ae.tagName)) { try { caret = [ae.selectionStart, ae.selectionEnd]; } catch (_) { caret = null; } }
+  node.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false).map(k => (k instanceof Node ? k : document.createTextNode(String(k)))));
+  if (fk) {
+    const sel = '[data-fk="' + (window.CSS && CSS.escape ? CSS.escape(fk) : fk) + '"]';
+    const n2 = node.querySelector(sel);
+    if (n2 && !n2.disabled) {
+      n2.focus({ preventScroll: true });
+      if (caret && caret[0] !== null && n2.setSelectionRange) { try { n2.setSelectionRange(caret[0], caret[1]); } catch (_) { /* not a text field */ } }
+    }
+  }
+}
+function lsOK() { try { localStorage.setItem('__kk', '1'); localStorage.removeItem('__kk'); return true; } catch (_) { return false; } }
+function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* per-viewer convenience only */ } }
+// Messages that arrive close together are read as one, so a later one never silences an earlier one.
+let announceTimer = 0, announceBuf = [];
+function announce(msg) {
+  const n = $('#sr-live'); if (!n || !msg) return;
+  if (!announceBuf.includes(msg)) announceBuf.push(msg);
+  n.textContent = '';
+  clearTimeout(announceTimer);
+  announceTimer = setTimeout(() => { n.textContent = announceBuf.join('　'); announceBuf = []; }, 80);
+}
+
+/* ================= content ================= */
+const ICON = {
+  check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  speaker: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 8.8a4.6 4.6 0 0 1 0 6.4M18.4 6.2a8.4 8.4 0 0 1 0 11.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  mute: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  star: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.8l2.5 5.1 5.6.8-4.1 3.9 1 5.6L12 16.6l-5 2.6 1-5.6-4.1-3.9 5.6-.8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+  starOn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.8l2.5 5.1 5.6.8-4.1 3.9 1 5.6L12 16.6l-5 2.6 1-5.6-4.1-3.9 5.6-.8z" fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4.8h4V7M7 7l.8 12.2h8.4L17 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  send: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V6M6.5 11.5L12 6l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  stop: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></svg>',
+  ext: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M19 5l-8 8M17 14v5H5V7h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  left: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  right: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
+const DEFAULTS = { plan: '20', level: 'B1', about: 'I am from Taiwan and I work as a product manager.', accent: 'en-US', voiceURI: '', rate: 0.95, autoSpeak: true };
+const LEVELS = {
+  A2: { zh: '入門', style: 'Use very common words and short, simple sentences (under 12 words each). Avoid idioms and slang.' },
+  B1: { zh: '中級', style: 'Use everyday vocabulary and clear sentences. Now and then use one useful phrase they could copy.' },
+  B2: { zh: '中高級', style: 'Talk naturally, like a friendly native-speaking colleague, with common idioms and phrasal verbs.' },
+};
+const CORE = { '20': ['shadow', 'ai'], '60': ['shadow', 'ai', 'chunk', 'listen'] };
+const DAILY = [
+  { key: 'shadow', name: '影子跟讀', min: { '20': 10, '60': 15 },
+    how: '選 1–3 分鐘、有逐字稿的音檔：先聽懂，再看稿跟讀，最後不看稿、延遲半拍跟唸。同一段練 3–5 天。',
+    links: [['BBC 6 Minute English', 'https://www.bbc.co.uk/learningenglish/english/features/6-minute-english'], ['VOA Learning English', 'https://learningenglish.voanews.com']] },
+  { key: 'ai', name: 'AI 對話', min: { '20': 10, '60': 15 },
+    how: '到「教練」選一種練法，先大聲說，再用聽寫送出。練完按「結束並複習」會自動打勾。', act: 'coach' },
+  { key: 'chunk', name: '語塊複習', min: { '20': 0, '60': 10 },
+    how: '複習「收藏」裡的說法或 Anki，每一句都大聲說出來，再套進自己的句子。', act: 'saved' },
+  { key: 'listen', name: '聽 Podcast 或影片', min: { '20': 0, '60': 20 },
+    how: '挑聽得懂八到九成的節目，通勤或運動時聽。',
+    links: [['All Ears English', 'https://www.allearsenglish.com'], ['The English We Speak', 'https://www.bbc.co.uk/learningenglish/english/features/the-english-we-speak']] },
+];
+const WEEKLY = [
+  { key: 'tutor', name: '真人家教', target: { '20': 1, '60': 2 }, label: { '20': '每週 1 次', '60': '每週 2–3 次' },
+    how: '把和教練練過的話題帶進真人課，課後整理 3 句更自然的說法。' },
+  { key: 'f432', name: '4/3/2 錄音', target: { '20': 1, '60': 2 }, label: { '20': '每週 1 次', '60': '每週 2 次' },
+    how: '挑一個熟悉的主題，用手機錄音，依序講 4 分鐘、3 分鐘、2 分鐘。' },
+];
+const MONTHLY_HOW = {
+  '20': '用手機錄一段 2 分鐘的自我介紹加近況，留著下個月對照。',
+  '60': '錄一段 2 分鐘的自我介紹加近況，並和上個月的錄音比較語速與停頓。',
+};
+const TOPICS = [
+  { k: 'weekend', zh: '這個週末', en: "the learner's weekend: what they did or plan to do" },
+  { k: 'work', zh: '工作近況', en: 'what the learner is working on at work this week' },
+  { k: 'food', zh: '吃的', en: 'food, cooking and favourite places to eat' },
+  { k: 'travel', zh: '旅行', en: 'travel: places they have been and dream trips' },
+  { k: 'hobby', zh: '興趣', en: 'hobbies and free time' },
+  { k: 'tech', zh: 'AI 與科技', en: 'AI and technology in daily life and at work' },
+  { k: 'custom', zh: '自訂話題', en: '' },
+];
+const SCENES = [
+  { k: 'smalltalk', zh: '和外國同事閒聊', en: 'Small talk by the coffee machine with a friendly new colleague from Canada.', ai: 'the Canadian colleague', me: 'themself' },
+  { k: 'boss', zh: '向主管報告進度', en: "A weekly one-on-one: the learner updates their manager on a project's progress, risks and next steps.", ai: 'the manager', me: 'the team member' },
+  { k: 'supplier', zh: '跟供應商確認交期', en: 'A video call: the learner, a product manager, checks a delivery date with a supplier whose shipment is running late.', ai: "the supplier's account manager", me: 'the product manager' },
+  { k: 'intro', zh: '交流活動自我介紹', en: 'A tech networking event: two people meet for the first time and introduce themselves.', ai: 'another attendee who works in tech', me: 'themself' },
+  { k: 'interview', zh: '產品經理面試', en: 'A job interview for a product manager role at an international company.', ai: 'the interviewer', me: 'the candidate' },
+  { k: 'hotel', zh: '飯店入住出問題', en: 'Checking into a hotel abroad, but the room that was booked is not available.', ai: 'the front desk clerk', me: 'the guest' },
+  { k: 'restaurant', zh: '餐廳點餐', en: 'Ordering dinner at a restaurant abroad and asking about the dishes.', ai: 'the server', me: 'the customer' },
+  { k: 'custom', zh: '自訂情境', en: '', ai: 'the other person in the scene', me: 'themself' },
+];
+const STARTERS = [
+  ['Sorry, could you say that again?', '抱歉，可以再說一次嗎？', '沒聽清楚'],
+  ['Could you speak a bit more slowly?', '可以說慢一點嗎？', '跟不上'],
+  ['Let me think for a second.', '讓我想一下。', '爭取時間'],
+  ['How do you say … in English?', '…的英文怎麼說？', '卡在單字', 'How do you say this in English?'],
+  ['What I mean is …', '我的意思是…', '換個說法'],
+  ['Just to make sure I understand, …', '我確認一下我理解得對不對…', '確認理解'],
+  ["I'm not sure, but I think …", '我不太確定，但我覺得…', '表達看法'],
+  ['That makes sense.', '有道理，我懂了。', '回應對方'],
+  ['How about you?', '那你呢？', '把話題丟回去'],
+  ['Can I ask a quick question?', '可以問個小問題嗎？', '開口提問'],
+  ["I'll get back to you on that.", '這個我再回覆你。', '工作場合'],
+  ['I was wondering if …', '我在想能不能…', '委婉請求'],
+];
+const OPT_LABEL = { casual: '口語', neutral: '一般', work: '職場', final: '精修版' };
+const OPT_RE = /^\s*(casual|neutral|work|final)\s*[:：]\s*(.+)$/i;
+// Codes after which the chat cannot continue in this view at all.
+const BLOCK_CODES = ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'];
+// Codes where sending the same input again would not help.
+const NO_RETRY_CODES = ['refused', 'prompt_too_large', 'empty_completion', 'invalid_request', 'transform_error'];
+
+/* ================= state ================= */
+const S = {
+  ready: false, booted: false, tab: 'today', viewDate: todayKey(), lastToday: todayKey(), calMonth: todayKey().slice(0, 7),
+  settings: Object.assign({}, DEFAULTS),
+  logs: {}, loaded: new Set(), editedDays: new Set(), editedMonthRec: new Set(),
+  sessions: {}, sessLoaded: new Set(), loadErrors: new Set(),
+  phrases: [], inbox: [], chat: null, review: null, endedChats: new Set(),
+  setup: { mode: 'free', topic: 'weekend', scene: 'smalltalk', custom: '' },
+  sample: null, sampleState: 'loading',
+  busy: false, ctl: null, askStartedAt: 0, reviewing: false, reviewStart: 0,
+  hints: null, hintSeq: 0, note: null, noteNoRetry: false, unsavedReview: null,
+  streak: 0, justStamped: false, armed: null, tipHidden: false,
+};
+
+/* ================= storage ================= */
+const SYNC = { loading: ['載入中…', ''], saving: ['儲存中…', ''], saved: ['已同步', 'ok'], local: ['只存在這個瀏覽器', 'warn'], memory: ['這次不會保存', 'warn'], error: ['同步失敗，會自動再試', 'err'] };
+let lastSyncKind = '';
+function setSync(kind) {
+  const n = $('#sync'); if (!n) return;
+  const v = SYNC[kind] || SYNC.saved;
+  n.textContent = v[0]; n.className = 'sync ' + v[1]; n.title = v[0];
+  if (kind === 'error' && lastSyncKind !== 'error') announce('有資料還沒同步到雲端，會自動再試。');
+  lastSyncKind = kind;
+}
+function updateSync() {
+  if (Store.mode === 'loading') { setSync('loading'); return; }
+  if (Object.keys(Store.failed).length || S.loadErrors.size) { setSync('error'); return; }
+  if (Store.mode !== 'db') { setSync(Store.mode); return; }
+  const busy = Object.keys(Store.pend).length || Object.values(Store.inflight).some(n => n > 0);
+  setSync(busy ? 'saving' : 'saved');
+}
+/* Every list is stored as an id-keyed map and written with update() merges (a deleted entry becomes null),
+   so two devices never overwrite each other's entries. Writes to one document are serialized,
+   a failed write stays queued and is retried with backoff. */
+const Store = {
+  mode: 'loading', db: null, uid: null,
+  pend: {}, timers: {}, chain: {}, failed: {}, edits: {}, inflight: {}, retries: {}, hooks: {},
+  async init() {
+    const c = window.claude;
+    if (c && typeof c.use === 'function') {
+      try {
+        const [db, user] = await Promise.all([c.use('db'), c.use('user')]);
+        const id = user && typeof user.id === 'function' ? await user.id() : null;
+        if (db && id) { this.db = db; this.uid = id; this.mode = 'db'; return; }
+      } catch (_) { /* fall through to local */ }
+    }
+    this.mode = lsOK() ? 'local' : 'memory';
+  },
+  ref(name) { return this.db.doc('data/users/' + this.uid + '/' + name); },
+  async get(name) {
+    if (this.mode === 'db') {
+      for (let i = 0; ; i++) {
+        try { const s = await this.ref(name).get(); return s.exists ? clone(s.data()) : null; }
+        catch (e) { if (i === 0 && e && e.code === 'unavailable') { await sleep(300 + Math.random() * 700); continue; } throw e; }
+      }
+    }
+    if (this.mode === 'local') { const v = lsGet('kaikou:' + name); try { return v ? JSON.parse(v) : null; } catch (_) { return null; } }
+    return null;
+  },
+  put(name, full) { this.queue(name, full, null); },
+  patch(name, full, patch) { this.queue(name, full, patch); },
+  queue(name, full, patch) {
+    if (this.mode === 'loading') return;
+    this.edits[name] = (this.edits[name] || 0) + 1;
+    const p = this.pend[name] || {};
+    p.full = full;
+    if (!patch) p.patch = 'replace';
+    else if (p.patch !== 'replace') p.patch = deepMerge(p.patch || {}, patch);
+    this.pend[name] = p;
+    clearTimeout(this.timers[name]);
+    this.timers[name] = setTimeout(() => this.flush(name), 450);
+    updateSync();
+  },
+  flush(name) {
+    clearTimeout(this.timers[name]);
+    const run = (this.chain[name] || Promise.resolve()).then(() => this.write(name));
+    this.chain[name] = run.catch(() => {});
+    return this.chain[name];
+  },
+  async write(name) {
+    const p = this.pend[name]; if (!p) return;
+    delete this.pend[name];
+    this.inflight[name] = (this.inflight[name] || 0) + 1;
+    updateSync();
+    try {
+      await this.send(name, p);
+      delete this.failed[name];
+      this.retries[name] = 0;
+      if (!this.pend[name] && this.hooks[name]) {
+        const hs = this.hooks[name]; delete this.hooks[name];
+        for (const f of hs) { try { f(); } catch (_) { /* hook errors stay local */ } }
+      }
+    } catch (e) {
+      const newer = this.pend[name];
+      if (!newer) this.pend[name] = p;
+      else if (newer.patch !== 'replace') newer.patch = p.patch === 'replace' ? 'replace' : deepMerge(p.patch || {}, newer.patch || {});
+      const first = !this.failed[name];
+      this.failed[name] = (e && e.code) || 'error';
+      if (e && e.code === 'quota_exceeded') toast('雲端空間已滿，請刪除一些收藏後再試。');
+      else if (first && e && e.code === 'invalid_argument') toast('有一筆資料存不進雲端（可能太大了），請刪掉一些收藏或紀錄。');
+      else if (first) toast('剛剛的變更還沒存到雲端，會自動再試。');
+      const n = (this.retries[name] = (this.retries[name] || 0) + 1);
+      clearTimeout(this.timers[name]);
+      this.timers[name] = setTimeout(() => this.flush(name), Math.min(60000, 3000 * Math.pow(2, n - 1)));
+    } finally {
+      this.inflight[name] -= 1;
+      updateSync();
+    }
+  },
+  async send(name, p) {
+    const full = clone(p.full);
+    if (this.mode === 'local') {
+      try { localStorage.setItem('kaikou:' + name, JSON.stringify(full)); } catch (_) { this.mode = 'memory'; }
+      return;
+    }
+    if (this.mode !== 'db') return;
+    for (let i = 0; ; i++) {
+      try {
+        if (p.patch && p.patch !== 'replace') {
+          try { await this.ref(name).update(p.patch); }
+          catch (e) {
+            // update() rejects invalid_argument for a missing document, but also for one that is too large:
+            // only a document that really does not exist yet is created from the local copy.
+            if (!(e && e.code === 'invalid_argument')) throw e;
+            const snap = await this.ref(name).get();
+            if (snap.exists) throw e;
+            await this.ref(name).set(full);
+          }
+        } else {
+          await this.ref(name).set(full);
+        }
+        return;
+      } catch (e) {
+        if (i === 0 && e && (e.code === 'unavailable' || e.code === 'resource_exhausted')) { await sleep(700 + Math.random() * 900); continue; }
+        throw e;
+      }
+    }
+  },
+  afterSave(name, fn) {
+    if (!this.pend[name] && !(this.inflight[name] > 0) && !this.failed[name]) { fn(); return; }
+    (this.hooks[name] = this.hooks[name] || []).push(fn);
+  },
+  busyDoc(name) { return !!(this.pend[name] || this.inflight[name] > 0); },
+  flushAll() { for (const n of Object.keys(this.pend)) this.flush(n); },
+};
+
+/* ================= logs ================= */
+/* A day's plan is kept as {weight: plan}: the device that creates a day writes its default under "0",
+   an explicit choice is written under its timestamp, and the highest weight wins. Because update() merges
+   these keys, a device that has not refreshed yet can never overwrite a choice made on another device. */
+const isPlan = p => p === '20' || p === '60';
+function resolvePlan(plans, lp) {
+  let best = '', w = -1;
+  for (const [k, p] of Object.entries(plans || {})) { const n = Number(k); if (isPlan(p) && isFinite(n) && n > w) { w = n; best = p; } }
+  if (lp && w < 1) best = lp; // the single "plan" field written by the first version
+  return best || '20';
+}
+function normDay(v) {
+  const coach = {}, plans = {};
+  if (v.coach && typeof v.coach === 'object') {
+    for (const [id, n] of Object.entries(v.coach)) { const x = Number(n); if (isFinite(x) && x > 0) coach[id] = x; }
+  }
+  if (v.plans && typeof v.plans === 'object') for (const [k, p] of Object.entries(v.plans)) if (isPlan(p)) plans[k] = p;
+  const lp = isPlan(v.plan) ? v.plan : '';
+  return { plan: resolvePlan(plans, lp), plans, lp, items: (v.items && typeof v.items === 'object') ? Object.assign({}, v.items) : {}, coach, coachMin: Number(v.coachMin) || 0 };
+}
+function normLog(d) {
+  const days = {};
+  if (d && d.days && typeof d.days === 'object') {
+    for (const [k, v] of Object.entries(d.days)) if (/^\d{4}-\d{2}-\d{2}$/.test(k) && v && typeof v === 'object') days[k] = normDay(v);
+  }
+  return { days, monthRecord: !!(d && d.monthRecord) };
+}
+function logDoc(m) { return S.logs[m] || (S.logs[m] = { days: {}, monthRecord: false }); }
+function dayRec(k) { const L = S.logs[k.slice(0, 7)]; return L && L.days[k] ? L.days[k] : null; }
+function ensureRec(k) {
+  const doc = logDoc(k.slice(0, 7));
+  if (doc.days[k]) return [doc.days[k], false];
+  doc.days[k] = { plan: S.settings.plan, plans: { 0: S.settings.plan }, lp: '', items: {}, coach: {}, coachMin: 0 };
+  return [doc.days[k], true];
+}
+function coachTotal(rec) {
+  if (!rec) return 0;
+  let n = rec.coachMin || 0;
+  for (const v of Object.values(rec.coach || {})) n += v;
+  return n;
+}
+function status(rec) {
+  if (!rec || !rec.items) return 0;
+  const plan = rec.plan === '60' ? '60' : '20';
+  if (CORE[plan].every(k => rec.items[k])) return 2;
+  return Object.values(rec.items).some(Boolean) ? 1 : 0;
+}
+function minutesOf(rec) {
+  if (!rec || !rec.items) return 0;
+  const plan = rec.plan === '60' ? '60' : '20';
+  return DAILY.reduce((s, d) => s + (rec.items[d.key] ? d.min[plan] : 0), 0);
+}
+// Day patches carry only what changed; the device that creates a day adds its default plan (weight 0).
+function patchDay(k, rec, created, part) {
+  const day = Object.assign({}, part);
+  if (created) day.plans = Object.assign({ 0: rec.plans[0] || S.settings.plan }, part.plans || {});
+  S.editedDays.add(k);
+  const m = k.slice(0, 7);
+  Store.patch('log-' + m, logDoc(m), { days: { [k]: day } });
+}
+function setItem(k, key, val) {
+  const [rec, created] = ensureRec(k);
+  rec.items[key] = val;
+  patchDay(k, rec, created, { items: { [key]: val } });
+}
+// After midnight a list rendered as "today" belongs to yesterday: redraw instead of writing there.
+function rolledOver(k) {
+  if (k === S.lastToday && todayKey() !== S.lastToday) {
+    renderToday(); renderLog(); refreshStreak();
+    toast('已經過午夜，畫面換成新的一天了，請再點一次。');
+    return true;
+  }
+  return false;
+}
+function markItem(k, key, val) {
+  if (!S.ready || rolledOver(k)) return;
+  const before = status(dayRec(k));
+  setItem(k, key, val);
+  const after = status(dayRec(k));
+  if (k === todayKey() && before < 2 && after === 2) { S.justStamped = true; toast('今日達標，蓋章！'); }
+  renderToday(); renderLog();
+  refreshStreak();
+}
+function addCoachMinutes(k, sid, n) {
+  const [rec, created] = ensureRec(k);
+  rec.coach[sid] = n;
+  patchDay(k, rec, created, { coach: { [sid]: n } });
+}
+function weekCount(k, key) {
+  const ws = weekStart(parseD(k));
+  let n = 0;
+  for (let i = 0; i < 7; i++) { const r = dayRec(dkey(addDays(ws, i))); if (r && r.items[key]) n++; }
+  return n;
+}
+/* Applying a fetched month. When no local write raced the read, the store already holds every local edit,
+   so the month is taken as fetched (that is how changes from the other device show up). When a local edit
+   raced the read of a month that had not loaded yet, the edits made here are laid over the fetched month. */
+function overlayLocalDays(remote, local, m) {
+  if (!local) return remote;
+  for (const [k, v] of Object.entries(local.days)) {
+    if (!S.editedDays.has(k) || k.slice(0, 7) !== m) continue;
+    const r = remote.days[k];
+    if (!r) { remote.days[k] = v; continue; }
+    const plans = Object.assign({}, r.plans, v.plans);
+    remote.days[k] = { plan: resolvePlan(plans, r.lp), plans, lp: r.lp, items: Object.assign({}, r.items, v.items), coach: Object.assign({}, r.coach, v.coach), coachMin: r.coachMin };
+  }
+  if (S.editedMonthRec.has(m)) remote.monthRecord = local.monthRecord;
+  return remote;
+}
+function applyLog(m, d, raced) {
+  const remote = normLog(d);
+  if (raced) { S.logs[m] = overlayLocalDays(remote, S.logs[m], m); }
+  else {
+    S.logs[m] = remote;
+    for (const k of [...S.editedDays]) if (k.slice(0, 7) === m) S.editedDays.delete(k);
+    S.editedMonthRec.delete(m);
+  }
+  S.loaded.add(m);
+  S.loadErrors.delete('log-' + m);
+}
+const monthLoads = {};
+function loadMonth(m) {
+  if (S.loaded.has(m) || !S.ready) return Promise.resolve();
+  if (monthLoads[m]) return monthLoads[m];
+  const name = 'log-' + m;
+  const mark = Store.edits[name] || 0, busyAtIssue = Store.busyDoc(name);
+  monthLoads[m] = (async () => {
+    try {
+      const d = await Store.get(name);
+      applyLog(m, d, busyAtIssue || Store.busyDoc(name) || (Store.edits[name] || 0) !== mark);
+    } catch (_) { S.loadErrors.add(name); }
+    finally { S.loaded.add(m); delete monthLoads[m]; updateSync(); }
+  })();
+  return monthLoads[m];
+}
+function streakInfo(tk) {
+  let d = parseD(tk);
+  if (status(dayRec(dkey(d))) === 0) d = addDays(d, -1);
+  let n = 0;
+  for (;;) {
+    const k = dkey(d), m = k.slice(0, 7);
+    if (!S.loaded.has(m)) return { n, need: m };
+    if (status(dayRec(k)) === 0 || n > 4000) return { n, need: null };
+    n++; d = addDays(d, -1);
+  }
+}
+async function settleStreak() {
+  for (let i = 0; i < 40; i++) {
+    const r = streakInfo(todayKey());
+    if (!r.need || !S.ready) return r.n;
+    await loadMonth(r.need);
+  }
+  return streakInfo(todayKey()).n;
+}
+function refreshStreak() {
+  settleStreak().then(n => { if (n !== S.streak) { S.streak = n; renderToday(); renderLog(); } });
+}
+
+/* ================= sessions ================= */
+function normSessions(d) {
+  const byId = new Map();
+  if (d && Array.isArray(d.items)) for (const s of d.items) if (s && typeof s === 'object' && s.id) byId.set(String(s.id), s);
+  if (d && d.map && typeof d.map === 'object') {
+    for (const [id, s] of Object.entries(d.map)) {
+      if (s === null) byId.delete(id);
+      else if (s && typeof s === 'object') byId.set(id, Object.assign({}, s, { id }));
+    }
+  }
+  return [...byId.values()];
+}
+function unionById(remote, local) {
+  const ids = new Set(remote.map(x => x.id));
+  return remote.concat((local || []).filter(x => !ids.has(x.id)));
+}
+function sessionsFull(m) { return { map: Object.fromEntries((S.sessions[m] || []).map(s => [s.id, s])) }; }
+const sessLoads = {};
+function loadSessions(m) {
+  if (S.sessLoaded.has(m) || !S.ready) return Promise.resolve();
+  if (sessLoads[m]) return sessLoads[m];
+  sessLoads[m] = (async () => {
+    try {
+      const d = await Store.get('sessions-' + m);
+      S.sessions[m] = unionById(normSessions(d), S.sessions[m]);
+      S.loadErrors.delete('sessions-' + m);
+    } catch (_) { S.sessions[m] = S.sessions[m] || []; S.loadErrors.add('sessions-' + m); }
+    finally { S.sessLoaded.add(m); delete sessLoads[m]; updateSync(); }
+  })();
+  return sessLoads[m];
+}
+function addSession(sess) {
+  const m = sess.date.slice(0, 7);
+  const arr = (S.sessions[m] = (S.sessions[m] || []).filter(s => s.id !== sess.id));
+  arr.push(sess);
+  const patch = { map: { [sess.id]: sess } };
+  if (arr.length > 150) {
+    arr.sort((a, b) => (a.at || 0) - (b.at || 0));
+    for (const s of arr.splice(0, arr.length - 150)) patch.map[s.id] = null;
+  }
+  Store.patch('sessions-' + m, sessionsFull(m), patch);
+}
+
+/* ================= settings / phrases / inbox ================= */
+function pickSettings(o) {
+  const s = Object.assign({}, DEFAULTS);
+  if (!o || typeof o !== 'object') return s;
+  if (o.plan === '20' || o.plan === '60') s.plan = o.plan;
+  if (LEVELS[o.level]) s.level = o.level;
+  if (typeof o.about === 'string') s.about = o.about.slice(0, 600);
+  if (o.accent === 'en-US' || o.accent === 'en-GB') s.accent = o.accent;
+  if (typeof o.voiceURI === 'string') s.voiceURI = o.voiceURI;
+  if (typeof o.rate === 'number' && isFinite(o.rate)) s.rate = clamp(o.rate, 0.6, 1.3);
+  if (typeof o.autoSpeak === 'boolean') s.autoSpeak = o.autoSpeak;
+  return s;
+}
+function saveSettings(...keys) {
+  if (!S.ready) return;
+  const patch = {};
+  for (const k of (keys.length ? keys : Object.keys(DEFAULTS))) patch[k] = S.settings[k];
+  Store.patch('settings', S.settings, patch);
+}
+const normEn = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+const phraseId = en => hashId('p', normEn(en));
+function normPhrase(p, id) {
+  return { id, en: String(p.en), zh: String(p.zh || ''), note: String(p.note || ''), ex: String(p.ex || ''), src: String(p.src || ''), at: Number(p.at) || 0 };
+}
+function normPhrases(d) {
+  const byId = new Map();
+  if (d && Array.isArray(d.items)) for (const p of d.items) if (p && typeof p.en === 'string' && p.en.trim()) { const id = phraseId(p.en); byId.set(id, normPhrase(p, id)); }
+  if (d && d.map && typeof d.map === 'object') {
+    for (const [id, p] of Object.entries(d.map)) {
+      if (p === null) byId.delete(id);
+      else if (p && typeof p.en === 'string' && p.en.trim()) byId.set(id, normPhrase(p, id));
+    }
+  }
+  return [...byId.values()].sort((a, b) => b.at - a.at);
+}
+function phrasesFull() { return { map: Object.fromEntries(S.phrases.map(p => [p.id, p])) }; }
+function isSaved(en) { const id = phraseId(en); return S.phrases.some(p => p.id === id); }
+function addPhrase(p) {
+  const en = String(p.en || '').trim();
+  if (!en || !S.ready || isSaved(en)) return false;
+  const id = phraseId(en);
+  const item = { id, en, zh: String(p.zh || '').trim(), note: String(p.note || '').trim(), ex: String(p.example || p.ex || '').trim(), src: p.src || '', at: Date.now() };
+  S.phrases.unshift(item);
+  const patch = { map: { [id]: item } };
+  if (S.phrases.length > 600) for (const x of S.phrases.splice(600)) patch.map[x.id] = null;
+  Store.patch('phrases', phrasesFull(), patch);
+  return true;
+}
+function removePhrase(id) {
+  S.phrases = S.phrases.filter(p => p.id !== id);
+  Store.patch('phrases', phrasesFull(), { map: { [id]: null } });
+  renderSavedList(); renderStarters();
+}
+function toggleSaved(p) {
+  if (!S.ready) return;
+  if (isSaved(p.en)) removePhrase(phraseId(p.en));
+  else { addPhrase(p); renderSavedList(); }
+}
+function normInbox(d) {
+  const byId = new Map();
+  if (d && Array.isArray(d.items)) for (const x of d.items) if (x && typeof x.text === 'string' && x.id) byId.set(String(x.id), { id: String(x.id), text: x.text, at: Number(x.at) || 0 });
+  if (d && d.map && typeof d.map === 'object') {
+    for (const [id, x] of Object.entries(d.map)) {
+      if (x === null) byId.delete(id);
+      else if (x && typeof x.text === 'string') byId.set(id, { id, text: x.text, at: Number(x.at) || 0 });
+    }
+  }
+  return [...byId.values()].sort((a, b) => b.at - a.at);
+}
+function inboxFull() { return { map: Object.fromEntries(S.inbox.map(x => [x.id, x])) }; }
+function addInbox(text) {
+  const item = { id: newId(), text: text.slice(0, 200), at: Date.now() };
+  S.inbox.unshift(item);
+  const patch = { map: { [item.id]: item } };
+  if (S.inbox.length > 100) for (const x of S.inbox.splice(100)) patch.map[x.id] = null;
+  Store.patch('inbox', inboxFull(), patch);
+}
+function removeInbox(id) {
+  S.inbox = S.inbox.filter(x => x.id !== id);
+  Store.patch('inbox', inboxFull(), { map: { [id]: null } });
+}
+
+/* ================= text to speech ================= */
+const TTS = {
+  ok: typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance !== 'undefined',
+  voices: [], unlocked: false,
+  load() {
+    if (!this.ok) return;
+    try { this.voices = speechSynthesis.getVoices().filter(v => /^en[-_]/i.test(v.lang)); } catch (_) { this.voices = []; }
+    fillVoiceSelect();
+  },
+  pick() {
+    const s = S.settings;
+    let v = s.voiceURI ? this.voices.find(x => x.voiceURI === s.voiceURI) : null;
+    if (!v) {
+      const acc = this.voices.filter(x => x.lang.replace('_', '-').toLowerCase().startsWith(s.accent.toLowerCase()));
+      v = acc.find(x => /natural|neural|premium|enhanced|online/i.test(x.name)) || acc.find(x => /google|samantha|daniel|aria|jenny|guy|libby|sonia/i.test(x.name)) || acc.find(x => x.default) || acc[0] || null;
+    }
+    return v;
+  },
+};
+function speak(text) {
+  if (!TTS.ok || !text) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(String(text).replace(/…/g, ', '));
+    const v = TTS.pick();
+    if (v) { u.voice = v; u.lang = v.lang; } else u.lang = S.settings.accent;
+    u.rate = clamp(Number(S.settings.rate) || 0.95, 0.6, 1.3);
+    speechSynthesis.speak(u);
+  } catch (_) { /* speech is optional */ }
+}
+// iOS only lets speech start from a user gesture once; a silent utterance on the first tap unlocks it.
+function ttsUnlock() {
+  if (!TTS.ok || TTS.unlocked) return;
+  TTS.unlocked = true;
+  try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (_) { /* ignore */ }
+}
+
+/* ================= coach: prompts & parsing ================= */
+function rulesFor(c) {
+  const lv = LEVELS[c.level] || LEVELS.B1;
+  const about = String(S.settings.about || '').trim() || 'A Mandarin speaker from Taiwan.';
+  let mode;
+  if (c.mode === 'free') {
+    mode = 'FREE CONVERSATION about ' + c.topicEn + '. Be a warm, curious conversation partner: react to what they say, sometimes add a short opinion or experience of your own, and keep the topic going. If it runs dry, move to a related topic.';
+  } else if (c.mode === 'role') {
+    mode = 'ROLE-PLAY. Scenario: ' + c.sceneEn + ' You play ' + c.aiRole + '; the learner plays ' + c.meRole + '. Stay in character in your reply and keep it realistic, adding a small complication now and then. When the scene reaches a natural end, close it in character and offer to replay it with a different twist.';
+  } else {
+    mode = 'CHINESE-TO-ENGLISH SPEAKING PRACTICE. The learner types something they want to be able to say, usually in Chinese.\n'
+      + '- If their last message is mostly Chinese: give 2 or 3 natural spoken English ways to say it, one per line, each line starting with "casual:", "neutral:" or "work:" (leave out a style that does not fit), then one last line asking them to say one version out loud and type what they said. The fix part is {"none": true}.\n'
+      + '- If their last message is mostly English (an attempt at saying it): say in one short sentence what was good, give one polished version on a line starting with "final:", then ask what else they want to learn to say. Correct the attempt in the fix part.';
+  }
+  const len = c.mode === 'zh' ? 'Keep it short.' : 'Use 1 to 3 short sentences (at most 45 words) and end with exactly one question.';
+  return 'You are a friendly English speaking coach inside a practice app.\n'
+    + 'About the learner: ' + about + '\n'
+    + 'Goal: speak English fluently in everyday and work conversations. They tend to freeze when speaking, so keep the pressure low and be encouraging.\n'
+    + 'Level to speak at: ' + c.level + '. ' + lv.style + '\n'
+    + 'They speak out loud and usually type with voice dictation, so ignore punctuation, capital letters and obvious dictation glitches.\n\n'
+    + 'MODE: ' + mode + '\n\n'
+    + 'FORMAT. Follow it exactly every time:\n'
+    + '1. Your reply in natural spoken English. ' + len + ' Plain text only: no Markdown, no emoji, no Chinese.\n'
+    + '2. A line with only ###\n'
+    + '3. Up to 3 lines, each a JSON object on one line that corrects the learner\'s LAST message: {"you": "<their exact words>", "better": "<a more natural way to say it>", "why": "<reason in Traditional Chinese as used in Taiwan, at most 20 characters>"}. Fix mistakes that block understanding first, then unnatural or Chinglish phrasing; skip tiny slips. If their last message was already natural, or the learner has not said anything yet, write exactly {"none": true}.\n'
+    + 'Write nothing after the JSON lines.';
+}
+const OPEN_FREE = 'Begin now: greet the learner briefly and ask your first question about the topic.';
+const OPEN_ROLE = 'Begin the role-play now: set the scene in one short sentence, then say your first line in character.';
+const usable = t => !t.sys && !t.pending && !t.streaming && !t.ex;
+function buildTurns(c) {
+  const out = [{ role: 'user', content: rulesFor(c) }];
+  if (c.mode !== 'zh') out.push({ role: 'user', content: c.mode === 'role' ? OPEN_ROLE : OPEN_FREE });
+  const hist = c.turns.filter(t => usable(t) && String(t.r === 'm' ? t.t : (t.raw || t.t) || '').trim());
+  for (const t of hist.slice(-24)) out.push({ role: t.r === 'm' ? 'user' : 'assistant', content: t.r === 'm' ? t.t : (t.raw || t.t) });
+  while (out.length > 1 && out[out.length - 1].role !== 'user') out.pop();
+  return out;
+}
+// Top-level {...} and [...] spans, string-aware, so multi-line or arrayed JSON is still found.
+function scanJsonSpans(s) {
+  const out = [];
+  let depth = 0, start = -1, inStr = false, q = '', esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === q) inStr = false;
+      continue;
+    }
+    if (depth > 0 && (ch === '"' || ch === '“')) { inStr = true; q = ch === '“' ? '”' : '"'; continue; }
+    if (ch === '{' || ch === '[') { if (depth === 0) start = i; depth++; }
+    else if ((ch === '}' || ch === ']') && depth > 0) {
+      depth--;
+      if (depth === 0 && start >= 0) { out.push(s.slice(start, i + 1)); start = -1; }
+    }
+  }
+  return out;
+}
+function tryParseLoose(s) {
+  const noComma = s.replace(/,\s*([}\]])/g, '$1');
+  for (const a of [s, noComma, noComma.replace(/[“”]/g, '"')]) { try { return JSON.parse(a); } catch (_) { /* next */ } }
+  return undefined;
+}
+function extractJson(text) {
+  const t = String(text || '').replace(/```[a-zA-Z]*/g, '');
+  const whole = tryParseLoose(t.trim());
+  if (whole !== undefined) return whole;
+  let best, bestLen = -1;
+  for (const s of scanJsonSpans(t)) { const v = tryParseLoose(s); if (v !== undefined && s.length > bestLen) { best = v; bestLen = s.length; } }
+  return best;
+}
+// Where the hidden part of a reply starts: "###" anywhere, a line of just "##", a code fence, or a line that
+// opens JSON ("{" or "[" followed by a quote, a brace, or nothing yet). A line like "[laughs] ..." stays visible.
+const JSON_LINE = '(^|\\n)[ \\t]*(\\{\\s*(?:["“}]|$)|\\[\\s*(?:[{"“\\]]|$))';
+const SEP_RE = new RegExp('###|(^|\\n)[ \\t]*(##[ \\t]*(?=\\n|$)|```)|' + JSON_LINE);
+const JSON_LINE_RE = new RegExp(JSON_LINE);
+function streamPart(text) {
+  let t = String(text || '');
+  const cut = t.search(SEP_RE);
+  if (cut >= 0) t = t.slice(0, cut);
+  else t = t.replace(/(^|\n)[ \t]*(#{1,2}|`{1,2})[ \t]*$/, ''); // a separator still arriving
+  return t.trim();
+}
+function parseCoach(text) {
+  const t = String(text || '').replace(/```[a-zA-Z]*/g, '');
+  let a = t, b = '';
+  const i = t.search(/###|(^|\n)[ \t]*##[ \t]*(?=\n|$)/);
+  if (i >= 0) { a = t.slice(0, i); b = t.slice(i).replace(/^\s*#+/, ''); }
+  else {
+    let j = t.search(/[[{]\s*\{?\s*["“](?:you|better|none)["”]\s*:/);
+    if (j < 0) j = t.search(JSON_LINE_RE);
+    if (j >= 0) { a = t.slice(0, j); b = t.slice(j); }
+  }
+  const fixes = [];
+  let none = false, tail = '';
+  if (b) {
+    let rest = b;
+    for (const span of scanJsonSpans(b)) {
+      rest = rest.replace(span, ' ');
+      const v = tryParseLoose(span);
+      for (const o of (Array.isArray(v) ? v : [v])) {
+        if (!o || typeof o !== 'object') continue;
+        if (o.none) none = true;
+        else if (typeof o.better === 'string' && o.better.trim()) fixes.push({ you: String(o.you || '').trim(), better: o.better.trim(), why: String(o.why || '').trim() });
+      }
+    }
+    const open = rest.search(/[[{]/); // an unfinished JSON fragment (the reply was cut) is never shown
+    if (open >= 0) rest = rest.slice(0, open);
+    tail = rest.replace(/\s+/g, ' ').replace(/^[\s#*,;:\-]+|[\s#*,;:\-]+$/g, '').trim();
+    if (!/[A-Za-z]{2,}/.test(tail)) tail = '';
+  }
+  let reply = a.replace(/[ \t]+\n/g, '\n').trim();
+  if (tail) reply = reply ? reply + '\n' + tail : tail;
+  const speakText = reply.replace(/^\s*(casual|neutral|work|final)\s*[:：]\s*/gim, '');
+  return { reply, fixes: fixes.slice(0, 3), none, speakText };
+}
+function chatLabel(c) {
+  if (c.mode === 'free') return '自由聊天・' + (c.topicZh || '');
+  if (c.mode === 'role') return '角色扮演・' + (c.sceneZh || '');
+  return '中翻英口說';
+}
+function chatLabelEn(c) {
+  if (c.mode === 'free') return 'free conversation about ' + c.topicEn;
+  if (c.mode === 'role') return 'role-play: ' + c.sceneEn;
+  return 'Chinese-to-English speaking practice';
+}
+function hintPrompt(c) {
+  const lines = c.turns.filter(t => usable(t) && t.t).slice(-6).map(t => (t.r === 'm' ? 'Learner: ' : 'Coach: ') + t.t).join('\n');
+  return 'An English learner (level ' + c.level + ') is stuck in this practice conversation and does not know what to say next.\n'
+    + (c.mode === 'role' ? 'Scenario: ' + c.sceneEn + ' The learner plays ' + c.meRole + '.\n' : '')
+    + 'Conversation so far (most recent last):\n' + lines + '\n\n'
+    + 'Suggest 3 different replies the learner could say next: natural spoken English, under 15 words each, at ' + c.level + ' level, each taking the conversation a different way. '
+    + 'Reply with only a JSON array: [{"en": "...", "zh": "its meaning in Traditional Chinese as used in Taiwan"}]';
+}
+function reviewPrompt(c) {
+  const lines = [];
+  for (const t of c.turns) {
+    if (!usable(t) || !t.t) continue;
+    if (t.r === 'm') {
+      lines.push('Learner: ' + t.t);
+      for (const f of (t.fx || [])) lines.push('  Fix: "' + f.you + '" -> "' + f.better + '"');
+    } else lines.push('Coach: ' + t.t);
+  }
+  const transcript = lines.join('\n').slice(-24000);
+  return 'Review this English speaking practice session. The learner is a Mandarin speaker from Taiwan practising at level ' + c.level + '. Session: ' + chatLabelEn(c) + '.\n'
+    + 'Transcript ("Learner" lines are what they said; "Fix" lines are corrections the coach already gave):\n' + transcript + '\n\n'
+    + 'Write in Traditional Chinese as used in Taiwan, except for English examples. Be specific and encouraging. Reply with only one JSON object:\n'
+    + '{"summary": "2 sentences of overall feedback", "strengths": ["up to 2 specific things they did well"], "patterns": [{"issue": "a recurring mistake or habit", "example": "their exact words", "fix": "a better way in English"}], "phrases": [{"en": "a useful spoken chunk for this kind of conversation", "zh": "its meaning", "example": "a short English example sentence"}], "next": "one concrete suggestion for what to practise next time"}\n'
+    + 'Give at most 3 patterns, most important first, and exactly 5 phrases.';
+}
+function normReview(r) {
+  const o = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+  const str = v => (typeof v === 'string' ? v.trim() : '');
+  const arr = v => (Array.isArray(v) ? v : []);
+  return {
+    summary: str(o.summary),
+    strengths: arr(o.strengths).map(str).filter(Boolean).slice(0, 2),
+    patterns: arr(o.patterns).filter(x => x && typeof x === 'object').map(x => ({ issue: str(x.issue), example: str(x.example), fix: str(x.fix) })).filter(x => x.issue || x.fix).slice(0, 3),
+    phrases: arr(o.phrases).filter(x => x && typeof x === 'object').map(x => ({ en: str(x.en), zh: str(x.zh), example: str(x.example) })).filter(x => x.en).slice(0, 5),
+    next: str(o.next),
+  };
+}
+// JSON answers go through plain sample() with cache off, so an unusable answer is never replayed.
+async function askJson(prompt, opts) {
+  const r = await S.sample(prompt, Object.assign({ cache: false }, opts || {}));
+  const v = extractJson(r.text);
+  if (v === undefined) throw { code: 'invalid_json', message: 'no JSON in reply', text: r.text };
+  return v;
+}
+function sampleErrMsg(e) {
+  const c = e && e.code;
+  if (c === 'not_granted') return '這個頁面還沒取得使用 Claude 的權限。重新開啟頁面，詢問時選「允許」。';
+  if (c === 'sampling_disabled') return '你的帳號或組織目前不能使用 Claude，教練暫時無法回覆。打卡和收藏照常可用。';
+  if (BLOCK_CODES.includes(c)) return '在這個畫面無法使用 AI 教練，請改用最新版的 Claude 網頁或 App 開啟。打卡和收藏照常可用。';
+  if (c === 'invalid_request' || c === 'transform_error') return '這次的請求格式有問題，重新整理頁面後再試。';
+  if (c === 'rate_limited') return '使用量暫時到上限了，晚一點再試。';
+  if (c === 'session_expired') return '登入已過期，請重新登入 Claude 後再試。';
+  if (c === 'refused') return '教練沒辦法回應這一句，已略過，換個說法再說一次。';
+  if (c === 'prompt_too_large') return '這段對話太長了，先按「結束並複習」，再開新的對話。';
+  if (c === 'empty_completion') return '教練這次沒有回應，換個說法再說一次。';
+  if (c === 'invalid_json') return '教練這次的回覆格式不對，再試一次。';
+  return '連線中斷了，再試一次。';
+}
+function onSampleError(e) {
+  if (!e || e.code === 'cancelled') { renderCoachNote(); return; }
+  if (BLOCK_CODES.includes(e.code)) { S.sampleState = 'blocked'; S.blockCode = e.code; }
+  S.note = sampleErrMsg(e);
+  S.noteNoRetry = NO_RETRY_CODES.includes(e.code) || BLOCK_CODES.includes(e.code);
+  announce(S.note);
+  renderCoachNote();
+  updateComposer();
+}
+
+/* ================= coach: chat ================= */
+function newChat(setup) {
+  const now = Date.now();
+  const c = { id: newId(), mode: setup.mode, level: S.settings.level, startedAt: now, updatedAt: now, lastAt: now, activeMs: 0, meCount: 0, turns: [] };
+  if (setup.mode === 'free') {
+    const t = TOPICS.find(x => x.k === setup.topic) || TOPICS[0];
+    const custom = String(setup.custom || '').trim();
+    c.topicZh = t.k === 'custom' ? custom : t.zh;
+    c.topicEn = t.k === 'custom' ? 'a topic the learner chose (it may be written in Chinese; talk about it in English): "' + custom + '"' : t.en;
+  } else if (setup.mode === 'role') {
+    const s = SCENES.find(x => x.k === setup.scene) || SCENES[0];
+    const custom = String(setup.custom || '').trim();
+    c.sceneZh = s.k === 'custom' ? custom : s.zh;
+    c.sceneEn = s.k === 'custom' ? 'The learner described this scene (it may be in Chinese; play it in English): "' + custom + '".' : s.en;
+    c.aiRole = s.ai; c.meRole = s.me;
+  }
+  return c;
+}
+// Sentences the learner said that the coach accepted (0 is a real count, not "unknown").
+function meCountOf(c) { return typeof c.meCount === 'number' && isFinite(c.meCount) ? c.meCount : c.turns.filter(t => t.r === 'm' && !t.ex).length; }
+// Active time counts the gaps between turns, capped at 5 minutes each.
+function touchChat(c) {
+  const now = Date.now();
+  c.activeMs = (c.activeMs || 0) + Math.min(Math.max(0, now - (c.lastAt || now)), 5 * 60000);
+  c.lastAt = now; c.updatedAt = now;
+}
+function cancelInflight() {
+  if (S.ctl) { try { S.ctl.abort(); } catch (_) { /* already settled */ } }
+  S.ctl = null; S.busy = false;
+}
+// Pressing the same start control twice within a few seconds confirms a warning.
+function confirmTwice(key, msg) {
+  if (isArmed(key)) { S.armed = null; return true; }
+  S.armed = { key, until: Date.now() + 5000 };
+  toast(msg);
+  return false;
+}
+// Returns true once the new chat has started (and its first message, if any, was sent).
+async function startSession(setup, firstMessage) {
+  if (!S.ready || S.sampleState !== 'ok' || S.reviewing || S.busy) return false;
+  ttsUnlock();
+  // Work out everything a new chat could lose, then ask once (a second tap within 5 s confirms).
+  let unsaved = false, unread = false;
+  if (S.unsavedReview) {
+    const name = 'sessions-' + S.unsavedReview.m;
+    if (!Store.busyDoc(name) && !Store.failed[name]) S.unsavedReview = null;
+    else if (!Store.failed[name]) { toast('上一次的複習還在儲存，等一下再開始。'); return false; }
+    else unsaved = true;
+  }
+  if (S.loadErrors.has('chat')) {
+    await reloadDocs(['chat']);
+    if (S.chat) { renderCoach(); toast('找到上次還沒結束的對話'); return false; }
+    unread = S.loadErrors.has('chat');
+  }
+  if (unsaved || unread) {
+    const msg = unsaved && unread ? '上一次的複習還沒存到雲端，也還讀不到上次的對話。再按一次仍要開始新的對話。'
+      : unsaved ? '上一次的複習還沒存到雲端。再按一次仍要開始，那份複習可能會遺失。'
+      : '還讀不到上次的對話。再按一次直接開新的對話。';
+    if (!confirmTwice('start:' + unsaved + ':' + unread, msg)) return false;
+  }
+  cancelInflight();
+  S.review = null; S.hints = null; S.hintSeq++; S.note = null; S.noteNoRetry = false; S.armed = null;
+  const c = newChat(setup);
+  S.chat = c;
+  if (c.mode === 'zh') {
+    c.turns.push({ r: 'c', t: 'Tell me something you want to say. Chinese is fine. I will show you two or three natural ways to say it in English.', zhNote: '把想說的話打出來（中文也可以），我會給你 2–3 種英文說法，再請你唸一次。', sys: true, at: Date.now() });
+    saveChat(); renderCoach(); renderToday();
+    const sent = firstMessage ? send(firstMessage) : true;
+    focusInput();
+    return sent;
+  }
+  saveChat(); renderCoach(); renderToday(); focusInput();
+  ask();
+  return true;
+}
+function saveChat() {
+  const c = S.chat; if (!c) return;
+  const turns = c.turns.filter(t => !t.pending && !t.streaming).slice(-60).map(t => {
+    const o = { r: t.r, t: t.t, at: t.at || 0 };
+    if (t.raw) o.raw = t.raw;
+    if (t.fx && t.fx.length) o.fx = t.fx;
+    if (t.ok) o.ok = true;
+    if (t.zh) o.zh = t.zh;
+    if (t.cut) o.cut = true;
+    if (t.ex) o.ex = true;
+    if (t.sys) { o.sys = true; o.zhNote = t.zhNote || ''; }
+    return o;
+  });
+  Store.put('chat', {
+    active: true, id: c.id, mode: c.mode, level: c.level, topicZh: c.topicZh || '', topicEn: c.topicEn || '',
+    sceneZh: c.sceneZh || '', sceneEn: c.sceneEn || '', aiRole: c.aiRole || '', meRole: c.meRole || '',
+    startedAt: c.startedAt, updatedAt: c.updatedAt, lastAt: c.lastAt, activeMs: c.activeMs || 0, meCount: c.meCount || 0, turns,
+  });
+}
+function normChat(d) {
+  if (!d || !d.active || !Array.isArray(d.turns) || !['free', 'role', 'zh'].includes(d.mode)) return null;
+  const str = v => (typeof v === 'string' ? v : '');
+  const turns = d.turns.filter(t => t && (t.r === 'm' || t.r === 'c') && typeof t.t === 'string').map(t => ({
+    r: t.r, t: t.t, at: Number(t.at) || 0, raw: str(t.raw),
+    fx: Array.isArray(t.fx) ? t.fx.filter(f => f && typeof f.better === 'string').map(f => ({ you: str(f.you), better: f.better, why: str(f.why) })) : [],
+    ok: !!t.ok, zh: str(t.zh), cut: !!t.cut, ex: !!t.ex, sys: !!t.sys, zhNote: str(t.zhNote),
+  }));
+  let activeMs = Number(d.activeMs) || 0;
+  if (!activeMs) {
+    const ts = turns.map(t => t.at).filter(Boolean).sort((a, b) => a - b);
+    for (let i = 1; i < ts.length; i++) activeMs += Math.min(ts[i] - ts[i - 1], 5 * 60000);
+  }
+  return {
+    id: str(d.id) || newId(), mode: d.mode, level: LEVELS[d.level] ? d.level : 'B1',
+    topicZh: str(d.topicZh), topicEn: str(d.topicEn) || 'everyday life', sceneZh: str(d.sceneZh), sceneEn: str(d.sceneEn) || 'An everyday conversation.',
+    aiRole: str(d.aiRole) || 'the other person', meRole: str(d.meRole) || 'themself',
+    startedAt: Number(d.startedAt) || Date.now(), updatedAt: Number(d.updatedAt) || Date.now(), lastAt: Number(d.lastAt) || Number(d.updatedAt) || Date.now(),
+    activeMs, meCount: Number.isFinite(Number(d.meCount)) && d.meCount !== null && d.meCount !== undefined && d.meCount !== '' ? Number(d.meCount) : turns.filter(t => t.r === 'm' && !t.ex).length, turns,
+  };
+}
+function discardChat() {
+  cancelInflight();
+  const c = S.chat;
+  if (c) S.endedChats.add(c.id);
+  S.chat = null; S.hints = null; S.hintSeq++; S.note = null; S.noteNoRetry = false; S.armed = null;
+  Store.put('chat', { active: false, endedId: c ? c.id : '', at: Date.now() });
+  renderCoach(); renderToday();
+}
+function send(text) {
+  const c = S.chat;
+  if (!c || S.busy || S.reviewing || S.sampleState !== 'ok') return false;
+  ttsUnlock();
+  S.hintSeq++; S.hints = null; S.note = null; S.noteNoRetry = false;
+  touchChat(c);
+  c.meCount = (c.meCount || 0) + 1;
+  c.turns.push({ r: 'm', t: text, at: Date.now() });
+  saveChat();
+  ask();
+  return true;
+}
+async function ask() {
+  const c = S.chat;
+  if (!c || S.busy || !S.sample || S.sampleState !== 'ok') return;
+  const tail = c.turns[c.turns.length - 1];
+  if (tail && tail.r === 'c' && tail.cut && !tail.sys) c.turns.pop(); // asking again replaces an interrupted reply
+  S.note = null; S.noteNoRetry = false;
+  const ctl = new AbortController();
+  S.ctl = ctl; S.busy = true; S.askStartedAt = Date.now();
+  const turn = { r: 'c', t: '', raw: '', pending: true, streaming: true, at: Date.now() };
+  c.turns.push(turn);
+  renderCoach();
+  scrollToEnd(true);
+  try {
+    const res = await S.sample(buildTurns(c), {
+      modelTier: 'quick', cache: false, signal: ctl.signal,
+      onText: ({ text }) => {
+        if (S.chat !== c) return;
+        const near = nearBottom();
+        turn.raw = text; turn.t = streamPart(text);
+        if (turn.pending) { if (turn.t) { turn.pending = false; renderMessages(); } }
+        else updateStreaming(turn, c);
+        if (near) scrollToEnd(true);
+      },
+    });
+    if (S.chat === c) { finishTurn(c, turn, res.text, !!res.truncated); announce('教練：' + turn.t.slice(0, 300)); }
+  } catch (e) {
+    if (S.chat === c) {
+      const i = c.turns.indexOf(turn);
+      if (e && e.code === 'refused') {
+        if (i >= 0) c.turns.splice(i, 1);
+        const prev = c.turns[c.turns.length - 1];
+        if (prev && prev.r === 'm' && !prev.ex) { prev.ex = true; c.meCount = Math.max(0, (c.meCount || 0) - 1); } // never resend or count a refused message
+      } else if (e && typeof e.text === 'string' && e.text.trim()) finishTurn(c, turn, e.text, true);
+      else if (i >= 0) c.turns.splice(i, 1);
+    }
+    onSampleError(e);
+  } finally {
+    if (S.ctl === ctl) { S.ctl = null; S.busy = false; }
+    if (S.chat === c) { touchChat(c); saveChat(); }
+    const near = nearBottom();
+    renderCoach();
+    if (near) scrollToEnd(true);
+  }
+}
+function finishTurn(c, turn, raw, cut) {
+  const p = parseCoach(raw);
+  turn.raw = raw; turn.t = p.reply || streamPart(raw) || '…'; turn.pending = false; turn.streaming = false; turn.at = Date.now();
+  if (cut) turn.cut = true;
+  const prev = c.turns[c.turns.indexOf(turn) - 1];
+  if (prev && prev.r === 'm' && !cut) {
+    prev.fx = p.fixes;
+    prev.ok = !p.fixes.length && p.none && isEnglish(prev.t);
+  }
+  if (S.settings.autoSpeak && !cut && S.tab === 'coach') speak(p.speakText);
+}
+async function translateTurn(t) {
+  if (t.zh) { t.zhOpen = !t.zhOpen; renderMessages(); return; }
+  if (!S.sample || t.zhBusy || S.sampleState !== 'ok') return;
+  t.zhBusy = true; renderMessages();
+  try {
+    const r = await S.sample('Translate into natural Traditional Chinese as used in Taiwan. Reply with only the translation.\n\n' + t.t, { modelTier: 'quick' });
+    t.zh = r.text.trim(); t.zhOpen = true;
+    if (S.chat && S.chat.turns.includes(t)) saveChat();
+  } catch (e) { onSampleError(e); }
+  finally { t.zhBusy = false; renderMessages(); }
+}
+async function getHints() {
+  const c = S.chat;
+  if (!c || !S.sample || S.busy || S.hints === 'loading' || S.sampleState !== 'ok') return;
+  const seq = ++S.hintSeq;
+  S.hints = 'loading'; renderHints(); scrollToEnd(true);
+  let shown = false;
+  try {
+    const v = await askJson(hintPrompt(c), { modelTier: 'quick' });
+    if (S.hintSeq === seq && S.chat === c) {
+      const raw = Array.isArray(v) ? v : (v && Array.isArray(v.replies) ? v.replies : []);
+      const list = raw.map(x => (typeof x === 'string' ? { en: x, zh: '' } : x))
+        .filter(x => x && typeof x.en === 'string' && x.en.trim()).slice(0, 3)
+        .map(x => ({ en: x.en.trim(), zh: typeof x.zh === 'string' ? x.zh.trim() : '' }));
+      S.hints = list.length ? list : null;
+      shown = list.length > 0;
+      if (!list.length) { S.note = '教練這次沒想到提示，再按一次試試。'; S.noteNoRetry = true; renderCoachNote(); }
+    }
+  } catch (e) {
+    if (S.hintSeq === seq && S.chat === c) { S.hints = null; onSampleError(e); }
+  } finally {
+    if (S.hintSeq === seq && S.hints === 'loading') S.hints = null;
+  }
+  // Redraw even when the answer is stale (the chat changed), so the loading row never stays behind.
+  if (S.hintSeq === seq) { renderHints(); if (shown) scrollToEnd(true); }
+}
+// Write the "ended" marker only while the stored chat is still the reviewed one: a newer chat, started here
+// or on another device, must never be replaced by it. (A reviewed chat that keeps its marker unwritten is
+// still recognised as finished, because its review is stored.)
+async function endStoredChat(id) {
+  if (S.chat && S.chat.id !== id) return;
+  const mark = () => Store.put('chat', { active: false, endedId: id, at: Date.now() });
+  if (Store.busyDoc('chat')) { mark(); return; } // this device's own write of the reviewed chat is still on its way
+  let d;
+  try { d = await Store.get('chat'); } catch (_) { return; }
+  if (S.chat && S.chat.id !== id) return;
+  if (!d || d.active === false || String(d.id) !== id) return;
+  mark();
+}
+async function review() {
+  const c = S.chat;
+  if (!c || S.busy || S.reviewing || !S.sample) return;
+  const count = meCountOf(c);
+  if (count < 3) { toast('再說 ' + (3 - count) + ' 句就能複習'); return; }
+  const ctl = new AbortController();
+  S.ctl = ctl; S.reviewing = true; S.reviewStart = Date.now();
+  S.note = null; S.noteNoRetry = false; S.hints = null; S.hintSeq++;
+  renderCoach();
+  announce('教練正在整理這次的複習');
+  try {
+    const raw = await askJson(reviewPrompt(c), { modelTier: 'default', signal: ctl.signal });
+    const rv = normReview(raw);
+    if (!rv.summary && !rv.phrases.length && !rv.patterns.length) throw { code: 'invalid_json', message: 'empty review' };
+    if (S.chat !== c) return;
+    const k = todayKey();
+    const minutes = Math.max(1, Math.round((c.activeMs || 0) / 60000));
+    const sess = Object.assign({ id: c.id, date: k, at: Date.now(), mode: c.mode, label: chatLabel(c), level: c.level, minutes, count }, rv);
+    const m = k.slice(0, 7);
+    S.review = sess; S.chat = null; S.endedChats.add(c.id);
+    S.unsavedReview = { id: c.id, m };
+    addSession(sess);
+    Store.flush('sessions-' + m);
+    const rec = dayRec(k);
+    if (!(rec && rec.items.ai)) markItem(k, 'ai', true);
+    addCoachMinutes(k, c.id, minutes);
+    // The chat is marked finished only after the review is safely stored.
+    Store.afterSave('sessions-' + m, () => {
+      if (S.unsavedReview && S.unsavedReview.id === c.id) S.unsavedReview = null;
+      endStoredChat(c.id);
+    });
+    announce('複習完成');
+  } catch (e) { onSampleError(e); }
+  finally {
+    if (S.ctl === ctl) S.ctl = null;
+    S.reviewing = false;
+    renderCoach(); renderToday(); renderLog();
+  }
+}
+
+/* ================= rendering: shared ================= */
+function iconBtn(name, label, fn, cls, fk) {
+  return el('button', { type: 'button', class: 'icon-btn' + (cls ? ' ' + cls : ''), 'aria-label': label, title: label, html: ICON[name], onclick: fn, 'data-fk': fk || null });
+}
+function speakBtn(text, cls, ctx) { return TTS.ok ? iconBtn('speaker', '朗讀', () => { ttsUnlock(); speak(text); }, cls, 'spk:' + (ctx || '') + ':' + phraseId(text)) : null; }
+function starBtn(p, cls, ctx) {
+  const id = phraseId(p.en);
+  const on = isSaved(p.en);
+  return el('button', {
+    type: 'button', class: 'icon-btn' + (cls ? ' ' + cls : ''), 'aria-pressed': String(on), 'aria-label': on ? '取消收藏' : '收藏', title: on ? '取消收藏' : '收藏',
+    html: on ? ICON.starOn : ICON.star, disabled: !S.ready, 'data-fk': 'star:' + (ctx || '') + ':' + id,
+    onclick: e => {
+      const b = e.currentTarget;
+      toggleSaved(p);
+      const now = isSaved(p.en);
+      if (b.isConnected) {
+        b.setAttribute('aria-pressed', String(now)); b.innerHTML = now ? ICON.starOn : ICON.star;
+        b.setAttribute('aria-label', now ? '取消收藏' : '收藏'); b.title = now ? '取消收藏' : '收藏';
+      }
+      toast(now ? '已加入收藏' : '已取消收藏');
+    },
+  });
+}
+function checkBtn(on, label, fn, fk) {
+  return el('button', { type: 'button', class: 'check', role: 'checkbox', 'aria-checked': String(on), 'aria-label': label, html: ICON.check, disabled: !S.ready, onclick: fn, 'data-fk': fk });
+}
+function typing() {
+  return el('span', { class: 'typing' }, el('i', { 'aria-hidden': 'true' }), el('i', { 'aria-hidden': 'true' }), el('i', { 'aria-hidden': 'true' }), el('span', { class: 'sr-only', lang: 'zh-Hant-TW', text: '教練正在想' }));
+}
+// Two-step confirmation; the armed state lives in S so a re-render does not reset it.
+function isArmed(key) { return !!(S.armed && S.armed.key === key && Date.now() < S.armed.until); }
+function arm(key, fn, rerender) {
+  if (isArmed(key)) { S.armed = null; fn(); return; }
+  S.armed = { key, until: Date.now() + 3500 };
+  rerender();
+  setTimeout(() => { if (S.armed && S.armed.key === key && Date.now() >= S.armed.until - 60) { S.armed = null; rerender(); } }, 3600);
+}
+let toastTimer = 0;
+// On the coach tab the toast sits just above the composer, wherever the composer currently is.
+function placeToast() {
+  const t = $('#toast'); if (!t || t.hidden) return;
+  const comp = $('#composer');
+  if (S.tab === 'coach' && comp && !comp.hidden) {
+    const top = comp.getBoundingClientRect().top;
+    if (top < window.innerHeight) { t.style.bottom = Math.max(24, Math.round(window.innerHeight - top) + 10) + 'px'; return; }
+  }
+  t.style.bottom = '';
+}
+function toast(msg) {
+  const t = $('#toast'); if (!t) return;
+  t.textContent = msg; t.hidden = false;
+  placeToast();
+  t.classList.remove('show'); void t.offsetWidth; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+  announce(msg);
+}
+function storeText() {
+  if (Store.mode === 'db') return '你的進度存在 Claude 的雲端，只有你看得到；手機和電腦開這個頁面會同步。';
+  if (Store.mode === 'local') return '雲端同步目前無法使用，進度只存在這個瀏覽器。';
+  if (Store.mode === 'memory') return '這個瀏覽器不允許儲存資料，關掉頁面後進度會消失。';
+  return '正在載入…';
+}
+function updateScrollPad() {
+  const comp = $('#composer');
+  const h = S.tab === 'coach' && comp && !comp.hidden ? Math.round(comp.getBoundingClientRect().height) + 12 : 24;
+  document.documentElement.style.setProperty('--sp-bottom', h + 'px');
+  placeToast();
+}
+// Moves focus to a heading after a control sends you to another view, so keyboard focus is never lost.
+function focusHeading(sel) {
+  const h = $(sel); if (!h) return;
+  h.tabIndex = -1;
+  h.focus({ preventScroll: true });
+}
+function switchTab(t, keepScroll) {
+  if (!['today', 'coach', 'log', 'saved'].includes(t)) t = 'today';
+  const from = document.activeElement;
+  const fromPanel = !!(from && from.closest && from.closest('section.tab'));
+  S.tab = t;
+  for (const b of $$('.tabs button')) { const on = b.dataset.tab === t; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; }
+  for (const sec of $$('.tab')) sec.hidden = sec.id !== 'tab-' + t;
+  if (t === 'today') { renderToday(); renderInbox(); }
+  else if (t === 'coach') renderCoach();
+  else if (t === 'log') renderLog();
+  else { renderStarters(); renderSavedList(); }
+  updateScrollPad();
+  if (!keepScroll) window.scrollTo(0, 0);
+  if (t === 'coach' && S.chat) scrollToEnd(true);
+  // A control inside the old tab is now hidden: give focus to the newly selected tab.
+  const ae = document.activeElement;
+  if (fromPanel && (!ae || ae === document.body || !ae.offsetParent)) { const tb = $('#t-' + t); if (tb) tb.focus({ preventScroll: true }); }
+  try { history.replaceState(null, '', '#' + t); } catch (_) { /* hash is optional */ }
+}
+function renderAll() {
+  renderToday(); renderInbox(); renderCoach(); renderLog(); renderStarters(); renderSavedList();
+}
+
+/* ================= rendering: today ================= */
+function renderToday() {
+  const root = $('#today-dyn'); if (!root) return;
+  const tk = todayKey();
+  if (S.lastToday !== tk) { if (S.viewDate === S.lastToday) S.viewDate = tk; S.lastToday = tk; }
+  if (S.viewDate > tk) S.viewDate = tk;
+  const k = S.viewDate, isToday = k === tk, d = parseD(k);
+  const ws = weekStart(d);
+  for (const mm of new Set([mkey(ws), mkey(addDays(ws, 6))])) {
+    if (S.ready && !S.loaded.has(mm) && !monthLoads[mm]) loadMonth(mm).then(() => renderToday());
+  }
+  const rec = dayRec(k);
+  const plan = rec ? rec.plan : S.settings.plan;
+  const items = rec ? rec.items : {};
+  const total = plan === '60' ? 60 : 20;
+  const done = minutesOf({ plan, items });
+  const st = status({ plan, items });
+
+  const planSeg = el('div', { class: 'seg', role: 'group', 'aria-label': '每天的練習量' },
+    ['20', '60'].map(p => el('button', { type: 'button', 'aria-pressed': String(plan === p), disabled: !S.ready, 'data-fk': 'plan-' + p, onclick: () => setPlan(k, p) }, p + ' 分鐘')));
+  let side;
+  if (isToday) {
+    const todayDone = st > 0;
+    side = el('span', { class: 'streak' },
+      S.streak ? ['連續 ', el('b', { text: String(S.streak) }), ' 天'] : (todayDone ? '今天是第 1 天' : '練一項就開始連續'),
+      S.streak && !todayDone ? '・今天練了就延續' : null);
+  } else {
+    side = el('button', { type: 'button', class: 'btn ghost small', 'data-fk': 'back-today', onclick: () => { S.viewDate = tk; renderToday(); } }, '回到今天');
+  }
+  const meterFill = el('span');
+  meterFill.style.width = Math.round(Math.min(1, done / total) * 100) + '%';
+  const head = el('section', { class: 'card head', 'aria-label': isToday ? '今天的進度' : '補登這天的紀錄' },
+    el('div', { class: 'head-top' },
+      el('div', null,
+        el('div', { class: 'eyebrow', text: isToday ? '今天' : '補登紀錄' }),
+        el('h2', { class: 'date-big', tabindex: '-1', 'data-fk': 'date-head', text: fmtDate(d) })),
+      planSeg),
+    el('div', { class: 'mins-row' },
+      el('span', { class: 'mins' }, el('b', { text: String(done) }), ' / ' + total + ' 分鐘'),
+      st === 2 ? el('span', { class: 'stamp-chip' + (S.justStamped ? ' stamped' : ''), text: '達標' }) : null,
+      side),
+    el('div', { class: 'meter', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(done), 'aria-label': '這天的練習分鐘' }, meterFill),
+    !S.ready ? el('p', { class: 'help', text: '正在載入你的進度…' }) : null,
+    S.ready && Store.mode !== 'db' ? el('p', { class: 'notice', text: storeText() }) : null);
+  S.justStamped = false;
+
+  const daily = el('div', { class: 'list' }, DAILY.map(def => {
+    const on = !!items[def.key];
+    const mins = def.min[plan];
+    const acts = [];
+    for (const [t, u] of (def.links || [])) acts.push(el('a', { class: 'link', href: u, target: '_blank', rel: 'noopener noreferrer', 'data-fk': 'lnk-' + t }, t, el('span', { class: 'ico', html: ICON.ext })));
+    if (def.act === 'coach') acts.push(el('button', { type: 'button', class: 'btn small', 'data-fk': 'go-coach', onclick: () => switchTab('coach') }, S.chat ? '繼續對話' : '開始對話'));
+    if (def.act === 'saved') acts.push(el('button', { type: 'button', class: 'btn small', 'data-fk': 'go-saved', onclick: () => switchTab('saved') }, '打開收藏'));
+    const isCore = CORE[plan].includes(def.key);
+    const coachMins = def.key === 'ai' ? coachTotal(rec) : 0;
+    return el('div', { class: 'item', 'data-done': String(on) },
+      checkBtn(on, def.name, () => markItem(k, def.key, !on), 'ck-' + def.key),
+      el('div', null,
+        el('div', { class: 'item-top' },
+          el('span', { class: 'item-name', text: def.name }),
+          el('span', { class: 'tag' + (isCore ? ' on' : ''), text: mins ? mins + ' 分鐘' : '通勤時順便' })),
+        el('p', { class: 'item-how', text: def.how }),
+        coachMins ? el('p', { class: 'item-note', text: '這天和教練練了 ' + coachMins + ' 分鐘' }) : null,
+        acts.length ? el('div', { class: 'item-acts' }, acts) : null));
+  }));
+
+  const weekly = el('div', { class: 'list' }, WEEKLY.map(def => {
+    const on = !!items[def.key];
+    const n = weekCount(k, def.key);
+    const target = def.target[plan];
+    return el('div', { class: 'item', 'data-done': String(on) },
+      checkBtn(on, def.name + (isToday ? '（今天）' : '（這天）'), () => markItem(k, def.key, !on), 'ck-' + def.key),
+      el('div', null,
+        el('div', { class: 'item-top' },
+          el('span', { class: 'item-name', text: def.name }),
+          el('span', { class: 'tag', text: def.label[plan] }),
+          el('span', { class: 'tag' + (n >= target ? ' on' : ''), text: '本週 ' + n + ' / ' + target })),
+        el('p', { class: 'item-how', text: def.how + (isToday ? '今天做了就打勾。' : '這天做了就打勾。') })));
+  }));
+
+  const m = k.slice(0, 7);
+  const monthOn = !!(S.logs[m] && S.logs[m].monthRecord);
+  const monthly = el('div', { class: 'list' },
+    el('div', { class: 'item', 'data-done': String(monthOn) },
+      checkBtn(monthOn, Number(m.slice(5)) + ' 月進度錄音', () => toggleMonthly(k, m), 'ck-month'),
+      el('div', null,
+        el('div', { class: 'item-top' }, el('span', { class: 'item-name', text: '進度錄音' }), el('span', { class: 'tag', text: Number(m.slice(5)) + ' 月' })),
+        el('p', { class: 'item-how', text: MONTHLY_HOW[plan] }))));
+
+  fill(root, head,
+    el('h2', { class: 'section-title', text: '每天' }), daily,
+    el('h2', { class: 'section-title', text: '每週' }), weekly,
+    el('h2', { class: 'section-title', text: '每月' }), monthly);
+}
+function setPlan(k, p) {
+  if (!S.ready || rolledOver(k)) return;
+  if (k === todayKey()) { S.settings.plan = p; saveSettings('plan'); }
+  const [rec, created] = ensureRec(k);
+  const w = String(Math.max(Date.now(), ...Object.keys(rec.plans).map(Number).filter(isFinite).map(n => n + 1)));
+  rec.plans[w] = p;
+  rec.plan = resolvePlan(rec.plans, rec.lp);
+  patchDay(k, rec, created, { plans: { [w]: p } });
+  refreshStreak();
+  renderToday(); renderLog();
+}
+function toggleMonthly(k, m) {
+  if (!S.ready || rolledOver(k)) return;
+  const doc = logDoc(m);
+  doc.monthRecord = !doc.monthRecord;
+  S.editedMonthRec.add(m);
+  Store.patch('log-' + m, doc, { monthRecord: doc.monthRecord });
+  if (doc.monthRecord) toast('本月進度錄音完成');
+  renderToday();
+}
+function renderInbox() {
+  const box = $('#inbox-list'); if (!box) return;
+  if (!S.inbox.length) { fill(box, el('p', { class: 'empty', text: '還沒有記錄。開會或聊天時卡住的句子，回來記在這裡。' })); return; }
+  fill(box, S.inbox.map(it => {
+    const armed = isArmed('inb-' + it.id);
+    return el('div', { class: 'inbox-row' },
+      el('p', { text: it.text }),
+      el('div', { class: 'row-acts' },
+        el('button', { type: 'button', class: 'btn small', disabled: S.sampleState !== 'ok' || !S.ready, 'data-fk': 'ask-' + it.id, onclick: () => askCoachAbout(it) }, '問教練'),
+        iconBtn('trash', armed ? '再按一次刪除' : '刪除', () => arm('inb-' + it.id, () => { removeInbox(it.id); renderInbox(); }, renderInbox), 'sm' + (armed ? ' danger' : ''), 'del-' + it.id)));
+  }));
+}
+async function askCoachAbout(it) {
+  if (!S.ready || S.sampleState !== 'ok') return;
+  ttsUnlock();
+  if (S.busy || S.reviewing) { toast('教練正在回覆，稍等一下再試'); return; }
+  if (S.chat && S.chat.mode !== 'zh' && S.chat.turns.some(t => t.r === 'm')) {
+    switchTab('coach');
+    toast('先結束目前的對話，再把句子帶過來');
+    return;
+  }
+  switchTab('coach');
+  let sent;
+  if (S.chat && S.chat.mode === 'zh') { sent = send(it.text); focusInput(); }
+  else sent = await startSession({ mode: 'zh' }, it.text);
+  // The sentence leaves the list only once it has really been sent to the coach.
+  if (sent) { removeInbox(it.id); renderInbox(); }
+}
+
+/* ================= rendering: coach ================= */
+function renderCoach() {
+  const root = $('#coach-dyn'); if (!root) return;
+  const composer = $('#composer');
+  // The chat is rebuilt in steps (frame first, then messages), so the focused control is restored at the end.
+  const ae = document.activeElement;
+  const fk = ae && ae !== document.body && root.contains(ae) && ae.dataset ? ae.dataset.fk : null;
+  if (S.review) { fill(root, reviewView(S.review)); composer.hidden = true; }
+  else if (S.reviewing) { fill(root, reviewingView()); composer.hidden = true; }
+  else if (S.chat) {
+    fill(root, chatView());
+    composer.hidden = false;
+    renderMessages(); renderHints(); renderCoachNote(); updateComposer();
+  } else {
+    composer.hidden = true;
+    fill(root, S.sampleState === 'none' || S.sampleState === 'blocked' ? unavailableView() : startView());
+  }
+  if (fk && !root.contains(document.activeElement)) {
+    const n = root.querySelector('[data-fk="' + (window.CSS && CSS.escape ? CSS.escape(fk) : fk) + '"]');
+    if (n && !n.disabled) n.focus({ preventScroll: true });
+  }
+  updateScrollPad();
+}
+function unavailableView() {
+  const blocked = S.sampleState === 'blocked';
+  return el('section', { class: 'card' },
+    el('h2', { class: 'card-title', text: blocked ? 'AI 教練目前無法使用' : 'AI 教練要在 Claude 裡開啟才能用' }),
+    el('p', { class: 'help mt6', text: blocked
+      ? sampleErrMsg({ code: S.blockCode || 'not_granted' })
+      : '教練使用你的 Claude 帳號回覆，所以要從 Claude 的連結開啟這個頁面。今日菜單與打卡在這裡照樣可以用。' }));
+}
+function startView() {
+  const s = S.setup;
+  const modes = [['free', '自由聊天', '想到什麼聊什麼，練習把話接下去。'], ['role', '情境角色扮演', '開會、閒聊、出國，練臨場反應。'], ['zh', '中翻英口說', '打出想說的中文，學 2–3 種英文說法再唸回來。']];
+  const pickMode = k => { s.mode = k; s.custom = ''; renderCoach(); };
+  const parts = [
+    el('section', { class: 'card' },
+      el('h2', { class: 'card-title', text: '今天想怎麼練？' }),
+      el('p', { class: 'help mt6', text: '你每送出一句，教練都會回應，並在你的句子下面附上更自然的說法。' })),
+    el('div', { class: 'modes', role: 'group', 'aria-label': '練法' }, modes.map(([k, t, d]) =>
+      el('button', { type: 'button', class: 'mode', 'aria-pressed': String(s.mode === k), 'data-fk': 'mode-' + k, onclick: () => pickMode(k) }, el('b', { text: t }), el('span', { text: d })))),
+  ];
+  const opts = el('section', { class: 'card panel' });
+  if (s.mode === 'free') opts.append(chipGroup('聊什麼', TOPICS, s.topic, k => { s.topic = k; s.custom = ''; renderCoach(); }));
+  if (s.mode === 'role') opts.append(chipGroup('什麼情境', SCENES, s.scene, k => { s.scene = k; s.custom = ''; renderCoach(); }));
+  const needCustom = (s.mode === 'free' && s.topic === 'custom') || (s.mode === 'role' && s.scene === 'custom');
+  if (needCustom) {
+    opts.append(el('div', { class: 'field' },
+      el('label', { class: 'label', for: 'custom-input', text: s.mode === 'free' ? '自訂話題（中英文都可以）' : '自訂情境（中英文都可以）' }),
+      el('input', { id: 'custom-input', class: 'input', maxlength: '160', value: s.custom, 'data-fk': 'custom', placeholder: s.mode === 'free' ? '例如：最近在追的劇' : '例如：跟房東說冷氣壞了', oninput: e => { s.custom = e.target.value; updateStartBtn(); } })));
+  }
+  if (s.mode === 'zh') {
+    opts.append(el('p', { class: 'help', text: '開始後，把你想說的話打出來（或用聽寫說中文），教練會給 2–3 種說法（口語、一般、職場），再請你唸一次。' }));
+    if (S.inbox.length) {
+      opts.append(el('div', { class: 'field' },
+        el('span', { class: 'label', text: '從「說不出口的句子」挑一句' }),
+        el('div', { class: 'pick-list' }, S.inbox.slice(0, 5).map(it =>
+          el('button', { type: 'button', class: 'pick', disabled: !S.ready || S.sampleState !== 'ok', 'data-fk': 'pick-' + it.id, onclick: () => askCoachAbout(it) }, el('span', { text: it.text }), el('span', { class: 'link', text: '用這句開始' }))))));
+    }
+  }
+  opts.append(el('div', { class: 'field' },
+    el('span', { class: 'label', text: '教練說話程度' }),
+    el('div', null, el('div', { class: 'seg', role: 'group', 'aria-label': '教練說話程度' }, ['A2', 'B1', 'B2'].map(k =>
+      el('button', { type: 'button', 'aria-pressed': String(S.settings.level === k), 'data-fk': 'lvl-' + k, onclick: () => { S.settings.level = k; saveSettings('level'); renderCoach(); } }, k + ' ' + LEVELS[k].zh))))));
+  const startLabel = S.sampleState === 'loading' || !S.ready ? '連線中…' : '開始對話';
+  opts.append(el('div', { class: 'start-row' },
+    el('button', { id: 'start-btn', type: 'button', class: 'btn primary big', 'data-fk': 'start', onclick: () => { ttsUnlock(); startSession(Object.assign({}, s)); } }, startLabel),
+    el('span', { class: 'help', text: '教練用你的 Claude 帳號回覆，第一次會詢問是否允許。' })));
+  parts.push(opts);
+  parts.push(el('section', { class: 'card' },
+    el('h3', { class: 'card-title', text: '怎麼「用說的」' }),
+    el('ul', { class: 'tips' },
+      el('li', null, el('b', { text: '手機：' }), '把鍵盤切到英文，點鍵盤上的麥克風，說完再按送出。'),
+      el('li', null, el('b', { text: 'Windows：' }), '按 ', el('span', { class: 'kbd', text: 'Win + H' }), ' 開聽寫；', el('b', { text: 'Mac：' }), '按兩下 ', el('span', { class: 'kbd', text: 'Fn' }), ' 或鍵盤上的麥克風鍵。'),
+      el('li', null, '聽寫要設定成英文才會辨識英文。說錯沒關係，照原樣送出，教練會幫你改。'))));
+  const wrap = el('div', { class: 'panel' }, parts);
+  queueMicrotask(updateStartBtn);
+  return wrap;
+}
+function chipGroup(label, list, current, onPick) {
+  return el('div', { class: 'field' },
+    el('span', { class: 'label', text: label }),
+    el('div', { class: 'chips' }, list.map(x => el('button', { type: 'button', class: 'chip', 'aria-pressed': String(x.k === current), 'data-fk': 'chip-' + x.k, onclick: () => onPick(x.k) }, x.zh))));
+}
+function updateStartBtn() {
+  const b = $('#start-btn'); if (!b) return;
+  const s = S.setup;
+  const needCustom = (s.mode === 'free' && s.topic === 'custom') || (s.mode === 'role' && s.scene === 'custom');
+  b.disabled = !S.ready || S.sampleState !== 'ok' || (needCustom && !String(s.custom || '').trim());
+}
+function chatView() {
+  const c = S.chat;
+  const count = meCountOf(c);
+  const auto = !!S.settings.autoSpeak;
+  const armed = isArmed('discard');
+  return el('div', null,
+    el('section', { class: 'card chat-bar' },
+      el('div', { class: 'chat-title' },
+        el('b', { text: chatLabel(c) }),
+        el('small', { text: '教練程度 ' + c.level + ' · 你說了 ' + count + ' 句' + (count < 3 ? ' · 再說 ' + (3 - count) + ' 句就能複習' : '') })),
+      el('div', { class: 'chat-acts' },
+        TTS.ok ? el('button', { type: 'button', class: 'icon-btn', 'aria-pressed': String(auto), 'aria-label': '自動朗讀', title: auto ? '自動朗讀：開' : '自動朗讀：關', html: auto ? ICON.speaker : ICON.mute, 'data-fk': 'auto',
+          onclick: () => { S.settings.autoSpeak = !S.settings.autoSpeak; if (!S.settings.autoSpeak && TTS.ok) speechSynthesis.cancel(); saveSettings('autoSpeak'); renderCoach(); toast(S.settings.autoSpeak ? '教練回覆時會自動朗讀' : '已關閉自動朗讀'); } }) : null,
+        el('button', { type: 'button', class: 'btn small' + (armed ? ' danger' : ''), disabled: S.reviewing, 'data-fk': 'discard', onclick: () => arm('discard', discardChat, renderCoach) }, armed ? '確定放棄？' : '放棄'),
+        el('button', { type: 'button', class: 'btn small primary', disabled: S.busy, 'data-fk': 'review', onclick: review }, '結束並複習'))),
+    el('div', { id: 'msgs', class: 'msgs' }),
+    el('div', { id: 'hints', class: 'hints' }),
+    el('div', { id: 'coach-note', class: 'coach-note', hidden: true }));
+}
+function renderMessages() {
+  const box = $('#msgs'); if (!box || !S.chat) return;
+  const c = S.chat;
+  fill(box, c.turns.map((t, i) => (t.r === 'm' ? meMsg(t, i) : coachMsg(t, c, i))));
+}
+function coachMsg(t, c, i) {
+  const node = el('div', { class: 'msg c' });
+  const bubble = el('div', { class: 'bubble', lang: 'en' });
+  if (t.pending) bubble.append(typing());
+  else if (c.mode === 'zh' && !t.sys) fillZhReply(bubble, t, c, i);
+  else bubble.textContent = t.t;
+  t._el = bubble;
+  node.append(bubble);
+  if (t.cut) node.append(el('p', { class: 'cut', text: '（回覆中斷了）' }));
+  if (t.sys && t.zhNote) node.append(el('p', { class: 'zh', text: t.zhNote }));
+  if (!t.pending && !t.sys && !t.streaming) {
+    // While translating, the button stays focusable (aria-disabled) so keyboard focus is not lost.
+    node.append(el('div', { class: 'msg-acts' },
+      speakBtn(parseCoach(t.raw || t.t).speakText || t.t, 'sm', 'c' + i),
+      S.sampleState === 'ok' || t.zh ? el('button', { type: 'button', class: 'btn ghost small', 'aria-disabled': t.zhBusy ? 'true' : null, 'data-fk': 'zh-' + i, onclick: () => translateTurn(t) }, t.zhBusy ? '翻譯中…' : (t.zh && t.zhOpen ? '收起中文' : '看中文')) : null));
+    if (t.zh && t.zhOpen) node.append(el('p', { class: 'zh', lang: 'zh-Hant-TW', text: t.zh }));
+  }
+  return node;
+}
+function fillZhReply(bubble, t, c, i) {
+  let source = '';
+  for (let j = i - 1; j >= 0; j--) if (c.turns[j].r === 'm') { source = c.turns[j].t; break; }
+  const zhSource = cjkRatio(source) >= 0.3 ? source : '';
+  for (const line of String(t.t || '').split('\n')) {
+    const mm = OPT_RE.exec(line);
+    if (mm) {
+      const key = mm[1].toLowerCase(), en = mm[2].trim();
+      bubble.append(el('div', { class: 'opt' },
+        el('span', { class: 'opt-k', lang: 'zh-Hant-TW', text: OPT_LABEL[key] }),
+        el('span', { class: 'opt-en', text: en }),
+        el('span', { class: 'opt-acts' }, speakBtn(en, 'sm', 'zh' + i), starBtn({ en, zh: zhSource, src: 'zh' }, 'sm', 'zh' + i))));
+    } else if (line.trim()) bubble.append(el('div', { class: 'bl', text: line.trim() }));
+  }
+}
+function meMsg(t, i) {
+  const node = el('div', { class: 'msg m' + (t.ex ? ' ex' : '') }, el('div', { class: 'bubble', lang: isEnglish(t.t) ? 'en' : 'zh-Hant-TW', text: t.t }));
+  if (t.ex) node.append(el('p', { class: 'ex-note', text: '教練無法回應這一句，已略過。' }));
+  else if (t.fx && t.fx.length) {
+    node.append(el('div', { class: 'fixes', lang: 'en' },
+      el('div', { class: 'fix-head', lang: 'zh-Hant-TW', text: '更自然的說法' }),
+      t.fx.map(f => el('div', { class: 'fix-row' },
+        el('div', null,
+          f.you ? el('div', { class: 'fix-you', text: f.you }) : null,
+          el('div', { class: 'fix-better', text: f.better }),
+          f.why ? el('div', { class: 'fix-why', lang: 'zh-Hant-TW', text: f.why }) : null),
+        el('div', { class: 'fix-acts' }, speakBtn(f.better, 'sm', 'fx' + i), starBtn({ en: f.better, note: f.why, src: 'fix' }, 'sm', 'fx'))))));
+  } else if (t.ok) {
+    node.append(el('span', { class: 'ok-badge' }, el('span', { class: 'ico', html: ICON.check }), '說得很自然'));
+  }
+  return node;
+}
+function updateStreaming(t, c) {
+  if (!t._el || !t._el.isConnected) return;
+  if (c.mode === 'zh') { fill(t._el); fillZhReply(t._el, t, c, c.turns.indexOf(t)); }
+  else t._el.textContent = t.t;
+}
+function nearBottom() {
+  const de = document.documentElement;
+  return window.innerHeight + window.scrollY >= de.scrollHeight - 160;
+}
+function scrollToEnd(force) {
+  if (!force && !nearBottom()) return;
+  requestAnimationFrame(() => { if (S.tab === 'coach') window.scrollTo(0, document.documentElement.scrollHeight); });
+}
+function renderHints() {
+  const box = $('#hints'); if (!box) return;
+  if (!S.hints) { fill(box); return; }
+  if (S.hints === 'loading') { fill(box, el('div', { class: 'hint-loading' }, typing(), '想幾個可以回的說法…')); return; }
+  fill(box,
+    el('div', { class: 'hints-head' }, el('span', { text: '可以這樣回：點一下放進輸入框，先唸出來再送出' }), el('button', { type: 'button', class: 'btn ghost small', onclick: () => { S.hints = null; renderHints(); $('#msg-input').focus(); } }, '收起')),
+    S.hints.map((h, i) => el('button', { type: 'button', class: 'hint', lang: 'en', 'data-fk': 'hint-' + i, onclick: () => {
+      const ta = $('#msg-input'); ta.value = h.en; autosize(ta); ta.focus();
+      if (S.settings.autoSpeak) speak(h.en);
+    } }, el('span', { class: 'hint-en', text: h.en }), h.zh ? el('small', { lang: 'zh-Hant-TW', text: h.zh }) : null)));
+}
+// What the chat is waiting for, read from its turns so it survives reloads: an opening, a reply, or a redo of a cut reply.
+function chatNeeds(c) {
+  if (!c) return null;
+  const real = c.turns.filter(t => !t.sys && !t.ex && !t.pending);
+  const last = real[real.length - 1];
+  if (!last) return c.mode === 'zh' ? null : 'open';
+  if (last.r === 'm') return 'reply';
+  if (last.r === 'c' && last.cut) return 'cut';
+  return null;
+}
+function renderCoachNote() {
+  const box = $('#coach-note'); if (!box) return;
+  const c = S.chat;
+  const need = !S.busy && !S.reviewing && S.sampleState === 'ok' ? chatNeeds(c) : null;
+  const msg = S.note
+    || (S.sampleState === 'none' ? '要從 Claude 的連結開啟這個頁面，教練才能回覆。' : null)
+    || (S.sampleState === 'blocked' ? sampleErrMsg({ code: S.blockCode || 'not_granted' }) : null)
+    || (need === 'open' ? '對話還沒開始。' : need === 'reply' ? '教練還沒回覆你的上一句。' : need === 'cut' ? '教練的回覆中斷了。' : null);
+  if (!msg) { box.hidden = true; fill(box); return; }
+  const showRetry = !!need && !(S.note && S.noteNoRetry);
+  box.hidden = false;
+  fill(box, el('span', { text: msg }),
+    showRetry ? el('button', { type: 'button', class: 'btn small', 'data-fk': 'retry', onclick: () => { S.note = null; S.noteNoRetry = false; ask(); } }, need === 'open' ? '請教練開場' : '重新回覆') : null);
+}
+function updateComposer() {
+  const btn = $('#send-btn'), ta = $('#msg-input'), hint = $('#hint-btn');
+  if (!btn) return;
+  const ok = S.sampleState === 'ok' && !!S.chat;
+  if (S.busy) {
+    btn.className = 'send stop'; btn.innerHTML = ICON.stop; btn.setAttribute('aria-label', '停止回覆'); btn.disabled = false;
+  } else {
+    btn.className = 'send'; btn.innerHTML = ICON.send; btn.setAttribute('aria-label', '送出'); btn.disabled = !ok;
+  }
+  ta.disabled = !ok;
+  const zh = !!(S.chat && S.chat.mode === 'zh');
+  hint.disabled = !ok || S.busy || zh;
+  hint.hidden = zh;
+  ta.placeholder = zh ? '打出想說的話，中文也可以…' : '先大聲說，再用聽寫打進來…';
+  $('#composer-tip').hidden = S.tipHidden || lsGet('kaikou:tip') === 'hide';
+  updateScrollPad();
+}
+function sendFromComposer() {
+  const ta = $('#msg-input');
+  const v = ta.value.trim();
+  if (!v) { ta.focus(); return; }
+  if (send(v)) { ta.value = ''; autosize(ta); }
+}
+function autosize(ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 170) + 'px'; }
+function focusInput() { const ta = $('#msg-input'); if (ta && !matchMedia('(pointer: coarse)').matches) ta.focus({ preventScroll: true }); }
+function reviewingView() {
+  const secs = el('span', { class: 'mono', 'aria-hidden': 'true', text: '0' });
+  const timer = setInterval(() => { if (!secs.isConnected) { clearInterval(timer); return; } secs.textContent = String(Math.round((Date.now() - S.reviewStart) / 1000)); }, 1000);
+  return el('section', { class: 'card center' },
+    el('div', { class: 'spinner', 'aria-hidden': 'true' }),
+    el('p', null, '教練正在整理這次的複習，通常要 10–60 秒（已過 ', secs, ' 秒）'),
+    el('button', { type: 'button', class: 'btn', 'data-fk': 'stop-review', onclick: () => { if (S.ctl) S.ctl.abort(); } }, '停止，回到對話'));
+}
+function reviewView(r) {
+  const parts = [
+    el('section', { class: 'card' },
+      el('div', { class: 'eyebrow', text: '這次的複習' }),
+      el('h2', { class: 'card-title mt6', text: r.label }),
+      el('p', { class: 'review-meta mt6', text: r.date.replace(/-/g, '/') + ' · ' + r.minutes + ' 分鐘 · 你說了 ' + r.count + ' 句 · ' + r.level }),
+      r.summary ? el('p', { class: 'mt12', text: r.summary }) : null,
+      r.strengths.length ? el('ul', { class: 'bullets' }, r.strengths.map(s => el('li', { text: s }))) : null),
+  ];
+  if (r.patterns.length) {
+    parts.push(el('section', { class: 'card' },
+      el('h3', { class: 'card-title', text: '要注意的地方' }),
+      el('div', { class: 'mt6' }, r.patterns.map(p => el('div', { class: 'pat' },
+        el('p', { text: p.issue }),
+        p.example ? el('p', { class: 'fix-you', lang: 'en', text: p.example }) : null,
+        p.fix ? el('div', { class: 'phrase-acts' }, el('span', { class: 'fix-better', lang: 'en', text: p.fix }), speakBtn(p.fix, 'sm'), starBtn({ en: p.fix, note: p.issue, src: 'review' }, 'sm', 'rp')) : null)))));
+  }
+  if (r.phrases.length) {
+    parts.push(el('section', { class: 'card' },
+      el('div', { class: 'card-head' },
+        el('h3', { class: 'card-title', text: '值得收藏的說法' }),
+        el('div', { class: 'row-acts' },
+          el('button', { type: 'button', class: 'btn small', 'data-fk': 'save-all', onclick: () => { let n = 0; for (const p of r.phrases) if (addPhrase({ en: p.en, zh: p.zh, example: p.example, src: 'review' })) n++; renderCoach(); renderSavedList(); toast(n ? '已收藏 ' + n + ' 句' : '這些都已經在收藏裡了'); } }, '全部收藏'))),
+      el('div', { class: 'mt6' }, r.phrases.map(p => el('div', { class: 'phrase' },
+        el('div', null,
+          el('div', { class: 'phrase-en', lang: 'en', text: p.en }),
+          p.zh ? el('div', { class: 'phrase-zh', text: p.zh }) : null,
+          p.example ? el('div', { class: 'phrase-ex', lang: 'en', text: p.example }) : null),
+        el('div', { class: 'phrase-acts' }, speakBtn(p.en, 'sm'), starBtn({ en: p.en, zh: p.zh, example: p.example, src: 'review' }, 'sm', 'rv')))))));
+  }
+  parts.push(el('section', { class: 'card' },
+    el('h3', { class: 'card-title', text: '下次可以練' }),
+    el('p', { class: 'mt6', text: r.next || '換一個話題，或用同一個情境再練一次。' }),
+    el('div', { class: 'start-row mt12' },
+      r.next ? el('button', { type: 'button', class: 'btn primary', disabled: S.sampleState !== 'ok', 'data-fk': 'again', onclick: () => { ttsUnlock(); S.setup = { mode: 'free', topic: 'custom', scene: S.setup.scene, custom: r.next.slice(0, 160) }; startSession(Object.assign({}, S.setup)); } }, '用這個建議再練一次') : null,
+      el('button', { type: 'button', class: 'btn', 'data-fk': 'back-menu', onclick: () => { S.review = null; renderCoach(); } }, '回到練習選單'))));
+  return el('div', { class: 'panel' }, parts);
+}
+
+/* ================= rendering: log ================= */
+function renderLog() {
+  const root = $('#log-dyn'); if (!root) return;
+  const tk = todayKey(), m = S.calMonth;
+  if (S.ready && !S.loaded.has(m) && !monthLoads[m]) loadMonth(m).then(() => { if (S.calMonth === m) renderLog(); });
+  if (S.ready && !S.sessLoaded.has(m) && !sessLoads[m]) loadSessions(m).then(() => { if (S.calMonth === m) renderLog(); });
+  const [y, mo] = m.split('-').map(Number);
+  const days = new Date(y, mo, 0).getDate();
+  let practiced = 0, complete = 0, minutes = 0, best = 0, run = 0;
+  for (let i = 1; i <= days; i++) {
+    const r = dayRec(m + '-' + pad(i));
+    const s = status(r);
+    if (s > 0) { practiced++; run++; best = Math.max(best, run); } else run = 0;
+    if (s === 2) complete++;
+    minutes += minutesOf(r);
+  }
+  const isCur = m === tk.slice(0, 7);
+  const prevM = mkey(new Date(y, mo - 2, 1)), nextM = mkey(new Date(y, mo, 1));
+  const nav = el('div', { class: 'month-nav' },
+    iconBtn('left', '上個月', () => { S.calMonth = prevM; renderLog(); }, null, 'm-prev'),
+    el('h2', { class: 'month-title', text: y + ' 年 ' + mo + ' 月' }),
+    el('button', { type: 'button', class: 'icon-btn', 'aria-label': '下個月', title: '下個月', html: ICON.right, disabled: nextM > tk.slice(0, 7), 'data-fk': 'm-next', onclick: () => { S.calMonth = nextM; renderLog(); } }));
+  const stat = (n, label) => el('div', { class: 'stat' }, el('b', { text: String(n) }), el('span', { text: label }));
+  const stats = el('div', { class: 'stats' },
+    stat(practiced, '有練習的天數'), stat(complete, '達標天數'), stat(minutes, '專注分鐘'),
+    isCur ? stat(S.streak, '目前連續天數') : stat(best, '最長連續天數'));
+  const first = new Date(y, mo - 1, 1);
+  const lead = (first.getDay() + 6) % 7;
+  const grid = el('div', { class: 'cal' }, ['一', '二', '三', '四', '五', '六', '日'].map(w => el('div', { class: 'dow', 'aria-hidden': 'true', text: w })));
+  for (let i = 0; i < lead; i++) grid.append(el('div', { class: 'day out', 'aria-hidden': 'true' }));
+  for (let i = 1; i <= days; i++) {
+    const k = m + '-' + pad(i);
+    const s = status(dayRec(k));
+    const fut = k > tk;
+    grid.append(el('button', {
+      type: 'button', class: 'day s' + s + (k === tk ? ' today' : '') + (k === S.viewDate && k !== tk ? ' sel' : '') + (fut ? ' future' : ''),
+      disabled: fut, 'data-fk': 'day-' + k, 'aria-label': mo + '月' + i + '日：' + ['沒有練習', '有練習', '達標'][s] + (fut ? '' : '，點一下看這天'),
+      onclick: () => { S.viewDate = k; switchTab('today'); focusHeading('#today-dyn .date-big'); },
+    }, el('span', { text: String(i) })));
+  }
+  const legend = el('div', { class: 'legend' },
+    el('span', null, el('i', { class: 'lg s2' }), '達標（蓋章）'),
+    el('span', null, el('i', { class: 'lg s1' }), '有練習'),
+    el('span', null, el('i', { class: 'lg s0' }), '沒練習'));
+  const list = (S.sessions[m] || []).slice().sort((a, b) => (b.at || 0) - (a.at || 0));
+  const sess = el('section', { class: 'card' },
+    el('h3', { class: 'card-title', text: 'AI 對話複習紀錄' }),
+    list.length
+      ? el('div', { class: 'mt6' }, list.map(sessionCard))
+      : el('p', { class: 'empty mt6', text: S.ready && !S.sessLoaded.has(m) ? '載入中…' : '這個月還沒有複習紀錄。和教練練完按「結束並複習」，摘要會出現在這裡。' }));
+  fill(root, nav, stats,
+    el('section', { class: 'card' }, grid, legend, el('p', { class: 'help mt12', text: '點日期可以補登那天的紀錄。' })),
+    sess);
+}
+function sessionCard(s) {
+  const str = v => (typeof v === 'string' ? v : '');
+  const pats = Array.isArray(s.patterns) ? s.patterns : [];
+  const phr = Array.isArray(s.phrases) ? s.phrases : [];
+  return el('article', { class: 'sess' },
+    el('div', { class: 'sess-top' },
+      el('span', { class: 'mono', text: str(s.date).slice(5).replace('-', '/') }),
+      el('b', { text: str(s.label) }),
+      el('span', { class: 'tag', text: (Number(s.minutes) || 0) + ' 分鐘 · ' + (Number(s.count) || 0) + ' 句' })),
+    str(s.summary) ? el('p', { class: 'help', text: str(s.summary) }) : null,
+    pats.length || phr.length ? el('details', null,
+      el('summary', null, '看重點與說法'),
+      pats.map(p => el('div', { class: 'pat' },
+        el('p', { text: str(p.issue) }),
+        str(p.fix) ? el('p', { class: 'fix-better', lang: 'en', text: str(p.fix) }) : null)),
+      phr.filter(p => str(p.en)).map(p => el('div', { class: 'phrase' },
+        el('div', null, el('div', { class: 'phrase-en', lang: 'en', text: str(p.en) }), str(p.zh) ? el('div', { class: 'phrase-zh', text: str(p.zh) }) : null),
+        el('div', { class: 'phrase-acts' }, speakBtn(str(p.en), 'sm'), starBtn({ en: str(p.en), zh: str(p.zh), example: str(p.example), src: 'review' }, 'sm', 'ss'))))) : null);
+}
+
+/* ================= rendering: saved ================= */
+function renderStarters() {
+  const box = $('#starters'); if (!box) return;
+  fill(box, el('section', { class: 'card' },
+    el('h2', { class: 'card-title', text: '開口救急包' }),
+    el('p', { class: 'help mt6', text: '卡住的時候，先用這些句子爭取時間、把對話接下去。點星號加入收藏。' }),
+    el('div', { class: 'mt6' }, STARTERS.map(([en, zh, use, say]) => el('div', { class: 'phrase' },
+      el('div', null,
+        el('div', { class: 'phrase-en', lang: 'en', text: en }),
+        el('div', { class: 'phrase-zh' }, zh, el('span', { class: 'use', text: use }))),
+      el('div', { class: 'phrase-acts' }, speakBtn(say || en, 'sm'), starBtn({ en, zh, note: use, src: 'starter' }, 'sm', 'st')))))));
+}
+function renderSavedList() {
+  const box = $('#saved-list'); if (!box) return;
+  const q = String(($('#saved-search') || {}).value || '').trim().toLowerCase();
+  $('#mine-count').textContent = String(S.phrases.length);
+  if (!S.phrases.length) {
+    fill(box, el('p', { class: 'empty', text: S.ready ? '還沒有收藏。在教練的「更自然的說法」、複習或上面的救急包點星號，句子就會出現在這裡。' : '正在載入…' }));
+    return;
+  }
+  const items = S.phrases.filter(p => !q || p.en.toLowerCase().includes(q) || (p.zh || '').toLowerCase().includes(q) || (p.note || '').toLowerCase().includes(q));
+  if (!items.length) { fill(box, el('p', { class: 'empty', text: '找不到符合的句子。' })); return; }
+  fill(box, items.map(p => {
+    const armed = isArmed('del-' + p.id);
+    return el('div', { class: 'phrase' },
+      el('div', null,
+        el('div', { class: 'phrase-en', lang: 'en', text: p.en }),
+        p.zh || p.note ? el('div', { class: 'phrase-zh', text: p.zh || p.note }) : null,
+        p.ex ? el('div', { class: 'phrase-ex', lang: 'en', text: p.ex }) : null),
+      el('div', { class: 'phrase-acts' },
+        speakBtn(p.en, 'sm'),
+        iconBtn('trash', armed ? '再按一次刪除' : '刪除', () => arm('del-' + p.id, () => removePhrase(p.id), renderSavedList), 'sm' + (armed ? ' danger' : ''), 'del-' + p.id)));
+  }));
+}
+function ankiText(items) {
+  const clean = s => String(s || '').replace(/[\t\r\n]+/g, ' ').trim();
+  return items.map(p => clean(p.en) + '\t' + clean(escHtml(p.zh || p.note || '')) + (p.ex ? '<br><i>' + clean(escHtml(p.ex)) + '</i>' : '')).join('\n');
+}
+function copyText(text, host) {
+  const fallback = () => {
+    if (!host) return;
+    host.hidden = false;
+    fill(host, el('p', { class: 'help', text: '無法直接複製，請全選下面的文字後複製：' }),
+      el('textarea', { id: 'copy-fallback-text', class: 'input mono mt6', rows: '6', readonly: true, value: text }));
+    const ta = host.querySelector('textarea'); ta.focus(); ta.select();
+  };
+  try {
+    const p = navigator.clipboard && navigator.clipboard.writeText(text);
+    if (p && typeof p.then === 'function') p.then(() => { if (host) host.hidden = true; toast('已複製 ' + text.split('\n').length + ' 句'); }, fallback);
+    else fallback();
+  } catch (_) { fallback(); }
+}
+
+/* ================= settings dialog ================= */
+function fillVoiceSelect() {
+  const sel = $('#set-voice'); if (!sel) return;
+  const acc = S.settings.accent.toLowerCase();
+  const list = TTS.voices.filter(v => v.lang.replace('_', '-').toLowerCase().startsWith(acc));
+  const use = list.length ? list : TTS.voices;
+  fill(sel, el('option', { value: '' }, '自動選擇'), use.map(v => el('option', { value: v.voiceURI }, v.name + '（' + v.lang + '）')));
+  sel.value = use.some(v => v.voiceURI === S.settings.voiceURI) ? S.settings.voiceURI : '';
+}
+function fillSettings() {
+  const s = S.settings;
+  fill($('#set-level'), ['A2', 'B1', 'B2'].map(k => el('button', { type: 'button', 'aria-pressed': String(s.level === k), 'data-fk': 'slvl-' + k, onclick: () => { s.level = k; saveSettings('level'); fillSettings(); if (S.tab === 'coach') renderCoach(); } }, k + ' ' + LEVELS[k].zh)));
+  $('#set-about').value = s.about;
+  $('#set-auto').checked = !!s.autoSpeak;
+  $('#set-accent').value = s.accent;
+  $('#set-rate').value = String(s.rate);
+  $('#set-rate-out').textContent = Number(s.rate).toFixed(2) + '×';
+  $('#set-voice-field').hidden = !TTS.ok;
+  $('#set-no-voice').hidden = TTS.ok;
+  fillVoiceSelect();
+  $('#set-store').textContent = storeText();
+}
+function bindStatic() {
+  const tabs = $$('.tabs button');
+  for (const b of tabs) b.addEventListener('click', () => switchTab(b.dataset.tab));
+  $('.tabs').addEventListener('keydown', e => {
+    const i = tabs.indexOf(document.activeElement);
+    if (i < 0) return;
+    let j = -1;
+    if (e.key === 'ArrowRight') j = (i + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft') j = (i - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home') j = 0;
+    else if (e.key === 'End') j = tabs.length - 1;
+    if (j < 0) return;
+    e.preventDefault();
+    switchTab(tabs[j].dataset.tab, true);
+    tabs[j].focus();
+  });
+  $('#inbox-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const inp = $('#inbox-input');
+    const v = inp.value.trim();
+    if (!v) return;
+    if (!S.ready) { toast('還在載入，稍等一下'); return; }
+    addInbox(v); inp.value = ''; renderInbox(); toast('記下來了');
+  });
+  const ta = $('#msg-input');
+  ta.addEventListener('input', () => autosize(ta));
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229 && !matchMedia('(pointer: coarse)').matches) {
+      e.preventDefault();
+      if (S.busy || S.reviewing) return; // Enter never stops a reply
+      sendFromComposer();
+    }
+  });
+  $('#send-btn').addEventListener('click', () => {
+    if (S.busy) { if (S.ctl && Date.now() - S.askStartedAt > 700) S.ctl.abort(); return; } // ignore a double tap right after sending
+    sendFromComposer();
+  });
+  $('#hint-btn').addEventListener('click', getHints);
+  $('#tip-close').addEventListener('click', () => { S.tipHidden = true; lsSet('kaikou:tip', 'hide'); $('#composer-tip').hidden = true; updateScrollPad(); });
+  $('#saved-search').addEventListener('input', renderSavedList);
+  $('#copy-anki').addEventListener('click', () => {
+    if (!S.phrases.length) { toast('還沒有收藏可以複製'); return; }
+    copyText(ankiText(S.phrases), $('#copy-fallback'));
+  });
+  const dlg = $('#settings');
+  const closeDlg = () => { try { dlg.close(); } catch (_) { dlg.removeAttribute('open'); } };
+  $('#btn-settings').addEventListener('click', () => {
+    fillSettings();
+    try { dlg.showModal(); } catch (_) { dlg.setAttribute('open', ''); }
+  });
+  $('#settings-form').addEventListener('submit', e => e.preventDefault());
+  $('#set-close').addEventListener('click', closeDlg);
+  $('#set-done').addEventListener('click', closeDlg);
+  $('#set-about').addEventListener('input', e => { S.settings.about = e.target.value.slice(0, 600); saveSettings('about'); });
+  $('#set-auto').addEventListener('change', e => { S.settings.autoSpeak = e.target.checked; saveSettings('autoSpeak'); if (S.tab === 'coach') renderCoach(); });
+  $('#set-accent').addEventListener('change', e => { S.settings.accent = e.target.value; S.settings.voiceURI = ''; saveSettings('accent', 'voiceURI'); fillVoiceSelect(); });
+  $('#set-voice').addEventListener('change', e => { S.settings.voiceURI = e.target.value; saveSettings('voiceURI'); });
+  $('#set-rate').addEventListener('input', e => { S.settings.rate = clamp(Number(e.target.value) || 0.95, 0.6, 1.3); $('#set-rate-out').textContent = S.settings.rate.toFixed(2) + '×'; saveSettings('rate'); });
+  $('#set-test').addEventListener('click', () => { ttsUnlock(); speak('Hi! This is how I will sound when we practise together.'); });
+  if (TTS.ok) {
+    TTS.load();
+    try { speechSynthesis.addEventListener('voiceschanged', () => TTS.load()); } catch (_) { speechSynthesis.onvoiceschanged = () => TTS.load(); }
+  }
+  // The first tap or key anywhere unlocks speech on iOS.
+  const unlock = () => { ttsUnlock(); document.removeEventListener('click', unlock, true); document.removeEventListener('keydown', unlock, true); };
+  document.addEventListener('click', unlock, true);
+  document.addEventListener('keydown', unlock, true);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { Store.flushAll(); return; }
+    renderToday(); refreshStreak();
+    refresh();
+    for (const n of Object.keys(Store.failed)) Store.flush(n);
+  });
+  window.addEventListener('pagehide', () => Store.flushAll());
+  // A desktop window can stay visible while you practise on the phone; coming back to it re-reads (throttled).
+  window.addEventListener('focus', () => refresh());
+  window.addEventListener('scroll', placeToast, { passive: true });
+  window.addEventListener('resize', placeToast);
+  try { new ResizeObserver(updateScrollPad).observe($('#composer')); } catch (_) { window.addEventListener('resize', updateScrollPad); }
+}
+
+/* ================= load / refresh ================= */
+// A chat that already has a stored review is finished, even if its "ended" marker never got written.
+function isReviewed(id) {
+  for (const list of Object.values(S.sessions)) if ((list || []).some(s => s.id === id)) return true;
+  return false;
+}
+function applyChat(d) {
+  if (S.busy || S.reviewing) return;
+  if (d && d.active === false) {
+    if (d.endedId) { S.endedChats.add(String(d.endedId)); if (S.chat && S.chat.id === d.endedId) S.chat = null; }
+    return;
+  }
+  const c = normChat(d);
+  if (!c || S.endedChats.has(c.id) || isReviewed(c.id)) return;
+  if (!S.chat || c.updatedAt > S.chat.updatedAt) S.chat = c;
+}
+function applyDoc(name, d, raced) {
+  if (name === 'settings') S.settings = pickSettings(d);
+  else if (name === 'phrases') S.phrases = normPhrases(d);
+  else if (name === 'inbox') S.inbox = normInbox(d);
+  else if (name === 'chat') applyChat(d);
+  else if (name.startsWith('log-')) applyLog(name.slice(4), d, !!raced);
+  else if (name.startsWith('sessions-')) { const m = name.slice(9); S.sessions[m] = unionById(normSessions(d), S.sessions[m]); S.sessLoaded.add(m); }
+}
+// Sessions are applied before the chat, so a chat that was already reviewed is recognised.
+const APPLY_ORDER = n => (n.startsWith('sessions-') ? 0 : n === 'chat' ? 2 : 1);
+async function loadAll() {
+  const now = new Date();
+  const months = [0, 1, 2].map(i => mkey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
+  const names = ['sessions-' + months[0], 'sessions-' + months[1], 'settings', 'phrases', 'inbox', 'chat'].concat(months.map(m => 'log-' + m));
+  const res = await Promise.all(names.map(n => Store.get(n).then(v => ({ ok: true, v }), () => ({ ok: false }))));
+  names.forEach((n, i) => {
+    if (res[i].ok) { applyDoc(n, res[i].v, false); S.loadErrors.delete(n); return; }
+    S.loadErrors.add(n);
+    if (n.startsWith('log-')) S.loaded.add(n.slice(4));
+    if (n.startsWith('sessions-')) { const m = n.slice(9); S.sessions[m] = S.sessions[m] || []; S.sessLoaded.add(m); }
+  });
+}
+/* Re-read documents. A response is applied as fetched only if nothing was written to that document while
+   it was in flight. Otherwise it is dropped and read again next time, except for a log or sessions month
+   that never loaded, which is merged with the local edits so it does not stay missing. */
+async function reloadDocs(names) {
+  const list = names.filter(n => !Store.busyDoc(n) || S.loadErrors.has(n)).sort((a, b) => APPLY_ORDER(a) - APPLY_ORDER(b));
+  const marks = Object.fromEntries(list.map(n => [n, Store.edits[n] || 0]));
+  const busyAtIssue = Object.fromEntries(list.map(n => [n, Store.busyDoc(n)]));
+  const chatBusyAtIssue = S.busy || S.reviewing;
+  const res = await Promise.all(list.map(n => Store.get(n).then(v => ({ ok: true, v }), () => ({ ok: false }))));
+  list.forEach((n, i) => {
+    if (!res[i].ok) { S.loadErrors.add(n); return; }
+    const raced = busyAtIssue[n] || (Store.edits[n] || 0) !== marks[n] || Store.busyDoc(n);
+    if (!raced) {
+      if (n === 'chat' && chatBusyAtIssue) return;
+      applyDoc(n, res[i].v, false);
+      S.loadErrors.delete(n);
+    } else if (S.loadErrors.has(n) && (n.startsWith('log-') || n.startsWith('sessions-'))) {
+      applyDoc(n, res[i].v, true);
+      S.loadErrors.delete(n);
+    }
+  });
+  updateSync();
+}
+let lastRefresh = 0, refreshing = false;
+async function refresh() {
+  if (!S.ready || refreshing || Store.mode !== 'db' || Date.now() - lastRefresh < 15000) return;
+  lastRefresh = Date.now();
+  refreshing = true;
+  try {
+    const now = new Date();
+    const m = mkey(now), prev = mkey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+    const names = new Set(['settings', 'phrases', 'inbox', 'chat', 'log-' + m, 'sessions-' + m]);
+    if (S.loaded.has(prev)) names.add('log-' + prev);
+    for (const n of S.loadErrors) names.add(n);
+    await reloadDocs([...names]);
+    S.streak = await settleStreak();
+  } finally { refreshing = false; }
+  if (S.tab === 'coach' && (S.busy || S.reviewing)) { renderToday(); renderLog(); return; }
+  renderAll();
+}
+function scheduleMidnight() {
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 2);
+  setTimeout(() => { renderToday(); renderLog(); refreshStreak(); scheduleMidnight(); }, Math.max(1000, next - now));
+}
+
+/* ================= boot ================= */
+async function boot(data) {
+  if (S.booted) return;
+  S.booted = true;
+  try { document.documentElement.lang = 'zh-Hant-TW'; } catch (_) { /* ignore */ }
+  S.tipHidden = lsGet('kaikou:tip') === 'hide';
+  const hashTab = String(location.hash || '').replace('#', '');
+  S.tab = ['today', 'coach', 'log', 'saved'].includes(data && data.tab) ? data.tab : (['today', 'coach', 'log', 'saved'].includes(hashTab) ? hashTab : 'today');
+  bindStatic();
+  switchTab(S.tab, true);
+  renderAll();
+  const c = window.claude;
+  if (c && typeof c.use === 'function') {
+    c.use('sample').then(fn => { S.sample = fn || null; S.sampleState = fn ? 'ok' : 'none'; renderCoach(); renderInbox(); updateStartBtn(); }, () => { S.sampleState = 'none'; renderCoach(); });
+  } else { S.sampleState = 'none'; }
+  await Store.init();
+  await loadAll();
+  S.ready = true;
+  updateSync();
+  S.streak = await settleStreak();
+  renderAll();
+  scheduleMidnight();
+  setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 180000);
+  if (data && data.draft) { const ta = $('#msg-input'); if (ta) { ta.value = data.draft; autosize(ta); } }
+  if (S.tab === 'coach' && S.chat) scrollToEnd(true);
+}
+if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed };
+
+const hot = window.claude && window.claude.hot;
+try { if (hot && typeof hot.snapshot === 'function') hot.snapshot(() => ({ tab: S.tab, draft: ($('#msg-input') || {}).value || '' })); } catch (_) { /* optional */ }
+const start = d => { boot(d || {}).catch(err => { console.error(err); setSync('error'); }); };
+if (hot && typeof hot.ready === 'function') {
+  try { hot.ready(start); } catch (_) { start({}); }
+  setTimeout(() => start({}), 1500);
+} else {
+  start((hot && hot.data) || {});
+}
+})();
+</script>

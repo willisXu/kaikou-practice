@@ -1,0 +1,12 @@
+# 本機筆記（含私人的 Claude 連結，不進版控）
+使用說明.txt
+
+# 測試輸出
+test/shots/
+test/*.html
+node_modules/
+
+# 系統檔
+Thumbs.db
+desktop.ini
+.DS_Store

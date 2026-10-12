@@ -1,0 +1,11 @@
+{
+  "name": "kaikou-practice",
+  "private": true,
+  "description": "開口練習室：英文口說練習的網頁 App（每日菜單打卡、AI 對話教練、紀錄與收藏）",
+  "scripts": {
+    "test": "node test/run.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}
