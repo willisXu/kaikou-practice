@@ -43,7 +43,9 @@ const eq = (actual, expected) => assert.deepStrictEqual(actual, expected);
   async function addPage(ctx, file, tag, init) {
     const page = await ctx.newPage();
     await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
-    page.on('console', m => { if (m.type() === 'error' && !/ERR_FAILED|net::/.test(m.text())) errors.push('[' + tag + '] console: ' + m.text()); });
+    // The browser logs the deliberate 401 of the API key scenario as an error; anything else counts.
+    const expected = t => /ERR_FAILED|net::/.test(t) || (/^apikey/.test(tag) && /status of 401/.test(t));
+    page.on('console', m => { if (m.type() === 'error' && !expected(m.text())) errors.push('[' + tag + '] console: ' + m.text()); });
     page.on('pageerror', e => errors.push('[' + tag + '] pageerror: ' + e.message));
     await page.addInitScript(c => { window.__kaikouTest = true; if (c) window.__mockCfg = c; }, init || null);
     await page.goto('file://' + file);
@@ -183,8 +185,8 @@ const eq = (actual, expected) => assert.deepStrictEqual(actual, expected);
     await page.click('.mode:nth-child(2)');
     await shot(page, '8-coach-start-desk-dark.png', true);
     await page.click('#btn-settings');
-    const dlg = await page.evaluate(() => ({ open: document.querySelector('#settings').open, clear: document.querySelector('#set-clear').hidden }));
-    check('放棄對話回到選單；設定可開啟，雲端模式不顯示清除按鈕', () => eq(dlg, { open: true, clear: true }));
+    const dlg = await page.evaluate(() => ({ open: document.querySelector('#settings').open, clear: document.querySelector('#set-clear').hidden, key: document.querySelector('#set-api-field').hidden }));
+    check('放棄對話回到選單；設定可開啟，雲端模式不顯示清除按鈕，也不顯示 API 金鑰欄位', () => eq(dlg, { open: true, clear: true, key: true }));
     await shot(page, '9-settings-desk-dark.png');
   }
 
@@ -211,8 +213,170 @@ const eq = (actual, expected) => assert.deepStrictEqual(actual, expected);
     const stored = await page.evaluate(() => { const k = window.__kaikouTest.S.lastToday; return JSON.parse(localStorage.getItem('kaikou:log-' + k.slice(0, 7))).days[k].items; });
     check('網頁版：同一個瀏覽器開兩個分頁不會互相蓋掉', () => eq(stored, { ai: true, listen: true }));
     await page.click('#btn-settings');
-    const clear = await page.evaluate(() => !document.querySelector('#set-clear').hidden);
-    check('網頁版：設定裡有清除資料的按鈕', () => eq(clear, true));
+    await page.locator('#set-api-field').scrollIntoViewIfNeeded();
+    const sett = await page.evaluate(() => {
+      const d = document.querySelector('#settings'), f = document.querySelector('#set-api-field');
+      return { clear: !document.querySelector('#set-clear').hidden, key: !f.hidden, wide: d.scrollWidth > d.clientWidth || f.getBoundingClientRect().right > window.innerWidth };
+    });
+    check('網頁版：設定裡有清除資料的按鈕與 API 金鑰欄位，手機上不超出畫面', () => eq(sett, { clear: true, key: true, wide: false }));
+    await shot(page, '10b-pages-settings-phone.png');
+    await ctx.close();
+  }
+
+  // ---------- 3b. GitHub Pages with the viewer's own Claude API key ----------
+  {
+    // A made-up key: api.anthropic.com is answered by the route below, nothing leaves the test.
+    const KEY = 'sk-ant-api03-' + 'TESTONLY'.repeat(6) + '-AA';
+    const REVIEW = { summary: '今天說得很順。', strengths: ['敢開口'], patterns: [{ issue: '過去式', example: 'I go to park yesterday', fix: 'I went to the park yesterday' }], phrases: [{ en: 'We had a picnic', zh: '我們去野餐', example: 'We had a picnic by the river.' }], next: '再聊一次週末' };
+    const sse = text => {
+      const ev = (type, data) => 'event: ' + type + '\ndata: ' + JSON.stringify(Object.assign({ type }, data)) + '\n\n';
+      return ev('message_start', { message: { id: 'msg_test', type: 'message', role: 'assistant', content: [], stop_reason: null } })
+        + ev('content_block_start', { index: 0, content_block: { type: 'text', text: '' } })
+        + ev('ping', {})
+        + (text.match(/[\s\S]{1,9}/g) || []).map(t => ev('content_block_delta', { index: 0, delta: { type: 'text_delta', text: t } })).join('')
+        + ev('content_block_stop', { index: 0 })
+        + ev('message_delta', { delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 12 } })
+        + ev('message_stop', {});
+    };
+    const api = { calls: [], fail: null };
+    const { ctx, page } = await open(PAGES + '#coach', { viewport: { width: 1000, height: 800 }, colorScheme: 'light' }, 'apikey');
+    await page.route('https://api.anthropic.com/v1/messages', route => {
+      const req = route.request(), h = req.headers();
+      let body = {};
+      try { body = JSON.parse(req.postData() || '{}'); } catch (_) { body = {}; }
+      const msgs = body.messages || [];
+      const last = String((msgs[msgs.length - 1] || {}).content || '');
+      api.calls.push({ key: h['x-api-key'], direct: h['anthropic-dangerous-direct-browser-access'], version: h['anthropic-version'], model: body.model, max: body.max_tokens, stream: body.stream, roles: msgs.map(m => m.role[0]).join('') });
+      const cors = { 'access-control-allow-origin': '*' };
+      if (api.fail) return route.fulfill({ status: api.fail.status, headers: cors, contentType: 'application/json', body: JSON.stringify({ type: 'error', error: api.fail.error }) });
+      const text = /^Review this English speaking practice session/.test(last) ? JSON.stringify(REVIEW)
+        : msgs.length === 1 ? 'Hi! What did you do last weekend?\n###\n{"none": true}'
+        : last === 'I go to park yesterday' ? 'Nice! Which park did you go to?\n###\n{"you": "I go to park yesterday", "better": "I went to the park yesterday", "why": "過去式"}'
+        : 'That sounds lovely. Tell me more!\n###\n{"none": true}';
+      return route.fulfill({ status: 200, headers: Object.assign({ 'content-type': 'text/event-stream; charset=utf-8' }, cors), body: sse(text) });
+    });
+    const toastText = () => page.evaluate(() => document.querySelector('#toast').textContent);
+    const say = async t => { await page.fill('#msg-input', t); await page.click('#send-btn'); await notBusy(page); };
+
+    // No key yet: the coach explains and leads to 設定.
+    const before = await page.evaluate(() => ({ title: (document.querySelector('#coach-dyn .card-title') || {}).textContent, btn: !!document.querySelector('[data-fk="open-key"]') }));
+    await shot(page, '11-pages-no-key.png');
+    await page.click('[data-fk="open-key"]');
+    await until(page, () => document.activeElement && document.activeElement.id === 'set-api-key', null, 3000);
+    const empty = await page.evaluate(() => ({ field: !document.querySelector('#set-api-field').hidden, state: document.querySelector('#set-api-state').textContent, remove: !document.querySelector('#set-api-clear').hidden }));
+    await page.fill('#set-api-key', 'sk-ant-usr-not-an-api-key-1234567890');
+    await page.click('#set-api-save');
+    const wrong = { toast: await toastText(), stored: await page.evaluate(() => localStorage.getItem('kaikou:api-key')) };
+    await page.fill('#set-api-key', KEY);
+    await page.press('#set-api-key', 'Enter');
+    await until(page, () => !!localStorage.getItem('kaikou:api-key'), null, 3000);
+    const saved = await page.evaluate(() => ({ input: document.querySelector('#set-api-key').value, state: document.querySelector('#set-api-state').textContent, remove: !document.querySelector('#set-api-clear').hidden, toast: document.querySelector('#toast').textContent }));
+    await shot(page, '12-pages-api-key.png');
+    check('網頁版金鑰：沒有金鑰時引導到設定，格式不對的不存，存好後只顯示結尾', () => {
+      eq(before, { title: 'AI 教練需要 Claude', btn: true });
+      eq(empty, { field: true, state: '還沒有儲存金鑰。', remove: false });
+      eq([/不是 Claude API 金鑰/.test(wrong.toast), wrong.stored], [true, null]);
+      eq(saved, { input: '', state: '已儲存一把金鑰（結尾 ' + KEY.slice(-4) + '），AI 教練會用它回覆。', remove: true, toast: '已儲存金鑰' });
+    });
+
+    // The coach now answers through the API: opener, a correction, more turns, then the review.
+    await page.click('#set-done');
+    await until(page, () => { const b = document.querySelector('#start-btn'); return !!b && !b.disabled; }, null, 3000);
+    await page.click('#start-btn');
+    await notBusy(page);
+    await say('I go to park yesterday');
+    await say('We ate sandwiches');
+    await say('It was sunny and warm');
+    const talk = await page.evaluate(() => {
+      const c = window.__kaikouTest.S.chat;
+      const me = c.turns.find(t => t.r === 'm');
+      return { opener: c.turns[0].t, fix: (me.fx || []).map(f => f.better), reply: c.turns[c.turns.indexOf(me) + 1].t, count: c.meCount };
+    });
+    await page.click('[data-fk="review"]');
+    await until(page, () => !!window.__kaikouTest.S.review && !window.__kaikouTest.S.reviewing, null, 10000);
+    await shot(page, '13-pages-api-review.png');
+    const rv = await page.evaluate(() => {
+      const S = window.__kaikouTest.S;
+      const holders = Object.keys(localStorage).filter(k => (localStorage.getItem(k) || '').includes('TESTONLY'));
+      return { summary: S.review.summary, phrases: S.review.phrases.map(p => p.en), holders };
+    });
+    check('網頁版金鑰：教練經由 Claude API 串流回覆、給更正，也能結束並複習', () => {
+      eq(talk, { opener: 'Hi! What did you do last weekend?', fix: ['I went to the park yesterday'], reply: 'Nice! Which park did you go to?', count: 3 });
+      eq(rv, { summary: '今天說得很順。', phrases: ['We had a picnic'], holders: ['kaikou:api-key'] });
+    });
+    check('網頁版金鑰：請求帶金鑰與瀏覽器標頭，對話用 Haiku、複習用 Sonnet，角色輪流', () => {
+      eq(api.calls.length, 5);
+      for (const c of api.calls) eq([c.key, c.direct, c.version, c.stream], [KEY, 'true', '2023-06-01', true]);
+      eq(api.calls.map(c => c.model + ':' + c.max), ['claude-haiku-5-5:2048', 'claude-haiku-5-5:2048', 'claude-haiku-5-5:2048', 'claude-haiku-5-5:2048', 'claude-sonnet-5-5:4096']);
+      eq(api.calls.map(c => c.roles), ['u', 'uau', 'uauau', 'uauauau', 'u']);
+    });
+
+    // A rejected key: a clear message, no retry, a way to 設定; a new key brings the coach back.
+    await page.click('[data-fk="back-menu"]');
+    await until(page, () => !window.__kaikouTest.S.unsavedReview, null, 6000);
+    api.fail = { status: 401, error: { type: 'authentication_error', message: 'invalid x-api-key' } };
+    await page.click('#start-btn');
+    await notBusy(page);
+    const bad = await page.evaluate(() => ({ note: document.querySelector('#coach-note').textContent, retry: !!document.querySelector('#coach-note [data-fk="retry"]'), toKey: !!document.querySelector('#coach-note [data-fk="note-key"]') }));
+    await shot(page, '14-pages-key-invalid.png');
+    api.fail = null;
+    await page.click('#coach-note [data-fk="note-key"]');
+    await until(page, () => document.activeElement && document.activeElement.id === 'set-api-key', null, 3000);
+    await page.fill('#set-api-key', KEY);
+    await page.click('#set-api-save');
+    await page.click('#set-done');
+    await until(page, () => !!document.querySelector('#coach-note [data-fk="retry"]'), null, 3000);
+    const again = await page.evaluate(() => document.querySelector('#coach-note').textContent);
+    await page.click('#coach-note [data-fk="retry"]');
+    await notBusy(page);
+    const back = await page.evaluate(() => { const c = window.__kaikouTest.S.chat; return c.turns.length && c.turns[0].t; });
+    check('網頁版金鑰：金鑰無效時說明清楚、不提供重送；換一把之後可以請教練開場', () => {
+      eq([bad.note.startsWith('Claude API 金鑰無效或已停用，請到設定重新輸入。'), bad.retry, bad.toKey], [true, false, true]);
+      eq(again.startsWith('對話還沒開始。'), true);
+      eq(back, 'Hi! What did you do last weekend?');
+    });
+
+    // Error codes from the API and the joined turns.
+    const unit = await page.evaluate(() => {
+      const T = window.__kaikouTest;
+      const e = (s, type, message) => T.apiError(s, { type: 'error', error: { type, message: message || '' } }).code;
+      return {
+        codes: [e(401, 'authentication_error'), e(400, 'invalid_request_error', 'Your credit balance is too low to access the Anthropic API.'), e(404, 'not_found_error', 'model: x'), e(529, 'overloaded_error'), e(429, 'rate_limit_error'), e(413, 'request_too_large'), e(400, 'invalid_request_error', 'messages: bad'), T.apiError(500, null).code, e(0, 'overloaded_error')],
+        joined: T.apiMessages([{ role: 'user', content: 'a' }, { role: 'user', content: 'b' }, { role: 'assistant', content: 'c' }, { role: 'user', content: 'd' }]),
+      };
+    });
+    check('網頁版金鑰：API 錯誤對應到中文說明，同一方連續的話合併成一則', () => {
+      eq(unit.codes, ['key_invalid', 'no_credit', 'model_missing', 'overloaded', 'rate_limited', 'prompt_too_large', 'invalid_request', 'upstream_error', 'overloaded']);
+      eq(unit.joined, [{ role: 'user', content: 'a\n\nb' }, { role: 'assistant', content: 'c' }, { role: 'user', content: 'd' }]);
+    });
+
+    // Clearing the practice data in this browser keeps the key, which has its own button.
+    await page.click('#btn-settings');
+    await page.click('#set-clear');
+    await Promise.all([page.waitForEvent('load'), page.click('#set-clear')]);
+    await page.waitForFunction(() => window.__kaikouTest && window.__kaikouTest.S && window.__kaikouTest.S.ready, null, { timeout: 10000 });
+    const cleared = await page.evaluate(() => ({
+      key: localStorage.getItem('kaikou:api-key') !== null,
+      practice: Object.keys(localStorage).filter(k => k === 'kaikou:chat' || k.startsWith('kaikou:sessions-')),
+      state: window.__kaikouTest.S.sampleState,
+    }));
+    check('網頁版金鑰：清除這個瀏覽器的練習資料時，金鑰留著', () => eq(cleared, { key: true, practice: [], state: 'ok' }));
+
+    // Removing the key turns the coach off again; another tab notices at once.
+    const page2 = await addPage(ctx, PAGES + '#coach', 'apikey-2');
+    const tab2Before = await page2.evaluate(() => window.__kaikouTest.S.sampleState);
+    await page.click('#btn-settings');
+    await page.click('#set-api-clear');
+    await page.click('#set-api-clear');
+    await until(page, () => !localStorage.getItem('kaikou:api-key'), null, 3000);
+    await until(page2, () => window.__kaikouTest.S.sampleState === 'none', null, 3000);
+    const off = await page.evaluate(() => ({ state: window.__kaikouTest.S.sampleState, openKey: !!document.querySelector('#coach-dyn [data-fk="open-key"]'), toast: document.querySelector('#toast').textContent, text: document.querySelector('#set-api-state').textContent, remove: !document.querySelector('#set-api-clear').hidden }));
+    const off2 = await page2.evaluate(() => !!document.querySelector('#coach-dyn [data-fk="open-key"]'));
+    check('網頁版金鑰：移除後教練停用，另一個分頁也立刻跟著停用', () => {
+      eq(tab2Before, 'ok');
+      eq(off, { state: 'none', openKey: true, toast: '已移除金鑰', text: '還沒有儲存金鑰。', remove: false });
+      eq(off2, true);
+    });
     await ctx.close();
   }
 

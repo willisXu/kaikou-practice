@@ -13,7 +13,7 @@
 
 | | 在 Claude 裡開啟（完整版） | GitHub Pages 或直接開檔案 |
 | --- | --- | --- |
-| AI 教練 | 可以用（用自己的 Claude 帳號，第一次使用會詢問是否允許） | 不能用 |
+| AI 教練 | 可以用（用自己的 Claude 帳號，第一次使用會詢問是否允許） | 在設定輸入自己的 Claude API 金鑰後可以用（用量算在 API 帳單），見下一節 |
 | 資料存放 | Claude 雲端，只有自己看得到，手機和電腦會同步 | 這個瀏覽器的 localStorage，不會同步；設定裡可以清除 |
 | 今日、紀錄、收藏 | 可以用 | 可以用 |
 
@@ -23,11 +23,25 @@
 
 頁面本身不收音，用系統的語音輸入練「說」：Windows 按 <kbd>Win</kbd> + <kbd>H</kbd>；手機把鍵盤切到英文、點麥克風。先大聲說，再送出。
 
+## 在網頁版用 AI 教練（自己的 Claude API 金鑰）
+
+1. 到 [Claude Console](https://platform.claude.com) 登入，先在 Settings → Billing 儲值，再到 Settings → API keys 按 Create key。金鑰只會顯示一次，開頭是 `sk-ant-api`。
+2. 打開 GitHub Pages 網址，按右上角的設定，在「Claude API 金鑰」貼上、按「儲存」。
+3. 回到「教練」分頁開始對話。
+
+- **費用**：對話、提示、翻譯用 Claude Haiku 5.5（`claude-haiku-5-5`），「結束並複習」用 Claude Sonnet 5.5（`claude-sonnet-5-5`），依實際用量計費。可以在 Claude Console 設定花費上限。
+- **安全**：金鑰只存在這個瀏覽器（localStorage 的 `kaikou:api-key`），只送到 `api.anthropic.com`，不會存進雲端資料或 git。畫面上只顯示最後 4 碼。金鑰在瀏覽器裡，就可能被這個網域的其他頁面讀到：`willisxu.github.io` 底下的其他 GitHub Pages 專案和這個頁面共用同一份 localStorage。所以只在自己的裝置存，公用電腦不要存。
+- **外流時**：到 Console 的 API keys 停用或刪除那把金鑰，再建一把新的。
+- 「清除這個瀏覽器裡的練習資料」不會刪掉金鑰；要刪金鑰，按設定裡的「移除金鑰」。
+- 在 Claude 裡開啟時不需要金鑰，設定裡也不會出現這個欄位（Claude 裡的頁面不能連到外部網站）。
+
 ## 程式重點（給維護的人）
 
 **一個檔案、兩個地方用**：`docs/index.html` 是完整的 HTML 文件，GitHub Pages 和直接開檔都用它。Claude 的 Artifact 會自己包上 `<!doctype>`、`<html>`、`<head>`、`<body>`，所以發佈到 Claude 時要用 `tools/artifact.js` 轉成頁面片段（`npm run artifact -- 輸出檔`），拿掉這幾層外框，其餘內容不變。
 
 **平台介面**：在 Claude 裡用 `window.claude.use('db' | 'sample' | 'user')` 取得資料庫、AI 與使用者 id；`window.claude.hot` 用來在頁面更新時保留目前的分頁與草稿。沒有 `window.claude` 時改用 localStorage（鍵名 `kaikou:<文件名>`）；連 localStorage 都不能用時只存在記憶體，畫面會提醒。
+
+**網頁版的 AI**：沒有 `window.claude`、但存了 API 金鑰時，`apiSample()` 取代 `sample()`，介面相同（回傳 `{ text, truncated }`、`onText` 串流、`signal` 停止）。它直接呼叫 Messages API（`stream: true`，標頭 `x-api-key`、`anthropic-version: 2023-06-01`、`anthropic-dangerous-direct-browser-access: true`），把同一方連續的話合併成一則。錯誤對應：401／403 → 金鑰無效，額度不足 → 請儲值，404 → 模型已停用，429 → 用量上限，529 → 太忙，這些都會顯示中文說明；金鑰、額度與模型的問題不提供「重新回覆」。模型名稱在 `API_MODELS`，模型停用時改這裡。
 
 **資料**（每位使用者自己的 `data/users/<id>/` 底下）
 
@@ -50,6 +64,7 @@
 
 - 在 Claude 裡（`test/mock.js` 模擬 `window.claude`，包含資料庫的合併規則與大小限制）：打卡蓋章、對話與更正、提示、翻譯、結束並複習、紀錄、收藏、問教練、放棄對話、設定。
 - GitHub Pages：直接打開 `docs/index.html`，用手機模擬，確認一次只顯示一個分頁、沒有左右捲動，同一個瀏覽器開兩個分頁不會互相蓋掉。
+- GitHub Pages 加 API 金鑰：用 `page.route` 模擬 `api.anthropic.com`（串流回覆與 401），金鑰是測試用的假字串，不會連到真的 API。檢查設定欄位、請求標頭與模型、對話與複習、金鑰無效的說明、清除練習資料時保留金鑰、移除金鑰後另一個分頁也停用。
 - 失敗情況：寫入失敗後自動重試、沒有寫入權限時改存瀏覽器（以及之後再存回雲端）、同步中途停止後下次上傳、被拒絕的句子、停止回覆、雲端空間已滿。
 
 ```

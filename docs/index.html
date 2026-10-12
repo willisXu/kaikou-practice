@@ -307,7 +307,7 @@ dialog::backdrop{background:var(--scrim,rgba(0,0,0,.5))}
 .sheet-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .row>label{min-width:3em;font-size:14px;font-weight:700;color:var(--muted)}
-.row select{flex:1;min-width:0}
+.row select,.row .input{flex:1;min-width:0;width:auto}
 .switch{display:flex;align-items:center;gap:10px;font-size:15px;cursor:pointer}
 .switch input{width:20px;height:20px;accent-color:var(--accent)}
 input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
@@ -423,6 +423,13 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
       <div class="row"><label for="set-rate">語速</label><input type="range" id="set-rate" min="0.7" max="1.2" step="0.05"><output id="set-rate-out" class="mono" for="set-rate"></output><button type="button" id="set-test" class="btn small">試聽</button></div>
     </div>
     <p id="set-no-voice" class="help" hidden>這個瀏覽器不支援朗讀。</p>
+    <div class="field" id="set-api-field" hidden>
+      <label class="label" for="set-api-key">Claude API 金鑰</label>
+      <p class="help">填了之後，這個網頁也能用 AI 教練。金鑰只存在這個瀏覽器，只會送到 Anthropic 的 API；用量算在你的 Claude API 帳單。公用電腦不要存。</p>
+      <div class="row"><input id="set-api-key" class="input" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-api03-…" aria-describedby="set-api-state"><button type="button" id="set-api-save" class="btn small">儲存</button></div>
+      <p id="set-api-state" class="help"></p>
+      <div><button type="button" id="set-api-clear" class="btn small" hidden>移除金鑰</button></div>
+    </div>
     <div class="field">
       <span class="label">資料存放</span>
       <p id="set-store" class="help"></p>
@@ -606,7 +613,7 @@ const OPT_RE = /^\s*(casual|neutral|work|final)\s*[:：]\s*(.+)$/i;
 // Codes after which the chat cannot continue in this view at all.
 const BLOCK_CODES = ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'];
 // Codes where sending the same input again would not help.
-const NO_RETRY_CODES = ['refused', 'prompt_too_large', 'empty_completion', 'invalid_request', 'transform_error'];
+const NO_RETRY_CODES = ['refused', 'prompt_too_large', 'empty_completion', 'invalid_request', 'transform_error', 'key_invalid', 'key_missing', 'no_credit', 'model_missing'];
 
 /* ================= state ================= */
 const S = {
@@ -1312,8 +1319,115 @@ async function askJson(prompt, opts) {
   if (v === undefined) throw { code: 'invalid_json', message: 'no JSON in reply', text: r.text };
   return v;
 }
+/* ================= Claude API with the viewer's own key (GitHub Pages / a local file only) ================= */
+// Inside Claude the coach uses the viewer's Claude account through sample(). Elsewhere the viewer may enter their
+// own Claude API key in 設定: it is kept only in this browser (localStorage) and sent only to api.anthropic.com.
+const API_URL = 'https://api.anthropic.com/v1/messages';
+const API_MODELS = { quick: 'claude-haiku-5-5', default: 'claude-sonnet-5-5' };
+const API_KEY_LS = 'kaikou:api-key';
+const apiKey = () => String(lsGet(API_KEY_LS) || '').trim();
+// The same turn rules as sample(); consecutive turns of one role are joined into one message.
+function apiMessages(input) {
+  const out = [];
+  for (const t of (typeof input === 'string' ? [{ role: 'user', content: input }] : input)) {
+    const role = t.role === 'assistant' ? 'assistant' : 'user';
+    const last = out[out.length - 1];
+    if (last && last.role === role) last.content += '\n\n' + String(t.content || '');
+    else out.push({ role, content: String(t.content || '') });
+  }
+  return out;
+}
+function apiError(status, body) {
+  const type = (body && body.error && body.error.type) || '';
+  const message = String((body && body.error && body.error.message) || '');
+  if (status === 401 || status === 403 || type === 'authentication_error' || type === 'permission_error') return { code: 'key_invalid', message };
+  if (/credit balance|billing/i.test(message)) return { code: 'no_credit', message };
+  if (status === 413 || /prompt is too long|too many tokens/i.test(message)) return { code: 'prompt_too_large', message };
+  if (status === 429 || type === 'rate_limit_error') return { code: 'rate_limited', message };
+  if (status === 529 || type === 'overloaded_error') return { code: 'overloaded', message };
+  if (status === 404 || type === 'not_found_error') return { code: 'model_missing', message }; // a retired model id
+  if (status === 400 || type === 'invalid_request_error') return { code: 'invalid_request', message };
+  return { code: 'upstream_error', message };
+}
+// Same contract as sample(): resolves { text, truncated }, streams through onText({ text }), rejects { code, text? }.
+async function apiSample(input, opts) {
+  opts = opts || {};
+  const key = apiKey();
+  if (!key) throw { code: 'key_missing', message: 'no key' };
+  const tier = opts.modelTier === 'default' ? 'default' : 'quick';
+  let res;
+  try {
+    res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: API_MODELS[tier], max_tokens: tier === 'default' ? 4096 : 2048, stream: true, messages: apiMessages(input) }),
+      signal: opts.signal,
+    });
+  } catch (e) {
+    throw e && e.name === 'AbortError' ? { code: 'cancelled', message: 'aborted' } : { code: 'upstream_error', message: 'network' };
+  }
+  if (!res.ok) {
+    let body = null;
+    try { body = await res.json(); } catch (_) { body = null; }
+    throw apiError(res.status, body);
+  }
+  // Server-sent events: content_block_delta carries the text, message_delta the stop reason.
+  let text = '', stop = '', buf = '';
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true }).replace(/\r/g, ''); // events end with a blank line (LF or CRLF)
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, i); buf = buf.slice(i + 2);
+        const data = block.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).join('');
+        if (!data) continue;
+        let ev;
+        try { ev = JSON.parse(data); } catch (_) { continue; }
+        if (ev.type === 'content_block_delta' && ev.delta && typeof ev.delta.text === 'string') {
+          text += ev.delta.text;
+          if (opts.onText) opts.onText({ text, delta: ev.delta.text });
+        } else if (ev.type === 'message_delta' && ev.delta && ev.delta.stop_reason) stop = ev.delta.stop_reason;
+        else if (ev.type === 'error') throw Object.assign(apiError(0, ev), text ? { text } : {});
+      }
+    }
+  } catch (e) {
+    if (e && e.code) throw e;
+    throw Object.assign(e && e.name === 'AbortError' ? { code: 'cancelled', message: 'aborted' } : { code: 'upstream_error', message: 'stream' }, text ? { text } : {});
+  }
+  if (stop === 'refusal') throw { code: 'refused', message: 'refused' };
+  if (!text.trim()) throw { code: 'empty_completion', message: 'empty' };
+  return { text, truncated: stop === 'max_tokens' };
+}
+// Outside Claude only: with a stored key the coach works through the API, without one it stays off.
+function useApiKeyIfAny() {
+  if (window.claude) return;
+  const on = !!apiKey();
+  S.sample = on ? apiSample : null;
+  S.sampleState = on ? 'ok' : 'none';
+}
+// A key was saved or removed (here or in another tab): an error about the old key no longer applies.
+function keyChanged() {
+  useApiKeyIfAny();
+  if (S.note) { S.note = null; S.noteNoRetry = false; }
+  if ($('#settings').hasAttribute('open')) fillSettings();
+  renderCoach(); renderInbox(); updateStartBtn();
+}
+function openKeySettings() {
+  $('#btn-settings').click();
+  setTimeout(() => { const k = $('#set-api-key'); if (k && !k.closest('[hidden]')) k.focus(); }, 50);
+}
+
 function sampleErrMsg(e) {
   const c = e && e.code;
+  if (c === 'key_invalid') return 'Claude API 金鑰無效或已停用，請到設定重新輸入。';
+  if (c === 'key_missing') return '還沒有輸入 Claude API 金鑰，請到設定輸入。';
+  if (c === 'no_credit') return 'Claude API 的額度不足，請到 Claude Console 儲值後再試。';
+  if (c === 'model_missing') return 'Claude API 找不到教練用的模型，可能已經停用了，這個網頁需要更新。';
+  if (c === 'overloaded') return 'Claude 現在太忙了，稍等一下再試。';
   if (c === 'not_granted') return '這個頁面還沒取得使用 Claude 的權限。重新開啟頁面，詢問時選「允許」。';
   if (c === 'sampling_disabled') return '你的帳號或組織目前不能使用 Claude，教練暫時無法回覆。打卡和收藏照常可用。';
   if (BLOCK_CODES.includes(c)) return '在這個畫面無法使用 AI 教練，請改用最新版的 Claude 網頁或 App 開啟。打卡和收藏照常可用。';
@@ -2012,11 +2126,17 @@ function renderCoach() {
 }
 function unavailableView() {
   const blocked = S.sampleState === 'blocked';
+  if (blocked || window.claude) {
+    return el('section', { class: 'card' },
+      el('h2', { class: 'card-title', text: blocked ? 'AI 教練目前無法使用' : 'AI 教練要在 Claude 裡開啟才能用' }),
+      el('p', { class: 'help mt6', text: blocked
+        ? sampleErrMsg({ code: S.blockCode || 'not_granted' })
+        : '教練使用你的 Claude 帳號回覆，所以要從 Claude 的連結開啟這個頁面。今日菜單與打卡在這裡照樣可以用。' }));
+  }
   return el('section', { class: 'card' },
-    el('h2', { class: 'card-title', text: blocked ? 'AI 教練目前無法使用' : 'AI 教練要在 Claude 裡開啟才能用' }),
-    el('p', { class: 'help mt6', text: blocked
-      ? sampleErrMsg({ code: S.blockCode || 'not_granted' })
-      : '教練使用你的 Claude 帳號回覆，所以要從 Claude 的連結開啟這個頁面。今日菜單與打卡在這裡照樣可以用。' }));
+    el('h2', { class: 'card-title', text: 'AI 教練需要 Claude' }),
+    el('p', { class: 'help mt6', text: '從 Claude 的連結開啟這個頁面，教練會用你的 Claude 帳號回覆。在這個網頁上，也可以到設定輸入你自己的 Claude API 金鑰，用量算在 API 帳單。今日菜單與打卡照樣可以用。' }),
+    el('div', { class: 'start-row mt12' }, el('button', { type: 'button', class: 'btn primary', 'data-fk': 'open-key', onclick: openKeySettings }, '到設定輸入金鑰')));
 }
 function startView() {
   const s = S.setup;
@@ -2191,14 +2311,17 @@ function renderCoachNote() {
   const c = S.chat;
   const need = !S.busy && !S.reviewing && S.sampleState === 'ok' ? chatNeeds(c) : null;
   const msg = S.note
-    || (S.sampleState === 'none' ? '要從 Claude 的連結開啟這個頁面，教練才能回覆。' : null)
+    || (S.sampleState === 'none' ? (window.claude ? '要從 Claude 的連結開啟這個頁面，教練才能回覆。' : '要從 Claude 的連結開啟，或到設定輸入 Claude API 金鑰，教練才能回覆。') : null)
     || (S.sampleState === 'blocked' ? sampleErrMsg({ code: S.blockCode || 'not_granted' }) : null)
     || (need === 'open' ? '對話還沒開始。' : need === 'reply' ? '教練還沒回覆你的上一句。' : need === 'cut' ? '教練的回覆中斷了。' : null);
   if (!msg) { box.hidden = true; fill(box); return; }
   const showRetry = !!need && !(S.note && S.noteNoRetry);
+  // Outside Claude, a missing or rejected API key is fixed in 設定.
+  const keyFix = !window.claude && (S.note ? ['key_invalid', 'key_missing'].some(k => S.note === sampleErrMsg({ code: k })) : S.sampleState === 'none');
   box.hidden = false;
   fill(box, el('span', { text: msg }),
-    showRetry ? el('button', { type: 'button', class: 'btn small', 'data-fk': 'retry', onclick: () => { S.note = null; S.noteNoRetry = false; ask(); } }, need === 'open' ? '請教練開場' : '重新回覆') : null);
+    showRetry ? el('button', { type: 'button', class: 'btn small', 'data-fk': 'retry', onclick: () => { S.note = null; S.noteNoRetry = false; ask(); } }, need === 'open' ? '請教練開場' : '重新回覆') : null,
+    keyFix ? el('button', { type: 'button', class: 'btn small', 'data-fk': 'note-key', onclick: openKeySettings }, '到設定輸入金鑰') : null);
 }
 function updateComposer() {
   const btn = $('#send-btn'), ta = $('#msg-input'), hint = $('#hint-btn');
@@ -2428,6 +2551,15 @@ function fillSettings() {
   $('#set-no-voice').hidden = TTS.ok;
   fillVoiceSelect();
   $('#set-store').textContent = storeText();
+  $('#set-api-field').hidden = !!window.claude;
+  if (!window.claude) {
+    const k = apiKey();
+    $('#set-api-state').textContent = k ? '已儲存一把金鑰（結尾 ' + k.slice(-4) + '），AI 教練會用它回覆。' : '還沒有儲存金鑰。';
+    const rm = $('#set-api-clear');
+    rm.hidden = !k;
+    rm.textContent = isArmed('api-clear') ? '再按一次移除' : '移除金鑰';
+    rm.classList.toggle('danger', isArmed('api-clear'));
+  }
   const cloud = $('#set-cloud');
   cloud.hidden = !(Store.mode === 'local' && Store.why === 'no_write' && Store.db);
   cloud.disabled = S.uploading;
@@ -2438,14 +2570,15 @@ function fillSettings() {
   clear.textContent = armed ? '再按一次清除（無法復原）' : '清除這個瀏覽器裡的練習資料';
   clear.classList.toggle('danger', armed);
 }
-// Removes everything this app stored in this browser (local mode only), then starts fresh.
+// Removes the practice data this app stored in this browser (local mode only), then starts fresh.
+// The API key stays: it has its own 移除金鑰 button.
 function clearLocalData() {
   for (const n of Object.keys(Store.timers)) clearTimeout(Store.timers[n]);
   Store.pend = {};
   Store.mode = 'memory'; // nothing may be written back while the page reloads
   try {
     const keys = [];
-    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('kaikou:')) keys.push(k); }
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('kaikou:') && k !== API_KEY_LS) keys.push(k); }
     for (const k of keys) localStorage.removeItem(k);
   } catch (_) { /* nothing stored */ }
   location.reload();
@@ -2503,6 +2636,23 @@ function bindStatic() {
   });
   $('#set-clear').addEventListener('click', () => arm('clear-local', clearLocalData, fillSettings));
   $('#set-cloud').addEventListener('click', retryCloud);
+  const saveKey = () => {
+    const inp = $('#set-api-key');
+    const v = inp.value.trim();
+    if (!v) { toast('先貼上金鑰再按儲存'); return; }
+    if (!/^sk-ant-api[A-Za-z0-9_-]{20,}$/.test(v)) { toast('這不是 Claude API 金鑰。到 Claude Console 的 API keys 建立，開頭是 sk-ant-api'); return; }
+    lsSet(API_KEY_LS, v);
+    if (apiKey() !== v) { toast('這個瀏覽器不允許儲存資料，金鑰沒有存起來'); return; }
+    inp.value = '';
+    keyChanged();
+    toast('已儲存金鑰');
+  };
+  $('#set-api-save').addEventListener('click', saveKey);
+  $('#set-api-key').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); saveKey(); } });
+  $('#set-api-clear').addEventListener('click', () => arm('api-clear', () => {
+    lsDel(API_KEY_LS); keyChanged();
+    toast('已移除金鑰');
+  }, fillSettings));
   $('#settings-form').addEventListener('submit', e => e.preventDefault());
   $('#set-close').addEventListener('click', closeDlg);
   $('#set-done').addEventListener('click', closeDlg);
@@ -2538,6 +2688,7 @@ function bindStatic() {
   }, true);
   // In this-browser mode, a change saved by another tab of the app shows up here right away.
   window.addEventListener('storage', e => {
+    if (e.key === API_KEY_LS && !window.claude) { keyChanged(); return; } // saved or removed in another tab
     if (Store.mode !== 'local' || !S.ready || !e.key || !e.key.startsWith('kaikou:')) return;
     const name = e.key.slice(7);
     if (!/^(settings|phrases|inbox|chat|log-\d{4}-\d{2}|sessions-\d{4}-\d{2})$/.test(name) || Store.busyDoc(name)) return;
@@ -2674,7 +2825,7 @@ async function boot(data) {
   const c = window.claude;
   if (c && typeof c.use === 'function') {
     c.use('sample').then(fn => { S.sample = fn || null; S.sampleState = fn ? 'ok' : 'none'; renderCoach(); renderInbox(); updateStartBtn(); }, () => { S.sampleState = 'none'; renderCoach(); });
-  } else { S.sampleState = 'none'; }
+  } else if (c) { S.sampleState = 'none'; } else { useApiKeyIfAny(); }
   await Store.init();
   await loadAll();
   if (Store.mode === 'db') S.held = heldInfo();
@@ -2687,7 +2838,7 @@ async function boot(data) {
   if (data && data.draft) { const ta = $('#msg-input'); if (ta) { ta.value = data.draft; autosize(ta); } }
   if (S.tab === 'coach' && S.chat) scrollToEnd(true);
 }
-if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed };
+if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError };
 
 const hot = window.claude && window.claude.hot;
 try { if (hot && typeof hot.snapshot === 'function') hot.snapshot(() => ({ tab: S.tab, draft: ($('#msg-input') || {}).value || '' })); } catch (_) { /* optional */ }
