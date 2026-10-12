@@ -1,12 +1,16 @@
 # 本機筆記（含私人的 Claude 連結，不進版控）
 使用說明.txt
 
-# 測試輸出
+# 測試輸出與安裝的套件
 test/shots/
 test/*.html
 node_modules/
 
-# 系統檔
+# 編輯器、Office 暫存與系統檔
+.claude/
+.vscode/
+~$*
+*.tmp
 Thumbs.db
 desktop.ini
 .DS_Store

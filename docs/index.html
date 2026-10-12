@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>開口練習室</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -47,6 +52,9 @@
   color-scheme:dark;
 }
 *,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
 html{scroll-padding-top:calc(76px + env(safe-area-inset-top,0px));scroll-padding-bottom:var(--sp-bottom,24px)}
 html,body{background:var(--paper)}
 body{color:var(--ink);font-family:var(--font-body);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
@@ -319,6 +327,8 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
 }
 </style>
+</head>
+<body>
 
 <div class="app" id="app">
   <header class="brand-row">
@@ -363,7 +373,7 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
         <div id="composer-tip" class="tip"><span>用說的：手機切到英文鍵盤點麥克風，電腦按 <span class="kbd">Win + H</span>，說完再送出。</span><button type="button" id="tip-close" class="btn ghost small">知道了</button></div>
         <div class="composer-row">
           <button id="hint-btn" type="button" class="icon-btn" aria-label="不知道怎麼回？看提示" title="不知道怎麼回？"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 17.5h6M10 20.5h4M12 3.5a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2h5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          <textarea id="msg-input" rows="1" placeholder="先大聲說，再用聽寫打進來…" aria-label="你的回覆"></textarea>
+          <textarea id="msg-input" rows="1" maxlength="1000" placeholder="先大聲說，再用聽寫打進來…" aria-label="你的回覆"></textarea>
           <button id="send-btn" type="button" class="send" aria-label="送出"></button>
         </div>
       </div>
@@ -402,7 +412,7 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
     </div>
     <div class="field">
       <label class="label" for="set-about">關於我（給教練參考）</label>
-      <textarea id="set-about" class="input" rows="3" maxlength="600"></textarea>
+      <textarea id="set-about" class="input" rows="3" maxlength="600" placeholder="例如：我在台北做行銷，週末喜歡爬山，最近想練英文簡報。"></textarea>
       <p class="help">職業、興趣、最近在忙的事，中英文都可以。教練會用來找話題。</p>
     </div>
     <div class="field" id="set-voice-field">
@@ -416,6 +426,7 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
     <div class="field">
       <span class="label">資料存放</span>
       <p id="set-store" class="help"></p>
+      <div class="row"><button type="button" id="set-cloud" class="btn small" hidden>再試一次存到雲端</button><button type="button" id="set-clear" class="btn small" hidden>清除這個瀏覽器裡的練習資料</button></div>
     </div>
     <div class="sheet-foot"><button type="button" id="set-done" class="btn primary">完成</button></div>
   </form>
@@ -528,7 +539,7 @@ const ICON = {
   left: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   right: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
-const DEFAULTS = { plan: '20', level: 'B1', about: 'I am from Taiwan and I work as a product manager.', accent: 'en-US', voiceURI: '', rate: 0.95, autoSpeak: true };
+const DEFAULTS = { plan: '20', level: 'B1', about: '', accent: 'en-US', voiceURI: '', rate: 0.95, autoSpeak: true };
 const LEVELS = {
   A2: { zh: '入門', style: 'Use very common words and short, simple sentences (under 12 words each). Avoid idioms and slang.' },
   B1: { zh: '中級', style: 'Use everyday vocabulary and clear sentences. Now and then use one useful phrase they could copy.' },
@@ -603,36 +614,52 @@ const S = {
   settings: Object.assign({}, DEFAULTS),
   logs: {}, loaded: new Set(), editedDays: new Set(), editedMonthRec: new Set(),
   sessions: {}, sessLoaded: new Set(), loadErrors: new Set(),
-  phrases: [], inbox: [], chat: null, review: null, endedChats: new Set(),
+  phrases: [], inbox: [], chat: null, review: null, endedChats: new Set(), openSess: new Set(),
   setup: { mode: 'free', topic: 'weekend', scene: 'smalltalk', custom: '' },
   sample: null, sampleState: 'loading',
   busy: false, ctl: null, askStartedAt: 0, reviewing: false, reviewStart: 0,
-  hints: null, hintSeq: 0, note: null, noteNoRetry: false, unsavedReview: null,
+  hints: null, hintSeq: 0, note: null, noteNoRetry: false, unsavedReview: null, held: null, uploading: false,
   streak: 0, justStamped: false, armed: null, tipHidden: false,
 };
 
 /* ================= storage ================= */
-const SYNC = { loading: ['載入中…', ''], saving: ['儲存中…', ''], saved: ['已同步', 'ok'], local: ['只存在這個瀏覽器', 'warn'], memory: ['這次不會保存', 'warn'], error: ['同步失敗，會自動再試', 'err'] };
+const SYNC = { loading: ['載入中…', ''], saving: ['儲存中…', ''], saved: ['已同步', 'ok'], local: ['只存在這個瀏覽器', 'warn'], memory: ['這次不會保存', 'warn'], error: ['同步失敗，會自動再試', 'err'], blocked: ['有資料存不進雲端', 'err'] };
 let lastSyncKind = '';
 function setSync(kind) {
   const n = $('#sync'); if (!n) return;
   const v = SYNC[kind] || SYNC.saved;
   n.textContent = v[0]; n.className = 'sync ' + v[1]; n.title = v[0];
   if (kind === 'error' && lastSyncKind !== 'error') announce('有資料還沒同步到雲端，會自動再試。');
+  if (kind === 'blocked' && lastSyncKind !== 'blocked') announce('有資料存不進雲端。');
   lastSyncKind = kind;
 }
 function updateSync() {
   if (Store.mode === 'loading') { setSync('loading'); return; }
-  if (Object.keys(Store.failed).length || S.loadErrors.size) { setSync('error'); return; }
+  const failed = Object.values(Store.failed);
+  if (failed.some(c => c === 'quota_exceeded' || c === 'too_large')) { setSync('blocked'); return; }
+  if (failed.length || S.loadErrors.size) { setSync('error'); return; }
   if (Store.mode !== 'db') { setSync(Store.mode); return; }
   const busy = Object.keys(Store.pend).length || Object.values(Store.inflight).some(n => n > 0);
   setSync(busy ? 'saving' : 'saved');
+}
+// The platform limit is 256 KiB per document; the app keeps every document well under it.
+const DOC_LIMIT = 200 * 1024;
+const utf8 = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
+function docBytes(o) { const s = JSON.stringify(o); return utf8 ? utf8.encode(s).length : s.length * 3; }
+// What a rejected write means (db.d.ts): retry later, stop using the cloud for this visit, or wait for the user.
+function writeFailure(e, full) {
+  const code = (e && e.code) || 'unavailable';
+  if (code === 'too_large') return 'too_large';
+  if (code === 'invalid_argument' || code === 'transform_error') return docBytes(full) < DOC_LIMIT ? 'no_write' : 'too_large';
+  if (code === 'revoked' || code === 'not_granted' || code === 'capability_disabled' || code === 'capability_removed') return 'stopped';
+  if (code === 'quota_exceeded') return 'quota_exceeded';
+  return 'retry'; // unavailable, resource_exhausted and unknown codes
 }
 /* Every list is stored as an id-keyed map and written with update() merges (a deleted entry becomes null),
    so two devices never overwrite each other's entries. Writes to one document are serialized,
    a failed write stays queued and is retried with backoff. */
 const Store = {
-  mode: 'loading', db: null, uid: null,
+  mode: 'loading', db: null, uid: null, isOwner: false, why: '',
   pend: {}, timers: {}, chain: {}, failed: {}, edits: {}, inflight: {}, retries: {}, hooks: {},
   async init() {
     const c = window.claude;
@@ -640,10 +667,41 @@ const Store = {
       try {
         const [db, user] = await Promise.all([c.use('db'), c.use('user')]);
         const id = user && typeof user.id === 'function' ? await user.id() : null;
-        if (db && id) { this.db = db; this.uid = id; this.mode = 'db'; return; }
+        this.isOwner = !!(user && typeof user.isOwner === 'function' && await user.isOwner());
+        if (db && id) {
+          this.uid = id;
+          this.db = db;
+          // A viewer whose link could not save to the cloud keeps working from this browser on later visits too;
+          // 設定 offers to try the cloud again (retryCloud), which uploads what is stored here.
+          if (!this.isOwner && lsGet('kaikou:no-cloud') === id) { this.why = 'no_write'; this.mode = lsOK() ? 'local' : 'memory'; return; }
+          this.mode = 'db'; return;
+        }
       } catch (_) { /* fall through to local */ }
     }
     this.mode = lsOK() ? 'local' : 'memory';
+  },
+  // Stop using the cloud for the rest of this visit and keep every change in this browser instead.
+  leaveCloud(why) {
+    if (this.mode !== 'db') return;
+    this.mode = lsOK() ? 'local' : 'memory';
+    this.why = why;
+    if (why === 'no_write' && !this.isOwner && this.uid) lsSet('kaikou:no-cloud', this.uid);
+    for (const n of Object.keys(this.timers)) clearTimeout(this.timers[n]);
+    // Changes that never reached the cloud are held (as patches), so a later cloud visit can send just those.
+    for (const [n, p] of Object.entries(this.pend)) if (p.patch && p.patch !== 'replace') recordHeld(n, p.patch);
+    this.pend = {}; this.failed = {}; this.retries = {};
+    S.loadErrors.clear();
+    toast(why === 'no_write' ? '這個連結不能把進度存到雲端，改存在這個瀏覽器。' : '雲端同步已停止，之後的變更只存在這個瀏覽器。');
+    // This browser keeps a full working copy for the rest of the visit, merged into anything already stored here.
+    for (const [n, full] of Object.entries(allDocs())) {
+      let doc = full;
+      if (n !== 'chat') { const cur = readLocal(n); if (cur) doc = deepMerge(cur, full); }
+      lsSet('kaikou:' + n, JSON.stringify(doc));
+    }
+    renderToday();
+  },
+  retryBlocked() {
+    for (const [n, code] of Object.entries(this.failed)) if (code === 'quota_exceeded' || code === 'too_large') this.flush(n);
   },
   ref(name) { return this.db.doc('data/users/' + this.uid + '/' + name); },
   async get(name) {
@@ -693,14 +751,19 @@ const Store = {
       const newer = this.pend[name];
       if (!newer) this.pend[name] = p;
       else if (newer.patch !== 'replace') newer.patch = p.patch === 'replace' ? 'replace' : deepMerge(p.patch || {}, newer.patch || {});
-      const first = !this.failed[name];
-      this.failed[name] = (e && e.code) || 'error';
-      if (e && e.code === 'quota_exceeded') toast('雲端空間已滿，請刪除一些收藏後再試。');
-      else if (first && e && e.code === 'invalid_argument') toast('有一筆資料存不進雲端（可能太大了），請刪掉一些收藏或紀錄。');
-      else if (first) toast('剛剛的變更還沒存到雲端，會自動再試。');
-      const n = (this.retries[name] = (this.retries[name] || 0) + 1);
+      const kind = writeFailure(e, p.full);
+      if (kind === 'no_write' || kind === 'stopped') { this.leaveCloud(kind); if (this.pend[name]) this.flush(name); return; }
+      const prev = this.failed[name];
+      this.failed[name] = kind === 'retry' ? ((e && e.code) || 'unavailable') : kind;
       clearTimeout(this.timers[name]);
-      this.timers[name] = setTimeout(() => this.flush(name), Math.min(60000, 3000 * Math.pow(2, n - 1)));
+      if (kind === 'retry') {
+        if (!prev) toast('剛剛的變更還沒存到雲端，會自動再試。');
+        const n = (this.retries[name] = (this.retries[name] || 0) + 1);
+        this.timers[name] = setTimeout(() => this.flush(name), Math.min(60000, 3000 * Math.pow(2, n - 1)));
+      } else if (prev !== kind) {
+        // Retrying cannot succeed until something is deleted: the change stays queued and is sent again after a deletion.
+        toast(kind === 'quota_exceeded' ? '雲端空間已滿，新的變更存不進去。刪掉一些收藏或隨手記後會自動再存。' : '這份資料太大，存不進雲端。刪掉一些收藏或隨手記後會自動再存。');
+      }
     } finally {
       this.inflight[name] -= 1;
       updateSync();
@@ -709,7 +772,13 @@ const Store = {
   async send(name, p) {
     const full = clone(p.full);
     if (this.mode === 'local') {
-      try { localStorage.setItem('kaikou:' + name, JSON.stringify(full)); } catch (_) { this.mode = 'memory'; }
+      // Another tab may have written since this one loaded, so a patch is merged into what is stored now.
+      let doc = full;
+      if (p.patch && p.patch !== 'replace') {
+        try { const cur = JSON.parse(localStorage.getItem('kaikou:' + name) || 'null'); if (cur && typeof cur === 'object' && !Array.isArray(cur)) doc = deepMerge(cur, p.patch); } catch (_) { doc = full; }
+      }
+      try { localStorage.setItem('kaikou:' + name, JSON.stringify(doc)); } catch (_) { this.mode = 'memory'; }
+      if (this.why && p.patch && p.patch !== 'replace') recordHeld(name, p.patch);
       return;
     }
     if (this.mode !== 'db') return;
@@ -722,7 +791,7 @@ const Store = {
             // only a document that really does not exist yet is created from the local copy.
             if (!(e && e.code === 'invalid_argument')) throw e;
             const snap = await this.ref(name).get();
-            if (snap.exists) throw e;
+            if (snap.exists) throw { code: 'too_large', message: 'update rejected for an existing document' };
             await this.ref(name).set(full);
           }
         } else {
@@ -872,6 +941,7 @@ function loadMonth(m) {
   monthLoads[m] = (async () => {
     try {
       const d = await Store.get(name);
+      sameAsSeen(name, d);
       applyLog(m, d, busyAtIssue || Store.busyDoc(name) || (Store.edits[name] || 0) !== mark);
     } catch (_) { S.loadErrors.add(name); }
     finally { S.loaded.add(m); delete monthLoads[m]; updateSync(); }
@@ -925,6 +995,7 @@ function loadSessions(m) {
   sessLoads[m] = (async () => {
     try {
       const d = await Store.get('sessions-' + m);
+      sameAsSeen('sessions-' + m, d);
       S.sessions[m] = unionById(normSessions(d), S.sessions[m]);
       S.loadErrors.delete('sessions-' + m);
     } catch (_) { S.sessions[m] = S.sessions[m] || []; S.loadErrors.add('sessions-' + m); }
@@ -932,15 +1003,14 @@ function loadSessions(m) {
   })();
   return sessLoads[m];
 }
+// A month keeps at most 150 reviews and stays under the size limit; the oldest reviews of that month go first.
 function addSession(sess) {
   const m = sess.date.slice(0, 7);
   const arr = (S.sessions[m] = (S.sessions[m] || []).filter(s => s.id !== sess.id));
   arr.push(sess);
+  arr.sort((a, b) => (a.at || 0) - (b.at || 0));
   const patch = { map: { [sess.id]: sess } };
-  if (arr.length > 150) {
-    arr.sort((a, b) => (a.at || 0) - (b.at || 0));
-    for (const s of arr.splice(0, arr.length - 150)) patch.map[s.id] = null;
-  }
+  while (arr.length > 1 && (arr.length > 150 || docBytes(sessionsFull(m)) > DOC_LIMIT * 0.8)) patch.map[arr.shift().id] = null;
   Store.patch('sessions-' + m, sessionsFull(m), patch);
 }
 
@@ -981,26 +1051,33 @@ function normPhrases(d) {
 }
 function phrasesFull() { return { map: Object.fromEntries(S.phrases.map(p => [p.id, p])) }; }
 function isSaved(en) { const id = phraseId(en); return S.phrases.some(p => p.id === id); }
+const MAX_PHRASES = 600;
+// Returns 'added', 'exists', 'full' or '' (not ready / empty). A full list is never trimmed silently.
 function addPhrase(p) {
-  const en = String(p.en || '').trim();
-  if (!en || !S.ready || isSaved(en)) return false;
+  const en = String(p.en || '').trim().slice(0, 300);
+  if (!en || !S.ready) return '';
+  if (isSaved(en)) return 'exists';
   const id = phraseId(en);
-  const item = { id, en, zh: String(p.zh || '').trim(), note: String(p.note || '').trim(), ex: String(p.example || p.ex || '').trim(), src: p.src || '', at: Date.now() };
+  const item = { id, en, zh: String(p.zh || '').trim().slice(0, 200), note: String(p.note || '').trim().slice(0, 200), ex: String(p.example || p.ex || '').trim().slice(0, 300), src: p.src || '', at: Date.now() };
+  if (S.phrases.length >= MAX_PHRASES || docBytes(phrasesFull()) + docBytes(item) > DOC_LIMIT * 0.8) return 'full';
   S.phrases.unshift(item);
-  const patch = { map: { [id]: item } };
-  if (S.phrases.length > 600) for (const x of S.phrases.splice(600)) patch.map[x.id] = null;
-  Store.patch('phrases', phrasesFull(), patch);
-  return true;
+  Store.patch('phrases', phrasesFull(), { map: { [id]: item } });
+  return 'added';
 }
+const FULL_MSG = '收藏已滿，先到「收藏」刪掉一些舊的句子再加。';
 function removePhrase(id) {
   S.phrases = S.phrases.filter(p => p.id !== id);
   Store.patch('phrases', phrasesFull(), { map: { [id]: null } });
+  Store.retryBlocked();
   renderSavedList(); renderStarters();
 }
+// Returns 'added', 'removed', 'full' or ''.
 function toggleSaved(p) {
-  if (!S.ready) return;
-  if (isSaved(p.en)) removePhrase(phraseId(p.en));
-  else { addPhrase(p); renderSavedList(); }
+  if (!S.ready) return '';
+  if (isSaved(p.en)) { removePhrase(phraseId(p.en)); return 'removed'; }
+  const r = addPhrase(p);
+  renderSavedList();
+  return r === 'exists' ? 'added' : r;
 }
 function normInbox(d) {
   const byId = new Map();
@@ -1024,6 +1101,7 @@ function addInbox(text) {
 function removeInbox(id) {
   S.inbox = S.inbox.filter(x => x.id !== id);
   Store.patch('inbox', inboxFull(), { map: { [id]: null } });
+  Store.retryBlocked();
 }
 
 /* ================= text to speech ================= */
@@ -1214,16 +1292,17 @@ function reviewPrompt(c) {
     + '{"summary": "2 sentences of overall feedback", "strengths": ["up to 2 specific things they did well"], "patterns": [{"issue": "a recurring mistake or habit", "example": "their exact words", "fix": "a better way in English"}], "phrases": [{"en": "a useful spoken chunk for this kind of conversation", "zh": "its meaning", "example": "a short English example sentence"}], "next": "one concrete suggestion for what to practise next time"}\n'
     + 'Give at most 3 patterns, most important first, and exactly 5 phrases.';
 }
+// Field lengths are capped so a month of reviews stays far below the document size limit.
 function normReview(r) {
   const o = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
-  const str = v => (typeof v === 'string' ? v.trim() : '');
+  const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
   const arr = v => (Array.isArray(v) ? v : []);
   return {
-    summary: str(o.summary),
-    strengths: arr(o.strengths).map(str).filter(Boolean).slice(0, 2),
-    patterns: arr(o.patterns).filter(x => x && typeof x === 'object').map(x => ({ issue: str(x.issue), example: str(x.example), fix: str(x.fix) })).filter(x => x.issue || x.fix).slice(0, 3),
-    phrases: arr(o.phrases).filter(x => x && typeof x === 'object').map(x => ({ en: str(x.en), zh: str(x.zh), example: str(x.example) })).filter(x => x.en).slice(0, 5),
-    next: str(o.next),
+    summary: str(o.summary, 400),
+    strengths: arr(o.strengths).map(v => str(v, 160)).filter(Boolean).slice(0, 2),
+    patterns: arr(o.patterns).filter(x => x && typeof x === 'object').map(x => ({ issue: str(x.issue, 160), example: str(x.example, 200), fix: str(x.fix, 200) })).filter(x => x.issue || x.fix).slice(0, 3),
+    phrases: arr(o.phrases).filter(x => x && typeof x === 'object').map(x => ({ en: str(x.en, 160), zh: str(x.zh, 120), example: str(x.example, 240) })).filter(x => x.en).slice(0, 5),
+    next: str(o.next, 200),
   };
 }
 // JSON answers go through plain sample() with cache off, so an unusable answer is never replayed.
@@ -1333,7 +1412,12 @@ async function startSession(setup, firstMessage) {
   return true;
 }
 function saveChat() {
-  const c = S.chat; if (!c) return;
+  const d = chatDoc();
+  if (d) Store.put('chat', d);
+}
+// The stored chat keeps the last 60 turns, and fewer if long turns would make the document too big.
+function chatDoc() {
+  const c = S.chat; if (!c) return null;
   const turns = c.turns.filter(t => !t.pending && !t.streaming).slice(-60).map(t => {
     const o = { r: t.r, t: t.t, at: t.at || 0 };
     if (t.raw) o.raw = t.raw;
@@ -1345,11 +1429,116 @@ function saveChat() {
     if (t.sys) { o.sys = true; o.zhNote = t.zhNote || ''; }
     return o;
   });
-  Store.put('chat', {
+  const doc = {
     active: true, id: c.id, mode: c.mode, level: c.level, topicZh: c.topicZh || '', topicEn: c.topicEn || '',
     sceneZh: c.sceneZh || '', sceneEn: c.sceneEn || '', aiRole: c.aiRole || '', meRole: c.meRole || '',
     startedAt: c.startedAt, updatedAt: c.updatedAt, lastAt: c.lastAt, activeMs: c.activeMs || 0, meCount: c.meCount || 0, turns,
-  });
+  };
+  if (docBytes(doc) > DOC_LIMIT * 0.8) {
+    const size = turns.map(docBytes);
+    let total = docBytes(doc);
+    while (turns.length > 6 && total > DOC_LIMIT * 0.8) { total -= size.shift(); turns.shift(); }
+  }
+  return doc;
+}
+// Every document as this device currently has it (used when changes have to move to this browser).
+function allDocs() {
+  const docs = { settings: S.settings, phrases: phrasesFull(), inbox: inboxFull() };
+  const cd = chatDoc(); if (cd) docs.chat = cd;
+  for (const m of Object.keys(S.logs)) docs['log-' + m] = logDoc(m);
+  for (const m of Object.keys(S.sessions)) docs['sessions-' + m] = sessionsFull(m);
+  return docs;
+}
+
+/* ---- changes kept in this browser while the cloud could not be used ---- */
+const DOC_NAME_RE = /^(settings|phrases|inbox|log-\d{4}-\d{2}|sessions-\d{4}-\d{2})$/;
+function lsDel(k) { try { localStorage.removeItem(k); } catch (_) { /* nothing stored */ } }
+function readLocal(n) {
+  try { const v = JSON.parse(lsGet('kaikou:' + n) || 'null'); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; } catch (_) { return null; }
+}
+// kaikou:held = { uid, docs: { name: patch } }: only the edits made while the cloud could not be used.
+function heldInfo() {
+  try {
+    const h = JSON.parse(lsGet('kaikou:held') || 'null');
+    if (!h || h.uid !== Store.uid || !h.docs || typeof h.docs !== 'object') return null;
+    const names = Object.keys(h.docs).filter(n => DOC_NAME_RE.test(n));
+    return names.length ? { uid: h.uid, docs: h.docs, names } : null;
+  } catch (_) { return null; }
+}
+function recordHeld(name, patch) {
+  if (!Store.uid || !DOC_NAME_RE.test(name) || !patch || typeof patch !== 'object') return;
+  const h = heldInfo() || { uid: Store.uid, docs: {} };
+  h.docs[name] = deepMerge(h.docs[name] || {}, patch);
+  lsSet('kaikou:held', JSON.stringify({ uid: h.uid, docs: h.docs }));
+}
+function localDocNames() {
+  const names = [];
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('kaikou:') && DOC_NAME_RE.test(k.slice(7))) names.push(k.slice(7)); } } catch (_) { /* nothing stored */ }
+  return names;
+}
+function forgetLocalDocs(names) { for (const n of names) lsDel('kaikou:' + n); lsDel('kaikou:held'); }
+function fullDocFor(n) {
+  if (n === 'settings') return S.settings;
+  if (n === 'phrases') return phrasesFull();
+  if (n === 'inbox') return inboxFull();
+  if (n.startsWith('log-')) return logDoc(n.slice(4));
+  return sessionsFull(n.slice(9));
+}
+// Sends held edits to the cloud as update() merges (only ever after a button press), so anything changed
+// on another device in the meantime is kept. Resolves true once every upload has landed, false if the
+// cloud refused or the upload is still retrying.
+async function uploadPatches(docs) {
+  const names = Object.keys(docs).filter(n => DOC_NAME_RE.test(n) && docs[n] && typeof docs[n] === 'object' && !Array.isArray(docs[n]));
+  for (const n of names) {
+    if (n.startsWith('log-')) await loadMonth(n.slice(4));
+    if (n.startsWith('sessions-')) await loadSessions(n.slice(9));
+  }
+  for (const n of names) {
+    applyDoc(n, deepMerge(fullDocFor(n), docs[n]), false);
+    Store.patch(n, fullDocFor(n), docs[n]);
+  }
+  Store.flushAll();
+  for (let i = 0; i < 100; i++) {
+    await sleep(200);
+    if (Store.mode !== 'db') return false;
+    if (names.every(n => !Store.busyDoc(n) && !Store.failed[n])) return true;
+  }
+  return false;
+}
+// On a cloud visit: changes this browser kept during an earlier fallback can be uploaded or dropped.
+async function uploadHeld() {
+  if (!S.held || S.uploading || Store.mode !== 'db') return;
+  S.uploading = true; renderToday();
+  const ok = await uploadPatches(S.held.docs);
+  S.uploading = false;
+  if (ok) { forgetLocalDocs(localDocNames()); S.held = null; toast('已把這台裝置上的變更存到雲端'); }
+  else if (Store.mode === 'db') toast('還沒存完，稍後再按一次。');
+  refreshStreak(); renderAll();
+}
+function dropHeld() {
+  if (!S.held) return;
+  forgetLocalDocs(localDocNames()); S.held = null;
+  toast('已捨棄這台裝置上留下的變更');
+  renderToday();
+}
+// A viewer whose link could not save to the cloud can try again later (for example after being given edit access).
+async function retryCloud() {
+  if (Store.mode !== 'local' || Store.why !== 'no_write' || !Store.db || S.uploading) return;
+  const names = localDocNames();
+  // Everything this viewer has is in this browser: send the held edits, or the whole documents if none are recorded.
+  const held = heldInfo();
+  const docs = held ? held.docs : Object.fromEntries(names.map(n => [n, readLocal(n)]));
+  S.uploading = true; fillSettings();
+  Store.mode = 'db'; Store.why = '';
+  const ok = await uploadPatches(docs);
+  S.uploading = false;
+  if (ok) {
+    lsDel('kaikou:no-cloud'); forgetLocalDocs(names);
+    await loadAll();
+    S.streak = await settleStreak();
+    toast('已改用雲端儲存，手機和電腦會同步');
+  } else if (Store.mode === 'db') toast('還沒存完，會自動再試。');
+  renderAll(); fillSettings();
 }
 function normChat(d) {
   if (!d || !d.active || !Array.isArray(d.turns) || !['free', 'role', 'zh'].includes(d.mode)) return null;
@@ -1387,7 +1576,7 @@ function send(text) {
   S.hintSeq++; S.hints = null; S.note = null; S.noteNoRetry = false;
   touchChat(c);
   c.meCount = (c.meCount || 0) + 1;
-  c.turns.push({ r: 'm', t: text, at: Date.now() });
+  c.turns.push({ r: 'm', t: String(text).slice(0, 1000), at: Date.now() });
   saveChat();
   ask();
   return true;
@@ -1454,6 +1643,7 @@ async function translateTurn(t) {
   try {
     const r = await S.sample('Translate into natural Traditional Chinese as used in Taiwan. Reply with only the translation.\n\n' + t.t, { modelTier: 'quick' });
     t.zh = r.text.trim(); t.zhOpen = true;
+    if (S.note) { S.note = null; S.noteNoRetry = false; renderCoachNote(); }
     if (S.chat && S.chat.turns.includes(t)) saveChat();
   } catch (e) { onSampleError(e); }
   finally { t.zhBusy = false; renderMessages(); }
@@ -1472,6 +1662,7 @@ async function getHints() {
         .filter(x => x && typeof x.en === 'string' && x.en.trim()).slice(0, 3)
         .map(x => ({ en: x.en.trim(), zh: typeof x.zh === 'string' ? x.zh.trim() : '' }));
       S.hints = list.length ? list : null;
+      if (list.length && S.note) { S.note = null; S.noteNoRetry = false; renderCoachNote(); }
       shown = list.length > 0;
       if (!list.length) { S.note = '教練這次沒想到提示，再按一次試試。'; S.noteNoRetry = true; renderCoachNote(); }
     }
@@ -1549,13 +1740,14 @@ function starBtn(p, cls, ctx) {
     html: on ? ICON.starOn : ICON.star, disabled: !S.ready, 'data-fk': 'star:' + (ctx || '') + ':' + id,
     onclick: e => {
       const b = e.currentTarget;
-      toggleSaved(p);
+      const r = toggleSaved(p);
+      if (!r) return;
       const now = isSaved(p.en);
       if (b.isConnected) {
         b.setAttribute('aria-pressed', String(now)); b.innerHTML = now ? ICON.starOn : ICON.star;
         b.setAttribute('aria-label', now ? '取消收藏' : '收藏'); b.title = now ? '取消收藏' : '收藏';
       }
-      toast(now ? '已加入收藏' : '已取消收藏');
+      toast(r === 'full' ? FULL_MSG : r === 'added' ? '已加入收藏' : '已取消收藏');
     },
   });
 }
@@ -1595,7 +1787,12 @@ function toast(msg) {
 }
 function storeText() {
   if (Store.mode === 'db') return '你的進度存在 Claude 的雲端，只有你看得到；手機和電腦開這個頁面會同步。';
-  if (Store.mode === 'local') return '雲端同步目前無法使用，進度只存在這個瀏覽器。';
+  if (Store.mode === 'local') {
+    const lead = Store.why === 'no_write' ? '這個連結不能把進度存到雲端，所以只存在這個瀏覽器。'
+      : Store.why === 'stopped' ? '雲端同步已停止，之後的變更只存在這個瀏覽器。'
+      : '雲端同步目前無法使用，進度只存在這個瀏覽器。';
+    return lead + '用公用電腦時，練完可以到設定清除。';
+  }
   if (Store.mode === 'memory') return '這個瀏覽器不允許儲存資料，關掉頁面後進度會消失。';
   return '正在載入…';
 }
@@ -1638,7 +1835,11 @@ function renderAll() {
 function renderToday() {
   const root = $('#today-dyn'); if (!root) return;
   const tk = todayKey();
-  if (S.lastToday !== tk) { if (S.viewDate === S.lastToday) S.viewDate = tk; S.lastToday = tk; }
+  if (S.lastToday !== tk) {
+    if (S.viewDate === S.lastToday) S.viewDate = tk;
+    if (S.calMonth === S.lastToday.slice(0, 7)) S.calMonth = tk.slice(0, 7);
+    S.lastToday = tk;
+  }
   if (S.viewDate > tk) S.viewDate = tk;
   const k = S.viewDate, isToday = k === tk, d = parseD(k);
   const ws = weekStart(d);
@@ -1677,7 +1878,8 @@ function renderToday() {
       side),
     el('div', { class: 'meter', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(done), 'aria-label': '這天的練習分鐘' }, meterFill),
     !S.ready ? el('p', { class: 'help', text: '正在載入你的進度…' }) : null,
-    S.ready && Store.mode !== 'db' ? el('p', { class: 'notice', text: storeText() }) : null);
+    S.ready && Store.mode !== 'db' ? el('p', { class: 'notice', text: storeText() }) : null,
+    S.ready && Store.mode === 'db' && S.held ? heldNotice() : null);
   S.justStamped = false;
 
   const daily = el('div', { class: 'list' }, DAILY.map(def => {
@@ -1727,6 +1929,14 @@ function renderToday() {
     el('h2', { class: 'section-title', text: '每天' }), daily,
     el('h2', { class: 'section-title', text: '每週' }), weekly,
     el('h2', { class: 'section-title', text: '每月' }), monthly);
+}
+function heldNotice() {
+  const armed = isArmed('held-drop');
+  return el('div', { class: 'notice' },
+    el('p', { text: '這台裝置上有雲端同步停止時留下的變更（' + S.held.names.length + ' 份資料），還沒存到雲端。' }),
+    el('div', { class: 'row-acts mt6' },
+      el('button', { type: 'button', class: 'btn small primary', 'data-fk': 'held-up', disabled: S.uploading, onclick: uploadHeld }, S.uploading ? '存到雲端中…' : '存到雲端'),
+      el('button', { type: 'button', class: 'btn small' + (armed ? ' danger' : ''), 'data-fk': 'held-drop', disabled: S.uploading, onclick: () => arm('held-drop', dropHeld, renderToday) }, armed ? '再按一次捨棄' : '不要了')));
 }
 function setPlan(k, p) {
   if (!S.ready || rolledOver(k)) return;
@@ -1912,7 +2122,7 @@ function coachMsg(t, c, i) {
 }
 function fillZhReply(bubble, t, c, i) {
   let source = '';
-  for (let j = i - 1; j >= 0; j--) if (c.turns[j].r === 'm') { source = c.turns[j].t; break; }
+  for (let j = i - 1; j >= 0; j--) if (c.turns[j].r === 'm' && cjkRatio(c.turns[j].t) >= 0.3) { source = c.turns[j].t; break; }
   const zhSource = cjkRatio(source) >= 0.3 ? source : '';
   for (const line of String(t.t || '').split('\n')) {
     const mm = OPT_RE.exec(line);
@@ -2045,7 +2255,12 @@ function reviewView(r) {
       el('div', { class: 'card-head' },
         el('h3', { class: 'card-title', text: '值得收藏的說法' }),
         el('div', { class: 'row-acts' },
-          el('button', { type: 'button', class: 'btn small', 'data-fk': 'save-all', onclick: () => { let n = 0; for (const p of r.phrases) if (addPhrase({ en: p.en, zh: p.zh, example: p.example, src: 'review' })) n++; renderCoach(); renderSavedList(); toast(n ? '已收藏 ' + n + ' 句' : '這些都已經在收藏裡了'); } }, '全部收藏'))),
+          el('button', { type: 'button', class: 'btn small', 'data-fk': 'save-all', onclick: () => {
+            let n = 0, full = false;
+            for (const p of r.phrases) { const res = addPhrase({ en: p.en, zh: p.zh, example: p.example, src: 'review' }); if (res === 'added') n++; else if (res === 'full') full = true; }
+            renderCoach(); renderSavedList();
+            toast(full ? (n ? '已收藏 ' + n + ' 句。' : '') + FULL_MSG : n ? '已收藏 ' + n + ' 句' : '這些都已經在收藏裡了');
+          } }, '全部收藏'))),
       el('div', { class: 'mt6' }, r.phrases.map(p => el('div', { class: 'phrase' },
         el('div', null,
           el('div', { class: 'phrase-en', lang: 'en', text: p.en }),
@@ -2064,7 +2279,7 @@ function reviewView(r) {
 
 /* ================= rendering: log ================= */
 function renderLog() {
-  const root = $('#log-dyn'); if (!root) return;
+  const root = $('#log-dyn'); if (!root || S.tab !== 'log') return;
   const tk = todayKey(), m = S.calMonth;
   if (S.ready && !S.loaded.has(m) && !monthLoads[m]) loadMonth(m).then(() => { if (S.calMonth === m) renderLog(); });
   if (S.ready && !S.sessLoaded.has(m) && !sessLoads[m]) loadSessions(m).then(() => { if (S.calMonth === m) renderLog(); });
@@ -2126,7 +2341,7 @@ function sessionCard(s) {
       el('b', { text: str(s.label) }),
       el('span', { class: 'tag', text: (Number(s.minutes) || 0) + ' 分鐘 · ' + (Number(s.count) || 0) + ' 句' })),
     str(s.summary) ? el('p', { class: 'help', text: str(s.summary) }) : null,
-    pats.length || phr.length ? el('details', null,
+    pats.length || phr.length ? el('details', { open: S.openSess.has(s.id), ontoggle: e => { if (e.currentTarget.open) S.openSess.add(s.id); else S.openSess.delete(s.id); } },
       el('summary', null, '看重點與說法'),
       pats.map(p => el('div', { class: 'pat' },
         el('p', { text: str(p.issue) }),
@@ -2138,7 +2353,7 @@ function sessionCard(s) {
 
 /* ================= rendering: saved ================= */
 function renderStarters() {
-  const box = $('#starters'); if (!box) return;
+  const box = $('#starters'); if (!box || S.tab !== 'saved') return;
   fill(box, el('section', { class: 'card' },
     el('h2', { class: 'card-title', text: '開口救急包' }),
     el('p', { class: 'help mt6', text: '卡住的時候，先用這些句子爭取時間、把對話接下去。點星號加入收藏。' }),
@@ -2149,7 +2364,7 @@ function renderStarters() {
       el('div', { class: 'phrase-acts' }, speakBtn(say || en, 'sm'), starBtn({ en, zh, note: use, src: 'starter' }, 'sm', 'st')))))));
 }
 function renderSavedList() {
-  const box = $('#saved-list'); if (!box) return;
+  const box = $('#saved-list'); if (!box || S.tab !== 'saved') return;
   const q = String(($('#saved-search') || {}).value || '').trim().toLowerCase();
   $('#mine-count').textContent = String(S.phrases.length);
   if (!S.phrases.length) {
@@ -2170,11 +2385,12 @@ function renderSavedList() {
         iconBtn('trash', armed ? '再按一次刪除' : '刪除', () => arm('del-' + p.id, () => removePhrase(p.id), renderSavedList), 'sm' + (armed ? ' danger' : ''), 'del-' + p.id)));
   }));
 }
+// Anki text import: the header lines tell Anki the fields are tab-separated HTML, so every field is escaped.
 function ankiText(items) {
-  const clean = s => String(s || '').replace(/[\t\r\n]+/g, ' ').trim();
-  return items.map(p => clean(p.en) + '\t' + clean(escHtml(p.zh || p.note || '')) + (p.ex ? '<br><i>' + clean(escHtml(p.ex)) + '</i>' : '')).join('\n');
+  const clean = s => escHtml(String(s || '').replace(/[\t\r\n]+/g, ' ').trim());
+  return '#separator:tab\n#html:true\n' + items.map(p => clean(p.en) + '\t' + clean(p.zh || p.note || '') + (p.ex ? '<br><i>' + clean(p.ex) + '</i>' : '')).join('\n');
 }
-function copyText(text, host) {
+function copyText(text, host, doneMsg) {
   const fallback = () => {
     if (!host) return;
     host.hidden = false;
@@ -2184,7 +2400,7 @@ function copyText(text, host) {
   };
   try {
     const p = navigator.clipboard && navigator.clipboard.writeText(text);
-    if (p && typeof p.then === 'function') p.then(() => { if (host) host.hidden = true; toast('已複製 ' + text.split('\n').length + ' 句'); }, fallback);
+    if (p && typeof p.then === 'function') p.then(() => { if (host) host.hidden = true; toast(doneMsg || '已複製'); }, fallback);
     else fallback();
   } catch (_) { fallback(); }
 }
@@ -2198,10 +2414,12 @@ function fillVoiceSelect() {
   fill(sel, el('option', { value: '' }, '自動選擇'), use.map(v => el('option', { value: v.voiceURI }, v.name + '（' + v.lang + '）')));
   sel.value = use.some(v => v.voiceURI === S.settings.voiceURI) ? S.settings.voiceURI : '';
 }
+// Fills the dialog from the current settings; handlers always write to S.settings, which a refresh may replace.
 function fillSettings() {
   const s = S.settings;
-  fill($('#set-level'), ['A2', 'B1', 'B2'].map(k => el('button', { type: 'button', 'aria-pressed': String(s.level === k), 'data-fk': 'slvl-' + k, onclick: () => { s.level = k; saveSettings('level'); fillSettings(); if (S.tab === 'coach') renderCoach(); } }, k + ' ' + LEVELS[k].zh)));
-  $('#set-about').value = s.about;
+  fill($('#set-level'), ['A2', 'B1', 'B2'].map(k => el('button', { type: 'button', 'aria-pressed': String(s.level === k), 'data-fk': 'slvl-' + k, onclick: () => { S.settings.level = k; saveSettings('level'); fillSettings(); if (S.tab === 'coach') renderCoach(); } }, k + ' ' + LEVELS[k].zh)));
+  const about = $('#set-about');
+  if (document.activeElement !== about) about.value = s.about;
   $('#set-auto').checked = !!s.autoSpeak;
   $('#set-accent').value = s.accent;
   $('#set-rate').value = String(s.rate);
@@ -2210,6 +2428,27 @@ function fillSettings() {
   $('#set-no-voice').hidden = TTS.ok;
   fillVoiceSelect();
   $('#set-store').textContent = storeText();
+  const cloud = $('#set-cloud');
+  cloud.hidden = !(Store.mode === 'local' && Store.why === 'no_write' && Store.db);
+  cloud.disabled = S.uploading;
+  cloud.textContent = S.uploading ? '正在存到雲端…' : '再試一次存到雲端';
+  const clear = $('#set-clear');
+  const armed = isArmed('clear-local');
+  clear.hidden = Store.mode !== 'local';
+  clear.textContent = armed ? '再按一次清除（無法復原）' : '清除這個瀏覽器裡的練習資料';
+  clear.classList.toggle('danger', armed);
+}
+// Removes everything this app stored in this browser (local mode only), then starts fresh.
+function clearLocalData() {
+  for (const n of Object.keys(Store.timers)) clearTimeout(Store.timers[n]);
+  Store.pend = {};
+  Store.mode = 'memory'; // nothing may be written back while the page reloads
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('kaikou:')) keys.push(k); }
+    for (const k of keys) localStorage.removeItem(k);
+  } catch (_) { /* nothing stored */ }
+  location.reload();
 }
 function bindStatic() {
   const tabs = $$('.tabs button');
@@ -2253,14 +2492,17 @@ function bindStatic() {
   $('#saved-search').addEventListener('input', renderSavedList);
   $('#copy-anki').addEventListener('click', () => {
     if (!S.phrases.length) { toast('還沒有收藏可以複製'); return; }
-    copyText(ankiText(S.phrases), $('#copy-fallback'));
+    copyText(ankiText(S.phrases), $('#copy-fallback'), '已複製 ' + S.phrases.length + ' 句');
   });
   const dlg = $('#settings');
   const closeDlg = () => { try { dlg.close(); } catch (_) { dlg.removeAttribute('open'); } };
   $('#btn-settings').addEventListener('click', () => {
+    if (!S.ready) { toast('還在載入，稍等一下'); return; }
     fillSettings();
     try { dlg.showModal(); } catch (_) { dlg.setAttribute('open', ''); }
   });
+  $('#set-clear').addEventListener('click', () => arm('clear-local', clearLocalData, fillSettings));
+  $('#set-cloud').addEventListener('click', retryCloud);
   $('#settings-form').addEventListener('submit', e => e.preventDefault());
   $('#set-close').addEventListener('click', closeDlg);
   $('#set-done').addEventListener('click', closeDlg);
@@ -2289,6 +2531,23 @@ function bindStatic() {
   window.addEventListener('focus', () => refresh());
   window.addEventListener('scroll', placeToast, { passive: true });
   window.addEventListener('resize', placeToast);
+  document.addEventListener('compositionstart', () => { composing = true; }, true);
+  document.addEventListener('compositionend', () => {
+    composing = false;
+    if (renderAfterComposing) { renderAfterComposing = false; setTimeout(renderAfterRefresh, 0); }
+  }, true);
+  // In this-browser mode, a change saved by another tab of the app shows up here right away.
+  window.addEventListener('storage', e => {
+    if (Store.mode !== 'local' || !S.ready || !e.key || !e.key.startsWith('kaikou:')) return;
+    const name = e.key.slice(7);
+    if (!/^(settings|phrases|inbox|chat|log-\d{4}-\d{2}|sessions-\d{4}-\d{2})$/.test(name) || Store.busyDoc(name)) return;
+    let d = null;
+    try { d = e.newValue ? JSON.parse(e.newValue) : null; } catch (_) { return; }
+    if (sameAsSeen(name, d)) return;
+    applyDoc(name, d, false);
+    refreshStreak();
+    renderAfterRefresh();
+  });
   try { new ResizeObserver(updateScrollPad).observe($('#composer')); } catch (_) { window.addEventListener('resize', updateScrollPad); }
 }
 
@@ -2318,13 +2577,21 @@ function applyDoc(name, d, raced) {
 }
 // Sessions are applied before the chat, so a chat that was already reviewed is recognised.
 const APPLY_ORDER = n => (n.startsWith('sessions-') ? 0 : n === 'chat' ? 2 : 1);
+// The last version of each document read from storage, so a refresh that finds nothing new redraws nothing.
+const lastSeen = {};
+function sameAsSeen(name, d) {
+  const s = JSON.stringify(d === undefined ? null : d);
+  if (lastSeen[name] === s) return true;
+  lastSeen[name] = s;
+  return false;
+}
 async function loadAll() {
   const now = new Date();
   const months = [0, 1, 2].map(i => mkey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
   const names = ['sessions-' + months[0], 'sessions-' + months[1], 'settings', 'phrases', 'inbox', 'chat'].concat(months.map(m => 'log-' + m));
   const res = await Promise.all(names.map(n => Store.get(n).then(v => ({ ok: true, v }), () => ({ ok: false }))));
   names.forEach((n, i) => {
-    if (res[i].ok) { applyDoc(n, res[i].v, false); S.loadErrors.delete(n); return; }
+    if (res[i].ok) { sameAsSeen(n, res[i].v); applyDoc(n, res[i].v, false); S.loadErrors.delete(n); return; }
     S.loadErrors.add(n);
     if (n.startsWith('log-')) S.loaded.add(n.slice(4));
     if (n.startsWith('sessions-')) { const m = n.slice(9); S.sessions[m] = S.sessions[m] || []; S.sessLoaded.add(m); }
@@ -2332,43 +2599,60 @@ async function loadAll() {
 }
 /* Re-read documents. A response is applied as fetched only if nothing was written to that document while
    it was in flight. Otherwise it is dropped and read again next time, except for a log or sessions month
-   that never loaded, which is merged with the local edits so it does not stay missing. */
+   that never loaded, which is merged with the local edits so it does not stay missing.
+   Returns whether anything new was applied. */
 async function reloadDocs(names) {
   const list = names.filter(n => !Store.busyDoc(n) || S.loadErrors.has(n)).sort((a, b) => APPLY_ORDER(a) - APPLY_ORDER(b));
   const marks = Object.fromEntries(list.map(n => [n, Store.edits[n] || 0]));
   const busyAtIssue = Object.fromEntries(list.map(n => [n, Store.busyDoc(n)]));
   const chatBusyAtIssue = S.busy || S.reviewing;
   const res = await Promise.all(list.map(n => Store.get(n).then(v => ({ ok: true, v }), () => ({ ok: false }))));
+  let changed = false;
   list.forEach((n, i) => {
     if (!res[i].ok) { S.loadErrors.add(n); return; }
     const raced = busyAtIssue[n] || (Store.edits[n] || 0) !== marks[n] || Store.busyDoc(n);
     if (!raced) {
       if (n === 'chat' && chatBusyAtIssue) return;
+      const hadError = S.loadErrors.delete(n);
+      if (sameAsSeen(n, res[i].v) && !hadError) return;
       applyDoc(n, res[i].v, false);
-      S.loadErrors.delete(n);
+      changed = true;
     } else if (S.loadErrors.has(n) && (n.startsWith('log-') || n.startsWith('sessions-'))) {
+      sameAsSeen(n, res[i].v);
       applyDoc(n, res[i].v, true);
       S.loadErrors.delete(n);
+      changed = true;
     }
   });
   updateSync();
+  return changed;
+}
+// Redraws after a refresh wait while the person is composing text with an input method (Zhuyin, Pinyin…).
+let composing = false, renderAfterComposing = false;
+function renderAfterRefresh() {
+  if (composing) { renderAfterComposing = true; return; }
+  if (S.tab === 'coach' && (S.busy || S.reviewing)) { renderToday(); renderLog(); return; }
+  renderAll();
+  const dlg = $('#settings');
+  if (dlg && dlg.open) fillSettings();
 }
 let lastRefresh = 0, refreshing = false;
 async function refresh() {
-  if (!S.ready || refreshing || Store.mode !== 'db' || Date.now() - lastRefresh < 15000) return;
+  if (!S.ready || refreshing || (Store.mode !== 'db' && Store.mode !== 'local') || Date.now() - lastRefresh < 15000) return;
   lastRefresh = Date.now();
   refreshing = true;
+  let changed = false;
   try {
     const now = new Date();
     const m = mkey(now), prev = mkey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
     const names = new Set(['settings', 'phrases', 'inbox', 'chat', 'log-' + m, 'sessions-' + m]);
     if (S.loaded.has(prev)) names.add('log-' + prev);
     for (const n of S.loadErrors) names.add(n);
-    await reloadDocs([...names]);
-    S.streak = await settleStreak();
+    changed = await reloadDocs([...names]);
+    const streak = await settleStreak();
+    if (streak !== S.streak) { S.streak = streak; changed = true; }
   } finally { refreshing = false; }
-  if (S.tab === 'coach' && (S.busy || S.reviewing)) { renderToday(); renderLog(); return; }
-  renderAll();
+  if (changed) renderAfterRefresh();
 }
 function scheduleMidnight() {
   const now = new Date();
@@ -2393,6 +2677,7 @@ async function boot(data) {
   } else { S.sampleState = 'none'; }
   await Store.init();
   await loadAll();
+  if (Store.mode === 'db') S.held = heldInfo();
   S.ready = true;
   updateSync();
   S.streak = await settleStreak();
@@ -2415,3 +2700,5 @@ if (hot && typeof hot.ready === 'function') {
 }
 })();
 </script>
+</body>
+</html>
