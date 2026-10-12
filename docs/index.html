@@ -4,10 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>開口練習室</title>
+<meta name="theme-color" content="#1E5C48" media="(prefers-color-scheme: light)" data-pages-only>
+<meta name="theme-color" content="#0D1311" media="(prefers-color-scheme: dark)" data-pages-only>
+<meta name="apple-mobile-web-app-title" content="開口" data-pages-only>
+<link rel="manifest" href="manifest.webmanifest" data-pages-only>
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" data-pages-only>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@900&text=%E9%96%8B%E5%8F%A3&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" media="print" data-font>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@900&text=%E9%96%8B%E5%8F%A3&display=swap" media="print" data-font>
 <style>
 :root{
   /* Layout: one 760px column. Brand row, a sticky tab bar, then one working panel per tab.
@@ -236,9 +241,11 @@ textarea.input{resize:vertical;line-height:1.5}
 .hint-loading{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
 .composer{position:sticky;bottom:0;z-index:15;margin-top:8px;padding-top:8px;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px));background:var(--paper)}
 .tip{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 6px;font-size:13px;color:var(--muted)}
-.composer-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"hint text send";align-items:end;gap:6px;padding:6px;border-radius:16px;border:1px solid var(--line);background:var(--surface);box-shadow:var(--shadow)}
+.composer-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;grid-template-areas:"hint text lang mic send";align-items:end;gap:6px;padding:6px;border-radius:16px;border:1px solid var(--line);background:var(--surface);box-shadow:var(--shadow)}
 #hint-btn{grid-area:hint;align-self:center}
 #msg-input{grid-area:text}
+#mic-lang{grid-area:lang;align-self:center}
+#mic-btn{grid-area:mic;align-self:center}
 #send-btn{grid-area:send}
 .composer-row:focus-within{border-color:var(--accent)}
 .composer textarea{display:block;width:100%;min-height:42px;max-height:170px;padding:8px 4px;border:0;outline:0;resize:none;background:transparent;font-size:17px;line-height:1.45}
@@ -313,8 +320,65 @@ dialog::backdrop{background:var(--scrim,rgba(0,0,0,.5))}
 input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
 .sheet-foot{display:flex;justify-content:flex-end}
 
+/* microphone: dictation and the read-aloud check */
+.icon-btn.rec{color:var(--on-accent);background:var(--pen);border-color:var(--pen);animation:pulse 1.4s ease-in-out infinite}
+.icon-btn.rec:hover{color:var(--on-accent);background:var(--pen)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(180,35,24,.35)}50%{box-shadow:0 0 0 6px rgba(180,35,24,0)}}
+.mic-lang{min-width:36px;height:30px;padding:0 6px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:13px;font-weight:700;cursor:pointer}
+.mic-lang:hover{border-color:var(--accent);color:var(--ink)}
+.mic-msg{margin:0 2px 6px;padding:8px 10px;border-radius:10px;background:var(--warn-soft);color:var(--warn);font-size:14px}
+.say{grid-column:1/-1;display:grid;gap:4px;margin-top:6px;padding:8px 10px;border-radius:10px;border:1px dashed var(--line-strong);background:var(--surface-2);font-size:14px;white-space:normal}
+.say-head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted);font-weight:700}
+.say-ok{color:var(--accent)}
+.say-words{font-size:16px;line-height:1.75}
+.say-words .miss{color:var(--pen);text-decoration:underline wavy var(--pen);text-underline-offset:4px}
+.say-heard{color:var(--muted)}
+.rec-dot{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:var(--pen);vertical-align:1px;animation:blink 1.2s infinite both}
+
+/* saved: daily phrase review */
+.drill-top{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}
+.drill-q{display:grid;gap:8px;margin-top:12px;padding:20px 16px;border-radius:var(--r);background:var(--surface-2);text-align:center}
+.drill-q .big{font-size:22px;font-weight:700;line-height:1.45;overflow-wrap:anywhere}
+.drill-q .was{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--pen);text-decoration-thickness:1.5px}
+.drill-a{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 8px;margin-top:14px}
+.drill-a>div:first-child{min-width:0}
+.drill-a .phrase-en{font-size:20px}
+.rates{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
+.rate{display:grid;gap:2px;justify-items:center;min-height:58px;padding:8px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font-size:16px;font-weight:700;cursor:pointer}
+.rate small{font-size:12px;font-weight:500;color:var(--muted)}
+.rate:hover{border-color:var(--accent)}
+.rate.again{border-color:var(--pen);color:var(--pen)}
+.rate.good{border-color:var(--accent);background:var(--accent-soft)}
+.key-hint{font-size:12px;color:var(--muted)}
+
+/* today: shadowing and 4/3/2 */
+.tool-head{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}
+.ctl-row{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap}
+.ctl-row input[type=range]{max-width:220px}
+.sents{display:grid;gap:2px;margin:10px 0 0;padding:0;list-style:none}
+.sent{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:start;gap:2px 8px;padding:6px;border-radius:10px}
+.sent.cur{background:var(--accent-soft)}
+.sent-n{min-width:1.6em;padding-top:9px;font-family:var(--font-mono);font-size:12px;color:var(--muted);text-align:right}
+.sent-en{padding-top:6px;font-size:17px;line-height:1.5;overflow-wrap:anywhere}
+.sent-en.hide{color:transparent;text-shadow:0 0 9px var(--muted);user-select:none}
+.sent-zh{grid-column:2/3;font-size:14px;color:var(--muted)}
+.sent .say{grid-column:2/-1}
+.sent-acts{display:flex;align-items:center}
+.past{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:10px 0;border-top:1px solid var(--line)}
+.past:first-child{border-top:0}
+.timer{display:grid;justify-items:center;gap:8px;padding:8px 0 4px;text-align:center}
+.timer b{font-family:var(--font-display);font-size:64px;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.phase-dots{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+.phase-dots span{padding:2px 10px;border-radius:99px;border:1px solid var(--line);font-family:var(--font-mono);font-size:13px;color:var(--muted)}
+.phase-dots span.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink);font-weight:600}
+.phase-dots span.done{border-color:var(--accent);color:var(--accent)}
+.recs{display:grid;gap:10px}
+.recs audio{width:100%}
+.points{display:grid;gap:4px;margin:6px 0 0;padding-left:20px}
+
 @media (max-width:600px){
   .modes{grid-template-columns:1fr}
+  .timer b{font-size:56px}
   .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .brand-sub{display:none}
   .date-big{font-size:22px}
@@ -355,25 +419,30 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
   <main>
     <section id="tab-today" class="tab panel" role="tabpanel" aria-labelledby="t-today">
       <div id="today-dyn" class="panel"></div>
-      <h2 class="section-title">隨手記</h2>
-      <section class="card" aria-labelledby="inbox-title">
-        <h3 id="inbox-title" class="card-title">說不出口的句子</h3>
-        <p class="help mt6">想說卻說不出來的話先記下來，中文也可以，之後交給教練學說法。</p>
-        <form id="inbox-form" class="inline-form">
-          <input id="inbox-input" class="input" maxlength="200" autocomplete="off" placeholder="例如：這個功能下週才能上線" aria-label="說不出口的句子">
-          <button class="btn" type="submit">記下來</button>
-        </form>
-        <div id="inbox-list" class="inbox-list"></div>
-      </section>
+      <div id="today-inbox" class="panel">
+        <h2 class="section-title">隨手記</h2>
+        <section class="card" aria-labelledby="inbox-title">
+          <h3 id="inbox-title" class="card-title">說不出口的句子</h3>
+          <p class="help mt6">想說卻說不出來的話先記下來，中文也可以，之後交給教練學說法。</p>
+          <form id="inbox-form" class="inline-form">
+            <input id="inbox-input" class="input" maxlength="200" autocomplete="off" placeholder="例如：這個功能下週才能上線" aria-label="說不出口的句子">
+            <button class="btn" type="submit">記下來</button>
+          </form>
+          <div id="inbox-list" class="inbox-list"></div>
+        </section>
+      </div>
     </section>
 
     <section id="tab-coach" class="tab" role="tabpanel" aria-labelledby="t-coach" hidden>
       <div id="coach-dyn"></div>
       <div id="composer" class="composer" hidden>
-        <div id="composer-tip" class="tip"><span>用說的：手機切到英文鍵盤點麥克風，電腦按 <span class="kbd">Win + H</span>，說完再送出。</span><button type="button" id="tip-close" class="btn ghost small">知道了</button></div>
+        <div id="composer-tip" class="tip"><span id="composer-tip-text">用說的：手機切到英文鍵盤點麥克風，電腦按 <span class="kbd">Win + H</span>，說完再送出。</span><button type="button" id="tip-close" class="btn ghost small">知道了</button></div>
+        <div id="mic-msg" class="mic-msg" hidden></div>
         <div class="composer-row">
           <button id="hint-btn" type="button" class="icon-btn" aria-label="不知道怎麼回？看提示" title="不知道怎麼回？"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 17.5h6M10 20.5h4M12 3.5a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2h5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           <textarea id="msg-input" rows="1" maxlength="1000" placeholder="先大聲說，再用聽寫打進來…" aria-label="你的回覆"></textarea>
+          <button id="mic-lang" type="button" class="mic-lang" hidden>EN</button>
+          <button id="mic-btn" type="button" class="icon-btn" aria-label="用說的" hidden></button>
           <button id="send-btn" type="button" class="send" aria-label="送出"></button>
         </div>
       </div>
@@ -384,8 +453,9 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
     </section>
 
     <section id="tab-saved" class="tab panel" role="tabpanel" aria-labelledby="t-saved" hidden>
+      <div id="drill"></div>
       <div id="starters"></div>
-      <section class="card" aria-labelledby="mine-title">
+      <section id="mine-card" class="card" aria-labelledby="mine-title">
         <div class="card-head">
           <h2 id="mine-title" class="card-title">我的收藏 <span id="mine-count" class="tag"></span></h2>
           <button id="copy-anki" type="button" class="btn small">複製成 Anki 格式</button>
@@ -423,6 +493,11 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
       <div class="row"><label for="set-rate">語速</label><input type="range" id="set-rate" min="0.7" max="1.2" step="0.05"><output id="set-rate-out" class="mono" for="set-rate"></output><button type="button" id="set-test" class="btn small">試聽</button></div>
     </div>
     <p id="set-no-voice" class="help" hidden>這個瀏覽器不支援朗讀。</p>
+    <div class="field" id="set-mic-field" hidden>
+      <span class="label">麥克風</span>
+      <p id="set-mic-state" class="help"></p>
+      <div><button type="button" id="set-mic-on" class="btn small" hidden>重新啟用麥克風</button></div>
+    </div>
     <div class="field" id="set-api-field" hidden>
       <label class="label" for="set-api-key">Claude API 金鑰</label>
       <p class="help">填了之後，這個網頁也能用 AI 教練。金鑰只存在這個瀏覽器，只會送到 Anthropic 的 API；用量算在你的 Claude API 帳單。公用電腦不要存。</p>
@@ -434,6 +509,17 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
       <span class="label">資料存放</span>
       <p id="set-store" class="help"></p>
       <div class="row"><button type="button" id="set-cloud" class="btn small" hidden>再試一次存到雲端</button><button type="button" id="set-clear" class="btn small" hidden>清除這個瀏覽器裡的練習資料</button></div>
+    </div>
+    <div class="field">
+      <span class="label">備份與搬移</span>
+      <p class="help">把設定、打卡、收藏、隨手記、句子複習和跟讀短文存成一個檔案（不含 API 金鑰）。在另一台裝置或另一個版本匯入時，會和那裡的資料合併，不會刪掉任何東西。</p>
+      <div class="row"><button type="button" id="set-export" class="btn small">匯出備份檔</button><button type="button" id="set-import" class="btn small">匯入備份檔</button><input type="file" id="set-import-file" accept=".json,application/json" hidden></div>
+      <div id="set-import-box" class="notice" hidden></div>
+    </div>
+    <div class="field" id="set-install-field" hidden>
+      <span class="label">加到主畫面</span>
+      <p id="set-install-help" class="help"></p>
+      <div><button type="button" id="set-install" class="btn small" hidden>安裝到主畫面</button></div>
     </div>
     <div class="sheet-foot"><button type="button" id="set-done" class="btn primary">完成</button></div>
   </form>
@@ -449,6 +535,9 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
 /* ================= helpers ================= */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+// Web fonts never hold up the page: their stylesheets load as "print" and are switched on here when they arrive,
+// so a slow or blocked fonts host leaves the system fonts in place instead of a blank screen.
+for (const l of $$('link[data-font]')) { const on = () => { l.media = 'all'; }; if (l.sheet) on(); else l.addEventListener('load', on, { once: true }); }
 const pad = n => String(n).padStart(2, '0');
 const dkey = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 const mkey = d => d.getFullYear() + '-' + pad(d.getMonth() + 1);
@@ -519,6 +608,8 @@ function fill(node, ...kids) {
     }
   }
 }
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () => { try { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (_) { return false; } };
 function lsOK() { try { localStorage.setItem('__kk', '1'); localStorage.removeItem('__kk'); return true; } catch (_) { return false; } }
 function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* per-viewer convenience only */ } }
@@ -545,8 +636,11 @@ const ICON = {
   ext: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M19 5l-8 8M17 14v5H5V7h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   left: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   right: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  mic: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3.5" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="5.5" width="4" height="13" rx="1" fill="currentColor"/><rect x="13.5" y="5.5" width="4" height="13" rx="1" fill="currentColor"/></svg>',
 };
-const DEFAULTS = { plan: '20', level: 'B1', about: '', accent: 'en-US', voiceURI: '', rate: 0.95, autoSpeak: true };
+const DEFAULTS = { plan: '20', level: 'B1', about: '', accent: 'en-US', voiceURI: '', rate: 0.95, autoSpeak: true, shRate: 0.85 };
 const LEVELS = {
   A2: { zh: '入門', style: 'Use very common words and short, simple sentences (under 12 words each). Avoid idioms and slang.' },
   B1: { zh: '中級', style: 'Use everyday vocabulary and clear sentences. Now and then use one useful phrase they could copy.' },
@@ -555,12 +649,12 @@ const LEVELS = {
 const CORE = { '20': ['shadow', 'ai'], '60': ['shadow', 'ai', 'chunk', 'listen'] };
 const DAILY = [
   { key: 'shadow', name: '影子跟讀', min: { '20': 10, '60': 15 },
-    how: '選 1–3 分鐘、有逐字稿的音檔：先聽懂，再看稿跟讀，最後不看稿、延遲半拍跟唸。同一段練 3–5 天。',
-    links: [['BBC 6 Minute English', 'https://www.bbc.co.uk/learningenglish/english/features/6-minute-english'], ['VOA Learning English', 'https://learningenglish.voanews.com']] },
+    how: '先聽懂，再看稿跟讀，最後不看稿、延遲半拍跟唸。同一段練 3–5 天。可以在這裡用教練寫的短文練，也可以用 BBC、VOA 有逐字稿的音檔。',
+    links: [['BBC 6 Minute English', 'https://www.bbc.co.uk/learningenglish/english/features/6-minute-english'], ['VOA Learning English', 'https://learningenglish.voanews.com']], act: 'shadow' },
   { key: 'ai', name: 'AI 對話', min: { '20': 10, '60': 15 },
     how: '到「教練」選一種練法，先大聲說，再用聽寫送出。練完按「結束並複習」會自動打勾。', act: 'coach' },
   { key: 'chunk', name: '語塊複習', min: { '20': 0, '60': 10 },
-    how: '複習「收藏」裡的說法或 Anki，每一句都大聲說出來，再套進自己的句子。', act: 'saved' },
+    how: '複習收藏的句子：看提示先大聲說出英文，再翻面對答案，越熟的句子越久才出現一次。複習完一輪會自動打勾。', act: 'saved' },
   { key: 'listen', name: '聽 Podcast 或影片', min: { '20': 0, '60': 20 },
     how: '挑聽得懂八到九成的節目，通勤或運動時聽。',
     links: [['All Ears English', 'https://www.allearsenglish.com'], ['The English We Speak', 'https://www.bbc.co.uk/learningenglish/english/features/the-english-we-speak']] },
@@ -569,7 +663,8 @@ const WEEKLY = [
   { key: 'tutor', name: '真人家教', target: { '20': 1, '60': 2 }, label: { '20': '每週 1 次', '60': '每週 2–3 次' },
     how: '把和教練練過的話題帶進真人課，課後整理 3 句更自然的說法。' },
   { key: 'f432', name: '4/3/2 錄音', target: { '20': 1, '60': 2 }, label: { '20': '每週 1 次', '60': '每週 2 次' },
-    how: '挑一個熟悉的主題，用手機錄音，依序講 4 分鐘、3 分鐘、2 分鐘。' },
+    how: '挑一個熟悉的主題，依序講 4 分鐘、3 分鐘、2 分鐘（這裡有計時器），用手機錄音比較三次。',
+    howRec: '挑一個熟悉的主題，依序講 4 分鐘、3 分鐘、2 分鐘。這裡可以計時和錄音，三次講完會自動打勾。' },
 ];
 const MONTHLY_HOW = {
   '20': '用手機錄一段 2 分鐘的自我介紹加近況，留著下個月對照。',
@@ -627,6 +722,10 @@ const S = {
   busy: false, ctl: null, askStartedAt: 0, reviewing: false, reviewStart: 0,
   hints: null, hintSeq: 0, note: null, noteNoRetry: false, unsavedReview: null, held: null, uploading: false,
   streak: 0, justStamped: false, armed: null, tipHidden: false,
+  micZh: null, say: {},                 // dictation language override (中翻英), read-aloud results
+  srs: {}, drill: null,                 // review schedule per saved phrase, the running review
+  shadow: { cur: '', list: [] }, tool: null, sh: null, shGen: null, f432: null, // today tools
+  importing: null, installEvt: null,
 };
 
 /* ================= storage ================= */
@@ -1032,6 +1131,7 @@ function pickSettings(o) {
   if (typeof o.voiceURI === 'string') s.voiceURI = o.voiceURI;
   if (typeof o.rate === 'number' && isFinite(o.rate)) s.rate = clamp(o.rate, 0.6, 1.3);
   if (typeof o.autoSpeak === 'boolean') s.autoSpeak = o.autoSpeak;
+  if (typeof o.shRate === 'number' && isFinite(o.shRate)) s.shRate = clamp(o.shRate, 0.5, 1.2);
   return s;
 }
 function saveSettings(...keys) {
@@ -1042,8 +1142,11 @@ function saveSettings(...keys) {
 }
 const normEn = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 const phraseId = en => hashId('p', normEn(en));
+// "was" keeps the learner's own words for a saved correction, so the review can ask for the better version.
 function normPhrase(p, id) {
-  return { id, en: String(p.en), zh: String(p.zh || ''), note: String(p.note || ''), ex: String(p.ex || ''), src: String(p.src || ''), at: Number(p.at) || 0 };
+  const o = { id, en: String(p.en), zh: String(p.zh || ''), note: String(p.note || ''), ex: String(p.ex || ''), src: String(p.src || ''), at: Number(p.at) || 0 };
+  if (typeof p.was === 'string' && p.was.trim()) o.was = p.was;
+  return o;
 }
 function normPhrases(d) {
   const byId = new Map();
@@ -1066,6 +1169,8 @@ function addPhrase(p) {
   if (isSaved(en)) return 'exists';
   const id = phraseId(en);
   const item = { id, en, zh: String(p.zh || '').trim().slice(0, 200), note: String(p.note || '').trim().slice(0, 200), ex: String(p.example || p.ex || '').trim().slice(0, 300), src: p.src || '', at: Date.now() };
+  const was = String(p.was || '').trim().slice(0, 300);
+  if (was && normEn(was) !== normEn(en)) item.was = was;
   if (S.phrases.length >= MAX_PHRASES || docBytes(phrasesFull()) + docBytes(item) > DOC_LIMIT * 0.8) return 'full';
   S.phrases.unshift(item);
   Store.patch('phrases', phrasesFull(), { map: { [id]: item } });
@@ -1075,15 +1180,17 @@ const FULL_MSG = '收藏已滿，先到「收藏」刪掉一些舊的句子再�
 function removePhrase(id) {
   S.phrases = S.phrases.filter(p => p.id !== id);
   Store.patch('phrases', phrasesFull(), { map: { [id]: null } });
+  // Always written, even when this device never saw the schedule (another device may have reviewed the phrase).
+  delete S.srs[id]; Store.patch('srs', srsFull(), { map: { [id]: null } });
   Store.retryBlocked();
-  renderSavedList(); renderStarters();
+  renderSavedList(); renderStarters(); renderDrill();
 }
 // Returns 'added', 'removed', 'full' or ''.
 function toggleSaved(p) {
   if (!S.ready) return '';
   if (isSaved(p.en)) { removePhrase(phraseId(p.en)); return 'removed'; }
   const r = addPhrase(p);
-  renderSavedList();
+  renderSavedList(); renderDrill();
   return r === 'exists' ? 'added' : r;
 }
 function normInbox(d) {
@@ -1111,6 +1218,210 @@ function removeInbox(id) {
   Store.retryBlocked();
 }
 
+/* ================= phrase review (spaced repetition) ================= */
+/* The srs document keeps, per saved phrase: d = next due day, i = interval in days, r = reviews in a row
+   without forgetting, l = times forgotten, f = first review day, t = last review day. A phrase without an
+   entry is new; at most NEW_PER_DAY new phrases join the reviews each day, newest saved first. */
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const NEW_PER_DAY = 10, DRILL_MAX = 20;
+function normSrs(d) {
+  const out = {};
+  if (d && d.map && typeof d.map === 'object') {
+    for (const [id, v] of Object.entries(d.map)) {
+      if (!v || typeof v !== 'object' || !DATE_RE.test(v.d)) continue;
+      out[id] = { d: v.d, i: clamp(Math.round(Number(v.i) || 0), 0, 365), r: Math.max(0, Number(v.r) || 0), l: Math.max(0, Number(v.l) || 0), f: DATE_RE.test(v.f) ? v.f : v.d, t: DATE_RE.test(v.t) ? v.t : '' };
+    }
+  }
+  return out;
+}
+function srsFull() { return { map: Object.assign({}, S.srs) }; }
+// A schedule older than the phrase itself belongs to an earlier save of the same words: the phrase starts over as new.
+function srsOf(p) {
+  const e = p && S.srs[p.id];
+  if (!e) return null;
+  return !p.at || (e.t || e.f) >= dkey(new Date(p.at)) ? e : null;
+}
+function srsStats(tk) {
+  let due = 0, fresh = 0, newToday = 0, doneToday = 0, tomorrow = 0;
+  const tm = dkey(addDays(parseD(tk), 1));
+  for (const p of S.phrases) {
+    const e = srsOf(p);
+    if (!e) { fresh++; continue; }
+    if (e.d <= tk) due++; else if (e.d === tm) tomorrow++;
+    if (e.f === tk) newToday++;
+    if (e.t === tk) doneToday++;
+  }
+  const newLeft = Math.min(fresh, Math.max(0, NEW_PER_DAY - newToday));
+  return { due, fresh, newLeft, doneToday, tomorrow, todo: Math.min(DRILL_MAX, due + newLeft) };
+}
+function drillQueue(tk) {
+  const due = S.phrases.filter(p => { const e = srsOf(p); return e && e.d <= tk; }).sort((a, b) => srsOf(a).d.localeCompare(srsOf(b).d) || b.at - a.at);
+  const fresh = S.phrases.filter(p => !srsOf(p)).sort((a, b) => b.at - a.at).slice(0, srsStats(tk).newLeft);
+  return due.concat(fresh).slice(0, DRILL_MAX).map(p => p.id);
+}
+// The review schedule (and the phrases) must have been read before a round starts, or ratings would overwrite it.
+const srsUnread = () => S.loadErrors.has('srs') || S.loadErrors.has('phrases');
+// g: 0 = forgot (again today), 1 = hard, 2 = remembered. A new or forgotten phrase comes back after 1 day (hard)
+// or 2 days (remembered); after that the gap grows about ×2.5 when remembered and ×1.2 when hard.
+function nextIvl(e, g) {
+  const i = e ? e.i : 0;
+  if (g === 0) return 0;
+  if (g === 1) return Math.min(365, Math.max(1, Math.round(i * 1.2)));
+  return Math.min(365, i ? Math.max(i + 1, Math.round(i * 2.5)) : 2);
+}
+const ivlLabel = n => (n === 0 ? '等一下再一次' : n === 1 ? '明天' : n < 30 ? n + ' 天後' : '約 ' + Math.round(n / 30) + ' 個月後');
+function rateCard(id, g, tk) {
+  const prev = srsOf(S.phrases.find(p => p.id === id));
+  const i = nextIvl(prev, g);
+  const e = { d: dkey(addDays(parseD(tk), i)), i, r: g === 0 ? 0 : (prev ? prev.r : 0) + 1, l: (prev ? prev.l : 0) + (g === 0 ? 1 : 0), f: prev ? prev.f : tk, t: tk };
+  S.srs[id] = e;
+  Store.patch('srs', srsFull(), { map: { [id]: e } });
+}
+// What the front of a card asks for: the better version of the learner's own words, the meaning, or the phrase itself.
+function drillFront(p) {
+  if (p.was) return { kind: '改成更自然的說法', text: p.was, lang: 'en', was: true, help: '這是你原本的說法。先大聲說出更自然的版本，再翻面對答案。' };
+  if (p.zh) return { kind: '用英文怎麼說', text: p.zh, lang: 'zh-Hant-TW', help: '先大聲說出英文，再翻面對答案。' };
+  return { kind: '唸熟這一句', text: p.en, lang: 'en', help: '大聲唸三次，再用它說一個自己的句子，然後翻面。' };
+}
+async function startDrill() {
+  if (!S.ready) return;
+  if (srsUnread()) {
+    await reloadDocs(['phrases', 'srs']);
+    if (srsUnread()) { toast('還讀不到你的複習紀錄，等一下再試。'); return; }
+  }
+  const tk = todayKey();
+  const q = drillQueue(tk);
+  if (!q.length) { toast(S.phrases.length ? '今天要複習的句子都完成了' : '先收藏一些句子，才能開始複習'); return; }
+  if (Mic.cur) micStop(true);
+  S.drill = { tk, q, i: 0, flip: false, n: 0, tally: [0, 0, 0], again: {}, done: false };
+  if (S.tab !== 'saved') switchTab('saved'); else renderSaved();
+  window.scrollTo(0, 0);
+  focusHeading('#drill .card-title');
+}
+function drillFlip() {
+  const d = S.drill; if (!d || d.done || d.flip) return;
+  d.flip = true;
+  renderDrill();
+  const p = S.phrases.find(x => x.id === d.q[d.i]);
+  if (p && S.settings.autoSpeak) speak(p.en);
+  const b = $('#drill [data-fk="rate-2"]'); if (b) b.focus({ preventScroll: true });
+}
+function drillRate(g) {
+  const d = S.drill; if (!d || d.done || !d.flip) return;
+  if (d.tk !== todayKey()) { toast('已經過午夜，從新的一天重新開始複習。'); S.drill = null; renderSaved(); return; }
+  const id = d.q[d.i];
+  if (S.phrases.some(p => p.id === id)) {
+    rateCard(id, g, d.tk);
+    d.n++; d.tally[g]++;
+    if (g === 0 && (d.again[id] || 0) < 2) { d.again[id] = (d.again[id] || 0) + 1; d.q.push(id); }
+  }
+  for (const k of Object.keys(S.say)) if (k.startsWith('dr:')) delete S.say[k];
+  d.i++; d.flip = false;
+  if (Mic.cur) micStop(true);
+  if (d.i >= d.q.length) finishDrill(false);
+  else { renderDrill(); const b = $('#drill [data-fk="flip"]'); if (b) b.focus({ preventScroll: true }); }
+}
+// A finished round, or ten reviews today, counts as today's 語塊複習.
+function finishDrill(early) {
+  const d = S.drill; if (!d) return;
+  if (!d.n) { S.drill = null; renderSaved(); return; } // nothing was reviewed (or every phrase was deleted meanwhile)
+  d.done = true;
+  if (Mic.cur) micStop(true);
+  const tk = todayKey();
+  const rec = dayRec(tk);
+  d.ticked = false;
+  if (d.tk === tk && !(rec && rec.items.chunk) && (!early || srsStats(tk).doneToday >= 10)) { markItem(tk, 'chunk', true); d.ticked = true; }
+  renderSaved(); renderToday();
+  focusHeading('#drill .card-title');
+}
+function renderSaved() { renderDrill(); renderStarters(); renderSavedList(); }
+function renderDrill() {
+  const box = $('#drill'); if (!box || S.tab !== 'saved') return;
+  const d = S.drill;
+  const active = !!(d && !d.done);
+  $('#starters').hidden = active; $('#mine-card').hidden = active;
+  if (active) {
+    // A phrase deleted meanwhile (on this or another device) is skipped; the next card starts face down.
+    let skipped = false;
+    while (d.i < d.q.length && !S.phrases.some(p => p.id === d.q[d.i])) { d.i++; skipped = true; }
+    if (skipped) { d.flip = false; for (const k of Object.keys(S.say)) if (k.startsWith('dr:')) delete S.say[k]; }
+    if (d.i >= d.q.length) { finishDrill(false); return; }
+  }
+  fill(box, active ? drillCard(d) : d ? drillDone(d) : drillIntro());
+}
+function drillIntro() {
+  const tk = todayKey(), st = srsStats(tk);
+  const card = el('section', { class: 'card' },
+    el('div', { class: 'drill-top' },
+      el('h2', { class: 'card-title', text: '每日句子複習' }),
+      st.doneToday ? el('span', { class: 'tag on', text: '今天複習了 ' + st.doneToday + ' 句' }) : null));
+  if (S.ready && srsUnread()) {
+    card.append(el('p', { class: 'help mt6', text: '還讀不到你的複習紀錄。' }),
+      el('div', { class: 'start-row mt12' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'drill-start', onclick: startDrill }, '再讀一次並開始複習')));
+    return card;
+  }
+  if (!S.phrases.length) {
+    card.append(el('p', { class: 'help mt6', text: S.ready ? '收藏句子之後，這裡每天會排好要複習的句子：看中文先說英文，再翻面對答案，越熟的句子越久才出現一次。' : '正在載入…' }));
+    return card;
+  }
+  card.append(el('p', { class: 'help mt6', text: '看提示先大聲說出英文，再翻面對答案。依你記得的程度，系統安排下次複習的時間。' }));
+  if (st.todo) {
+    card.append(el('p', { class: 'mt6', text: '今天要複習：' + [st.due ? '到期 ' + st.due + ' 句' : '', st.newLeft ? '新句子 ' + st.newLeft + ' 句' : ''].filter(Boolean).join('、') + (st.due + st.newLeft > DRILL_MAX ? '（一輪最多 ' + DRILL_MAX + ' 句）' : '') }),
+      el('div', { class: 'start-row mt12' }, el('button', { type: 'button', class: 'btn primary', 'data-fk': 'drill-start', disabled: !S.ready, onclick: startDrill }, '開始複習（' + st.todo + ' 句）')));
+  } else {
+    card.append(el('p', { class: 'mt6', text: '今天的複習都完成了。' + (st.tomorrow ? '明天有 ' + st.tomorrow + ' 句到期。' : '') }));
+  }
+  return card;
+}
+function drillCard(d) {
+  const p = S.phrases.find(x => x.id === d.q[d.i]);
+  const f = drillFront(p);
+  const meter = el('span');
+  meter.style.width = Math.round(d.i / d.q.length * 100) + '%';
+  const card = el('section', { class: 'card', 'aria-label': '句子複習' },
+    el('div', { class: 'drill-top' },
+      el('div', null, el('div', { class: 'eyebrow', text: '句子複習' }), el('h2', { class: 'card-title', tabindex: '-1', text: '第 ' + (d.i + 1) + ' / ' + d.q.length + ' 句' })),
+      el('button', { type: 'button', class: 'btn small', 'data-fk': 'drill-end', onclick: () => finishDrill(true) }, '先到這裡')),
+    el('div', { class: 'meter mt12', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(d.q.length), 'aria-valuenow': String(d.i), 'aria-label': '這一輪的進度' }, meter),
+    el('div', { class: 'drill-q' },
+      el('span', { class: 'eyebrow', text: f.kind }),
+      el('p', { class: 'big' + (f.was ? ' was' : ''), lang: f.lang, text: f.text }),
+      el('p', { class: 'help', text: f.help })));
+  if (!d.flip) {
+    card.append(el('div', { class: 'start-row mt12' },
+      el('button', { type: 'button', class: 'btn primary big', 'data-fk': 'flip', onclick: drillFlip }, '翻面看答案'),
+      el('span', { class: 'key-hint', text: '鍵盤：空白鍵翻面' })));
+    return card;
+  }
+  const e = srsOf(p);
+  card.append(
+    el('div', { class: 'drill-a' },
+      el('div', null,
+        el('div', { class: 'phrase-en', lang: 'en', text: p.en }),
+        p.zh && f.lang !== 'zh-Hant-TW' ? el('div', { class: 'phrase-zh', text: p.zh }) : null,
+        p.note ? el('div', { class: 'phrase-zh', text: p.note }) : null,
+        p.ex ? el('div', { class: 'phrase-ex', lang: 'en', text: p.ex }) : null),
+      el('div', { class: 'phrase-acts' }, speakBtn(p.en, 'sm', 'dr'), sayBtn(p.en, 'dr')),
+      sayBox(p.en, 'dr')),
+    el('p', { class: 'help mt12', text: '剛才說得出來嗎？' }),
+    el('div', { class: 'rates', role: 'group', 'aria-label': '記得的程度' },
+      [['忘了', 'again'], ['有點卡', ''], ['記得', 'good']].map(([t, cls], g) =>
+        el('button', { type: 'button', class: 'rate' + (cls ? ' ' + cls : ''), 'data-fk': 'rate-' + g, onclick: () => drillRate(g) }, t, el('small', { text: ivlLabel(nextIvl(e, g)) })))),
+    el('p', { class: 'key-hint mt6', text: '鍵盤：1 忘了、2 有點卡、3 記得' }));
+  return card;
+}
+function drillDone(d) {
+  const st = srsStats(todayKey());
+  return el('section', { class: 'card' },
+    el('div', { class: 'drill-top' },
+      el('h2', { class: 'card-title', tabindex: '-1', text: d.n ? '這一輪完成了！' : '複習結束' }),
+      el('button', { type: 'button', class: 'btn ghost small', 'data-fk': 'drill-close', onclick: () => { S.drill = null; renderSaved(); } }, '關閉')),
+    d.n ? el('p', { class: 'mt6', text: '複習了 ' + d.n + ' 次：記得 ' + d.tally[2] + '、有點卡 ' + d.tally[1] + '、忘了 ' + d.tally[0] + '。' }) : null,
+    d.ticked ? el('p', { class: 'item-note', text: '今天的「語塊複習」已打勾。' }) : null,
+    el('div', { class: 'start-row mt12' },
+      st.todo ? el('button', { type: 'button', class: 'btn primary', 'data-fk': 'drill-more', onclick: startDrill }, '再複習一輪（' + st.todo + ' 句）') : el('span', { class: 'help', text: '今天的複習都完成了。' + (st.tomorrow ? '明天有 ' + st.tomorrow + ' 句到期。' : '') })));
+}
+
 /* ================= text to speech ================= */
 const TTS = {
   ok: typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance !== 'undefined',
@@ -1132,6 +1443,7 @@ const TTS = {
 };
 function speak(text) {
   if (!TTS.ok || !text) return;
+  if (Mic.cur) micStop(true); // the coach's voice must not end up in the dictation
   try {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(String(text).replace(/…/g, ', '));
@@ -1146,6 +1458,175 @@ function ttsUnlock() {
   if (!TTS.ok || TTS.unlocked) return;
   TTS.unlocked = true;
   try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (_) { /* ignore */ }
+}
+
+/* ================= microphone (speech recognition) ================= */
+// The browser's own speech recognition: Chrome and Edge (Chrome sends the audio to Google's service) and Safari.
+// Pages inside Claude cannot use the microphone, so there the system dictation tips stay as they are.
+// One recognition runs at a time; it stops by itself after the speaker pauses.
+// iPhone apps opened from the home screen get no speech recognition from WebKit, even though the constructor exists.
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+const Mic = { ok: !!SR && !window.claude && !(isIOS && isStandalone()), blocked: false, why: '', cur: null };
+// A refused microphone is remembered for 30 days (設定 can switch it back on), so the buttons do not fail on every visit.
+const MIC_OFF_LS = 'kaikou:mic-off';
+try { const o = JSON.parse(lsGet(MIC_OFF_LS) || 'null'); if (o && Date.now() - Number(o.at) < 30 * 86400000) { Mic.blocked = true; Mic.why = String(o.why || ''); } } catch (_) { /* never refused */ }
+// h.onUpdate(final, interim) while listening; h.onEnd(final, error, aborted) once at the end.
+function micStart(key, lang, h) {
+  micStop(true);
+  if (!Mic.ok || Mic.blocked) return false;
+  shStop(); // the shadowing player must not talk into the microphone
+  try { if (TTS.ok) speechSynthesis.cancel(); } catch (_) { /* nothing playing */ }
+  let rec;
+  try { rec = new SR(); } catch (_) { return false; }
+  const st = { rec, key, fin: '', err: '', dead: false };
+  rec.lang = lang; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+  rec.onresult = e => {
+    if (st.dead) return;
+    let fin = '', interim = '';
+    for (let i = 0; i < e.results.length; i++) {
+      const r = e.results[i], t = r && r[0] ? String(r[0].transcript || '') : '';
+      if (r && r.isFinal) fin += t; else interim += t;
+    }
+    st.fin = fin.trim();
+    if (h.onUpdate) h.onUpdate(st.fin, interim.trim());
+  };
+  rec.onerror = e => { st.err = (e && e.error) || 'unknown'; };
+  rec.onend = () => {
+    if (Mic.cur === st) Mic.cur = null;
+    // Refused: off until 設定 turns it back on. No connection to the recognition service (Chrome in mainland China,
+    // for example): off for this visit only, since a later visit may well connect.
+    const off = st.err === 'not-allowed' || st.err === 'service-not-allowed' || st.err === 'network';
+    if (off && !Mic.blocked) {
+      Mic.blocked = true; Mic.why = st.err;
+      if (st.err !== 'network') lsSet(MIC_OFF_LS, JSON.stringify({ why: st.err, at: Date.now() }));
+    }
+    if (h.onEnd) h.onEnd(st.dead ? '' : st.fin, st.err === 'aborted' ? '' : st.err, st.dead);
+    if (off) { renderAll(); updateComposer(); }
+  };
+  Mic.cur = st;
+  try { rec.start(); } catch (_) { Mic.cur = null; return false; }
+  return true;
+}
+// stop(): keep what was heard; abort: drop it (the caller has moved on).
+function micStop(abort) {
+  const st = Mic.cur; if (!st) return;
+  if (abort) { st.dead = true; Mic.cur = null; }
+  try { if (abort) st.rec.abort(); else st.rec.stop(); } catch (_) { /* already ended */ }
+}
+const micOn = key => !!(Mic.cur && Mic.cur.key === key);
+function micErrMsg(err) {
+  if (err === 'no-speech') return '沒有聽到聲音，按麥克風再說一次。';
+  if (err === 'audio-capture') return '找不到麥克風，請確認麥克風有接好、沒有被其他程式占用。';
+  if (err === 'not-allowed' || err === 'service-not-allowed') return '瀏覽器不允許使用麥克風或語音辨識。請在網址列旁的權限設定允許麥克風（iPhone 要在設定開啟 Siri 與聽寫），再到這個頁面的設定按「重新啟用麥克風」。現在先用系統的語音輸入。';
+  if (err === 'network') return '語音辨識連不上服務（Chrome 用的是 Google 的服務），這次先關掉。先改用系統的語音輸入：Windows 按 Win + H，手機用鍵盤上的麥克風。';
+  if (err === 'language-not-supported') return '這個瀏覽器不支援這個語言的語音辨識。';
+  return '語音辨識中斷了，再試一次。';
+}
+
+/* ---- the read-aloud check: say a sentence, see which words were recognised ---- */
+const NUM_WORDS = { zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10', eleven: '11', twelve: '12', thirteen: '13', fourteen: '14', fifteen: '15', sixteen: '16', seventeen: '17', eighteen: '18', nineteen: '19', twenty: '20', thirty: '30', forty: '40', fifty: '50', hundred: '100' };
+// Words compared without case, punctuation or contractions ("I'm" = "I am"), numbers as digits.
+function sayTokens(s) {
+  const t = String(s || '').toLowerCase().replace(/[‘’`´]/g, "'")
+    .replace(/\bcan't\b/g, 'can not').replace(/\bcannot\b/g, 'can not').replace(/\bwon't\b/g, 'will not').replace(/\bshan't\b/g, 'shall not')
+    .replace(/\blet's\b/g, 'let us').replace(/\bain't\b/g, 'is not').replace(/n't\b/g, ' not')
+    .replace(/'re\b/g, ' are').replace(/'m\b/g, ' am').replace(/'ll\b/g, ' will').replace(/'ve\b/g, ' have').replace(/'d\b/g, ' would')
+    .replace(/\b(it|that|there|here|what|who|where|how|he|she)'s\b/g, '$1 is');
+  return t.replace(/'/g, '').replace(/[^a-z0-9\s]+/g, ' ').split(/\s+/).filter(Boolean).map(w => NUM_WORDS[w] || w);
+}
+// Marks each word of the target as heard (true), missed (false) or punctuation only (null).
+function compareSaid(target, heard) {
+  const words = String(target || '').split(/\s+/).filter(Boolean);
+  const tt = [], owner = [];
+  words.forEach((w, i) => { for (const x of sayTokens(w)) { tt.push(x); owner.push(i); } });
+  const hh = sayTokens(heard);
+  const n = tt.length, m = hh.length;
+  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = tt[i] === hh[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const hit = new Array(n).fill(false);
+  for (let i = 0, j = 0; i < n && j < m;) {
+    if (tt[i] === hh[j]) { hit[i] = true; i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) i++;
+    else j++;
+  }
+  const ok = words.map(() => null);
+  owner.forEach((o, k) => { ok[o] = (ok[o] === null ? true : ok[o]) && hit[k]; });
+  return { marks: words.map((w, i) => ({ w, ok: ok[i] })), hit: hit.filter(Boolean).length, total: n };
+}
+const sayKey = (ctx, text) => ctx + ':' + phraseId(text);
+function sayBtn(text, ctx) {
+  if (!Mic.ok || Mic.blocked || !String(text || '').trim()) return null;
+  const key = sayKey(ctx, text);
+  const b = el('button', { type: 'button', class: 'icon-btn sm', 'data-say-btn': key, 'data-fk': 'say:' + key, onclick: () => sayCheck(text, key) });
+  setSayBtn(b, key);
+  return b;
+}
+function setSayBtn(b, key) {
+  const on = micOn('say:' + key);
+  b.classList.toggle('rec', on);
+  b.setAttribute('aria-pressed', String(on));
+  b.setAttribute('aria-label', on ? '停止' : '唸一次，看看有沒有唸清楚');
+  b.title = on ? '停止' : '唸一次';
+  b.innerHTML = on ? ICON.stop : ICON.mic;
+}
+function sayBox(text, ctx) {
+  if (!Mic.ok) return null;
+  const key = sayKey(ctx, text);
+  const box = el('div', { class: 'say', 'data-say': key });
+  fillSay(box, key);
+  return box;
+}
+function fillSay(box, key) {
+  const s = S.say[key];
+  box.hidden = !s;
+  if (!s) { fill(box); return; }
+  const close = el('button', { type: 'button', class: 'btn ghost small', 'data-fk': 'say-x:' + key, onclick: () => {
+    if (micOn('say:' + key)) micStop(true);
+    delete S.say[key]; updateSay(key);
+    const b = $('[data-say-btn="' + (window.CSS && CSS.escape ? CSS.escape(key) : key) + '"]'); if (b) b.focus({ preventScroll: true }); // focus stays nearby
+  } }, '收起');
+  if (s.state === 'listening') {
+    fill(box, el('div', { class: 'say-head' }, el('span', null, el('span', { class: 'rec-dot', 'aria-hidden': 'true' }), '聽你唸…唸完會自動停'), close),
+      s.heard || s.interim ? el('p', { class: 'say-heard', lang: 'en', text: [s.heard, s.interim].filter(Boolean).join(' ') }) : null);
+    return;
+  }
+  if (s.state === 'error') { fill(box, el('div', { class: 'say-head' }, el('span', { text: micErrMsg(s.err) }), close)); return; }
+  const all = s.hit === s.total;
+  const words = el('p', { class: 'say-words', lang: 'en' });
+  s.marks.forEach((m, i) => { if (i) words.append(' '); words.append(el('span', { class: m.ok === false ? 'miss' : null, text: m.w })); });
+  fill(box,
+    el('div', { class: 'say-head' }, el('b', { class: all ? 'say-ok' : null, text: all ? '每個字都聽出來了！' : '聽出 ' + s.hit + ' / ' + s.total + ' 個字' }), close),
+    words,
+    el('p', { class: 'say-heard' }, '你唸的：', el('span', { lang: 'en', text: s.heard })),
+    all ? null : el('p', { class: 'help', text: '紅色波浪線的字沒聽出來：先按喇叭聽一次，再唸一次。' }));
+}
+function updateSay(key) {
+  const esc = window.CSS && CSS.escape ? CSS.escape(key) : key;
+  for (const b of $$('[data-say="' + esc + '"]')) fillSay(b, key);
+  for (const b of $$('[data-say-btn="' + esc + '"]')) setSayBtn(b, key);
+}
+function sayCheck(text, key) {
+  const mk = 'say:' + key;
+  if (micOn(mk)) { micStop(false); return; }
+  const s = { state: 'listening', heard: '', interim: '' };
+  S.say[key] = s;
+  const keys = Object.keys(S.say);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 12))) if (k !== key) { delete S.say[k]; updateSay(k); }
+  // Callbacks act only on the check they belong to: a late end of an earlier, aborted check is ignored.
+  const ok = micStart(mk, S.settings.accent, {
+    onUpdate: (fin, interim) => { if (S.say[key] !== s || s.state !== 'listening') return; s.heard = fin; s.interim = interim; updateSay(key); },
+    onEnd: (fin, err, aborted) => {
+      if (S.say[key] !== s) return;
+      if (fin) {
+        Object.assign(s, { state: 'done', heard: fin, interim: '' }, compareSaid(text, fin));
+        announce(s.hit === s.total ? '每個字都聽出來了' : '聽出 ' + s.hit + ' 個字，共 ' + s.total + ' 個');
+      } else if (aborted) delete S.say[key];
+      else { s.state = 'error'; s.err = err || 'no-speech'; }
+      updateSay(key);
+    },
+  });
+  if (!ok) { delete S.say[key]; toast('這個瀏覽器不能用語音辨識'); }
+  updateSay(key);
 }
 
 /* ================= coach: prompts & parsing ================= */
@@ -1511,7 +1992,7 @@ async function startSession(setup, firstMessage) {
     if (!confirmTwice('start:' + unsaved + ':' + unread, msg)) return false;
   }
   cancelInflight();
-  S.review = null; S.hints = null; S.hintSeq++; S.note = null; S.noteNoRetry = false; S.armed = null;
+  S.review = null; S.hints = null; S.hintSeq++; S.note = null; S.noteNoRetry = false; S.armed = null; S.micZh = null;
   const c = newChat(setup);
   S.chat = c;
   if (c.mode === 'zh') {
@@ -1557,7 +2038,7 @@ function chatDoc() {
 }
 // Every document as this device currently has it (used when changes have to move to this browser).
 function allDocs() {
-  const docs = { settings: S.settings, phrases: phrasesFull(), inbox: inboxFull() };
+  const docs = { settings: S.settings, phrases: phrasesFull(), inbox: inboxFull(), srs: srsFull(), shadow: shadowFull() };
   const cd = chatDoc(); if (cd) docs.chat = cd;
   for (const m of Object.keys(S.logs)) docs['log-' + m] = logDoc(m);
   for (const m of Object.keys(S.sessions)) docs['sessions-' + m] = sessionsFull(m);
@@ -1565,7 +2046,7 @@ function allDocs() {
 }
 
 /* ---- changes kept in this browser while the cloud could not be used ---- */
-const DOC_NAME_RE = /^(settings|phrases|inbox|log-\d{4}-\d{2}|sessions-\d{4}-\d{2})$/;
+const DOC_NAME_RE = /^(settings|phrases|inbox|srs|shadow|log-\d{4}-\d{2}|sessions-\d{4}-\d{2})$/;
 function lsDel(k) { try { localStorage.removeItem(k); } catch (_) { /* nothing stored */ } }
 function readLocal(n) {
   try { const v = JSON.parse(lsGet('kaikou:' + n) || 'null'); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; } catch (_) { return null; }
@@ -1595,6 +2076,8 @@ function fullDocFor(n) {
   if (n === 'settings') return S.settings;
   if (n === 'phrases') return phrasesFull();
   if (n === 'inbox') return inboxFull();
+  if (n === 'srs') return srsFull();
+  if (n === 'shadow') return shadowFull();
   if (n.startsWith('log-')) return logDoc(n.slice(4));
   return sessionsFull(n.slice(9));
 }
@@ -1606,6 +2089,19 @@ async function uploadPatches(docs) {
   for (const n of names) {
     if (n.startsWith('log-')) await loadMonth(n.slice(4));
     if (n.startsWith('sessions-')) await loadSessions(n.slice(9));
+  }
+  // Review schedules kept here are sent only where the cloud has no later review of the same phrase.
+  if (names.includes('srs') && docs.srs.map && typeof docs.srs.map === 'object') {
+    let cloud;
+    try { cloud = normSrs(await Store.get('srs')); } catch (_) { return false; }
+    const map = {};
+    for (const [id, e] of Object.entries(docs.srs.map)) {
+      if (e === null) { map[id] = null; continue; }
+      if (!e || typeof e !== 'object') continue;
+      if (!cloud[id] || String(e.t || '') >= String(cloud[id].t || '')) map[id] = e;
+    }
+    S.srs = cloud;
+    docs = Object.assign({}, docs, { srs: { map } });
   }
   for (const n of names) {
     applyDoc(n, deepMerge(fullDocFor(n), docs[n]), false);
@@ -1740,6 +2236,7 @@ async function ask() {
   }
 }
 function finishTurn(c, turn, raw, cut) {
+  S.micZh = null; // dictation follows the conversation again (中翻英: Chinese first, then the English version)
   const p = parseCoach(raw);
   turn.raw = raw; turn.t = p.reply || streamPart(raw) || '…'; turn.pending = false; turn.streaming = false; turn.at = Date.now();
   if (cut) turn.cut = true;
@@ -1904,6 +2401,7 @@ function storeText() {
   if (Store.mode === 'local') {
     const lead = Store.why === 'no_write' ? '這個連結不能把進度存到雲端，所以只存在這個瀏覽器。'
       : Store.why === 'stopped' ? '雲端同步已停止，之後的變更只存在這個瀏覽器。'
+      : !window.claude ? '網頁版的進度只存在這個瀏覽器，不會同步到別台裝置；要搬到別台，用設定裡的備份檔。'
       : '雲端同步目前無法使用，進度只存在這個瀏覽器。';
     return lead + '用公用電腦時，練完可以到設定清除。';
   }
@@ -1924,6 +2422,8 @@ function focusHeading(sel) {
 }
 function switchTab(t, keepScroll) {
   if (!['today', 'coach', 'log', 'saved'].includes(t)) t = 'today';
+  if (Mic.cur) micStop(true);
+  if (t !== 'today') { shStop(); if (S.f432 && S.f432.state === 'run') f432Pause(); } // a round never runs unseen
   const from = document.activeElement;
   const fromPanel = !!(from && from.closest && from.closest('section.tab'));
   S.tab = t;
@@ -1932,7 +2432,7 @@ function switchTab(t, keepScroll) {
   if (t === 'today') { renderToday(); renderInbox(); }
   else if (t === 'coach') renderCoach();
   else if (t === 'log') renderLog();
-  else { renderStarters(); renderSavedList(); }
+  else renderSaved();
   updateScrollPad();
   if (!keepScroll) window.scrollTo(0, 0);
   if (t === 'coach' && S.chat) scrollToEnd(true);
@@ -1942,7 +2442,7 @@ function switchTab(t, keepScroll) {
   try { history.replaceState(null, '', '#' + t); } catch (_) { /* hash is optional */ }
 }
 function renderAll() {
-  renderToday(); renderInbox(); renderCoach(); renderLog(); renderStarters(); renderSavedList();
+  renderToday(); renderInbox(); renderCoach(); renderLog(); renderSaved();
 }
 
 /* ================= rendering: today ================= */
@@ -1955,6 +2455,8 @@ function renderToday() {
     S.lastToday = tk;
   }
   if (S.viewDate > tk) S.viewDate = tk;
+  if (S.tool) { renderTool(); return; }
+  $('#today-inbox').hidden = false;
   const k = S.viewDate, isToday = k === tk, d = parseD(k);
   const ws = weekStart(d);
   for (const mm of new Set([mkey(ws), mkey(addDays(ws, 6))])) {
@@ -2000,9 +2502,15 @@ function renderToday() {
     const on = !!items[def.key];
     const mins = def.min[plan];
     const acts = [];
+    if (def.act === 'shadow' && isToday) acts.push(el('button', { type: 'button', class: 'btn small', 'data-fk': 'go-shadow', disabled: !S.ready, onclick: () => openTool('shadow') }, '在這裡跟讀'));
     for (const [t, u] of (def.links || [])) acts.push(el('a', { class: 'link', href: u, target: '_blank', rel: 'noopener noreferrer', 'data-fk': 'lnk-' + t }, t, el('span', { class: 'ico', html: ICON.ext })));
     if (def.act === 'coach') acts.push(el('button', { type: 'button', class: 'btn small', 'data-fk': 'go-coach', onclick: () => switchTab('coach') }, S.chat ? '繼續對話' : '開始對話'));
-    if (def.act === 'saved') acts.push(el('button', { type: 'button', class: 'btn small', 'data-fk': 'go-saved', onclick: () => switchTab('saved') }, '打開收藏'));
+    const st = def.act === 'saved' && isToday && S.ready && !srsUnread() ? srsStats(k) : null;
+    if (def.act === 'saved') {
+      acts.push(st && st.todo
+        ? el('button', { type: 'button', class: 'btn small', 'data-fk': 'go-drill', onclick: startDrill }, '開始複習（' + st.todo + ' 句）')
+        : el('button', { type: 'button', class: 'btn small', 'data-fk': 'go-saved', onclick: () => switchTab('saved') }, '打開收藏'));
+    }
     const isCore = CORE[plan].includes(def.key);
     const coachMins = def.key === 'ai' ? coachTotal(rec) : 0;
     return el('div', { class: 'item', 'data-done': String(on) },
@@ -2013,6 +2521,7 @@ function renderToday() {
           el('span', { class: 'tag' + (isCore ? ' on' : ''), text: mins ? mins + ' 分鐘' : '通勤時順便' })),
         el('p', { class: 'item-how', text: def.how }),
         coachMins ? el('p', { class: 'item-note', text: '這天和教練練了 ' + coachMins + ' 分鐘' }) : null,
+        st && st.doneToday ? el('p', { class: 'item-note', text: '今天複習了 ' + st.doneToday + ' 句' }) : null,
         acts.length ? el('div', { class: 'item-acts' }, acts) : null));
   }));
 
@@ -2027,7 +2536,8 @@ function renderToday() {
           el('span', { class: 'item-name', text: def.name }),
           el('span', { class: 'tag', text: def.label[plan] }),
           el('span', { class: 'tag' + (n >= target ? ' on' : ''), text: '本週 ' + n + ' / ' + target })),
-        el('p', { class: 'item-how', text: def.how + (isToday ? '今天做了就打勾。' : '這天做了就打勾。') })));
+        el('p', { class: 'item-how', text: (def.key === 'f432' && canRecord() ? def.howRec : def.how) + (isToday ? '今天做了就打勾。' : '這天做了就打勾。') }),
+        def.key === 'f432' && isToday ? el('div', { class: 'item-acts' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'go-f432', disabled: !S.ready, onclick: () => openTool('f432') }, '開始 4/3/2')) : null));
   }));
 
   const m = k.slice(0, 7);
@@ -2251,7 +2761,9 @@ function fillZhReply(bubble, t, c, i) {
       bubble.append(el('div', { class: 'opt' },
         el('span', { class: 'opt-k', lang: 'zh-Hant-TW', text: OPT_LABEL[key] }),
         el('span', { class: 'opt-en', text: en }),
-        el('span', { class: 'opt-acts' }, speakBtn(en, 'sm', 'zh' + i), starBtn({ en, zh: zhSource, src: 'zh' }, 'sm', 'zh' + i))));
+        el('span', { class: 'opt-acts' }, speakBtn(en, 'sm', 'zh' + i), sayBtn(en, 'zh' + i), starBtn({ en, zh: zhSource, src: 'zh' }, 'sm', 'zh' + i))));
+      const sb = t.streaming ? null : sayBox(en, 'zh' + i);
+      if (sb) bubble.append(sb);
     } else if (line.trim()) bubble.append(el('div', { class: 'bl', text: line.trim() }));
   }
 }
@@ -2266,7 +2778,8 @@ function meMsg(t, i) {
           f.you ? el('div', { class: 'fix-you', text: f.you }) : null,
           el('div', { class: 'fix-better', text: f.better }),
           f.why ? el('div', { class: 'fix-why', lang: 'zh-Hant-TW', text: f.why }) : null),
-        el('div', { class: 'fix-acts' }, speakBtn(f.better, 'sm', 'fx' + i), starBtn({ en: f.better, note: f.why, src: 'fix' }, 'sm', 'fx'))))));
+        el('div', { class: 'fix-acts' }, speakBtn(f.better, 'sm', 'fx' + i), sayBtn(f.better, 'fx' + i), starBtn({ en: f.better, note: f.why, was: f.you, src: 'fix' }, 'sm', 'fx')),
+        sayBox(f.better, 'fx' + i)))));
   } else if (t.ok) {
     node.append(el('span', { class: 'ok-badge' }, el('span', { class: 'ico', html: ICON.check }), '說得很自然'));
   }
@@ -2292,6 +2805,7 @@ function renderHints() {
   fill(box,
     el('div', { class: 'hints-head' }, el('span', { text: '可以這樣回：點一下放進輸入框，先唸出來再送出' }), el('button', { type: 'button', class: 'btn ghost small', onclick: () => { S.hints = null; renderHints(); $('#msg-input').focus(); } }, '收起')),
     S.hints.map((h, i) => el('button', { type: 'button', class: 'hint', lang: 'en', 'data-fk': 'hint-' + i, onclick: () => {
+      if (micOn('composer')) { micStop(true); updateMicBtn(); } // a late dictation result must not replace the hint
       const ta = $('#msg-input'); ta.value = h.en; autosize(ta); ta.focus();
       if (S.settings.autoSpeak) speak(h.en);
     } }, el('span', { class: 'hint-en', text: h.en }), h.zh ? el('small', { lang: 'zh-Hant-TW', text: h.zh }) : null)));
@@ -2336,15 +2850,83 @@ function updateComposer() {
   const zh = !!(S.chat && S.chat.mode === 'zh');
   hint.disabled = !ok || S.busy || zh;
   hint.hidden = zh;
-  ta.placeholder = zh ? '打出想說的話，中文也可以…' : '先大聲說，再用聽寫打進來…';
+  const mic = Mic.ok && !Mic.blocked;
+  ta.placeholder = zh ? (mic ? '按麥克風用說的，或打出想說的話，中文也可以…' : '打出想說的話，中文也可以…') : (mic ? '按麥克風用說的，說完確認再送出…' : '先大聲說，再用聽寫打進來…');
+  const tip = $('#composer-tip-text');
+  if (mic) tip.textContent = '按麥克風直接說，停下來就會自動結束；文字不對可以改，確認後再送出。';
+  else fill(tip, '用說的：手機切到英文鍵盤點麥克風，電腦按 ', el('span', { class: 'kbd', text: 'Win + H' }), '，說完再送出。');
   $('#composer-tip').hidden = S.tipHidden || lsGet('kaikou:tip') === 'hide';
+  updateMicBtn();
   updateScrollPad();
 }
 function sendFromComposer() {
   const ta = $('#msg-input');
+  if (micOn('composer')) micStop(true); // what was heard is already in the box; a late result must not refill it
   const v = ta.value.trim();
   if (!v) { ta.focus(); return; }
-  if (send(v)) { ta.value = ''; autosize(ta); }
+  if (send(v)) { ta.value = ''; autosize(ta); micMsg(''); }
+}
+/* ---- dictation into the composer ---- */
+// In 中翻英 the learner types Chinese, then says one of the offered English versions out loud.
+function expectEnglish(c) {
+  for (let i = c.turns.length - 1; i >= 0; i--) {
+    const t = c.turns[i];
+    if (t.r !== 'c' || t.pending) continue;
+    return !t.sys && /^\s*(casual|neutral|work)\s*[:：]/im.test(t.t || '');
+  }
+  return false;
+}
+function micLang() {
+  const c = S.chat;
+  if (!c || c.mode !== 'zh') return S.settings.accent;
+  const zh = S.micZh === null ? !expectEnglish(c) : S.micZh;
+  return zh ? 'zh-TW' : S.settings.accent;
+}
+let micMsgTimer = 0;
+function micMsg(text) {
+  const n = $('#mic-msg'); if (!n) return;
+  clearTimeout(micMsgTimer);
+  n.textContent = text; n.hidden = !text;
+  if (text) { announce(text); micMsgTimer = setTimeout(() => { n.hidden = true; updateScrollPad(); }, 12000); }
+  updateScrollPad();
+}
+function updateMicBtn() {
+  const b = $('#mic-btn'), lb = $('#mic-lang'); if (!b) return;
+  const on = micOn('composer');
+  const zhLang = /^zh/.test(micLang());
+  b.hidden = !Mic.ok || Mic.blocked;
+  b.disabled = !on && !(S.sampleState === 'ok' && !!S.chat);
+  b.classList.toggle('rec', on);
+  b.setAttribute('aria-pressed', String(on));
+  b.setAttribute('aria-label', on ? '停止聽寫' : '用說的（' + (zhLang ? '中文' : '英文') + '）');
+  b.title = b.getAttribute('aria-label');
+  b.innerHTML = on ? ICON.stop : ICON.mic;
+  lb.hidden = b.hidden || !(S.chat && S.chat.mode === 'zh');
+  lb.textContent = zhLang ? '中' : 'EN';
+  lb.setAttribute('aria-label', '聽寫語言：' + (zhLang ? '中文' : '英文') + '，按一下切換');
+  lb.title = lb.getAttribute('aria-label');
+}
+function composerMic() {
+  if (micOn('composer')) { micStop(false); return; }
+  const ta = $('#msg-input');
+  if (ta.disabled) return;
+  const lang = micLang();
+  const base = ta.value.replace(/\s+$/, '');
+  const join = (...xs) => xs.filter(Boolean).join(/^zh/.test(lang) ? '' : ' ');
+  micMsg('');
+  const ok = micStart('composer', lang, {
+    onUpdate: (fin, interim) => { ta.value = join(base, fin, interim); autosize(ta); },
+    onEnd: (fin, err, aborted) => {
+      if (!aborted) {
+        ta.value = join(base, fin); autosize(ta);
+        if (err) micMsg(micErrMsg(err));
+        else if (fin && !matchMedia('(pointer: coarse)').matches) ta.focus({ preventScroll: true });
+      }
+      updateMicBtn();
+    },
+  });
+  if (!ok) micMsg('這個瀏覽器不能用語音辨識，請改用系統的語音輸入。');
+  updateMicBtn();
 }
 function autosize(ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 170) + 'px'; }
 function focusInput() { const ta = $('#msg-input'); if (ta && !matchMedia('(pointer: coarse)').matches) ta.focus({ preventScroll: true }); }
@@ -2371,7 +2953,8 @@ function reviewView(r) {
       el('div', { class: 'mt6' }, r.patterns.map(p => el('div', { class: 'pat' },
         el('p', { text: p.issue }),
         p.example ? el('p', { class: 'fix-you', lang: 'en', text: p.example }) : null,
-        p.fix ? el('div', { class: 'phrase-acts' }, el('span', { class: 'fix-better', lang: 'en', text: p.fix }), speakBtn(p.fix, 'sm'), starBtn({ en: p.fix, note: p.issue, src: 'review' }, 'sm', 'rp')) : null)))));
+        p.fix ? el('div', { class: 'phrase-acts' }, el('span', { class: 'fix-better', lang: 'en', text: p.fix }), speakBtn(p.fix, 'sm'), sayBtn(p.fix, 'rp'), starBtn({ en: p.fix, note: p.issue, was: p.example, src: 'review' }, 'sm', 'rp')) : null,
+        p.fix ? sayBox(p.fix, 'rp') : null)))));
   }
   if (r.phrases.length) {
     parts.push(el('section', { class: 'card' },
@@ -2389,7 +2972,8 @@ function reviewView(r) {
           el('div', { class: 'phrase-en', lang: 'en', text: p.en }),
           p.zh ? el('div', { class: 'phrase-zh', text: p.zh }) : null,
           p.example ? el('div', { class: 'phrase-ex', lang: 'en', text: p.example }) : null),
-        el('div', { class: 'phrase-acts' }, speakBtn(p.en, 'sm'), starBtn({ en: p.en, zh: p.zh, example: p.example, src: 'review' }, 'sm', 'rv')))))));
+        el('div', { class: 'phrase-acts' }, speakBtn(p.en, 'sm'), sayBtn(p.en, 'rv'), starBtn({ en: p.en, zh: p.zh, example: p.example, src: 'review' }, 'sm', 'rv')),
+        sayBox(p.en, 'rv'))))));
   }
   parts.push(el('section', { class: 'card' },
     el('h3', { class: 'card-title', text: '下次可以練' }),
@@ -2397,6 +2981,590 @@ function reviewView(r) {
     el('div', { class: 'start-row mt12' },
       r.next ? el('button', { type: 'button', class: 'btn primary', disabled: S.sampleState !== 'ok', 'data-fk': 'again', onclick: () => { ttsUnlock(); S.setup = { mode: 'free', topic: 'custom', scene: S.setup.scene, custom: r.next.slice(0, 160) }; startSession(Object.assign({}, S.setup)); } }, '用這個建議再練一次') : null,
       el('button', { type: 'button', class: 'btn', 'data-fk': 'back-menu', onclick: () => { S.review = null; renderCoach(); } }, '回到練習選單'))));
+  return el('div', { class: 'panel' }, parts);
+}
+
+/* ================= today tools: shadowing and 4/3/2 ================= */
+/* The shadow document keeps up to 12 passages: { cur, map: { id: { title, level, at, src, sents: [{ en, zh }], days } } }.
+   A passage is practised for several days; "days" marks each day it was finished. */
+const SHADOW_MAX = 12;
+function normSents(list) {
+  return (Array.isArray(list) ? list : []).filter(s => s && typeof s.en === 'string' && s.en.trim())
+    .map(s => ({ en: s.en.trim().slice(0, 240), zh: typeof s.zh === 'string' ? s.zh.trim().slice(0, 160) : '' })).slice(0, 30);
+}
+function normShadow(d) {
+  const list = [];
+  if (d && d.map && typeof d.map === 'object') {
+    for (const [id, v] of Object.entries(d.map)) {
+      if (!v || typeof v !== 'object') continue;
+      const sents = normSents(v.sents);
+      if (!sents.length) continue;
+      const days = {};
+      if (v.days && typeof v.days === 'object') for (const k of Object.keys(v.days)) if (DATE_RE.test(k) && v.days[k]) days[k] = 1;
+      list.push({ id, title: String(v.title || '').trim().slice(0, 80) || sents[0].en.slice(0, 40), level: LEVELS[v.level] ? v.level : '', at: Number(v.at) || 0, src: v.src === 'own' ? 'own' : 'ai', sents, days });
+    }
+  }
+  list.sort((a, b) => b.at - a.at);
+  return { cur: d && typeof d.cur === 'string' && list.some(p => p.id === d.cur) ? d.cur : '', list };
+}
+function shadowFull() { return { cur: S.shadow.cur, map: Object.fromEntries(S.shadow.list.map(p => [p.id, p])) }; }
+const curPassage = () => (S.sh ? S.shadow.list.find(p => p.id === S.sh.id) || null : null);
+function addPassage(p) {
+  const patch = { cur: p.id, map: { [p.id]: p } };
+  S.shadow.list.unshift(p); S.shadow.cur = p.id;
+  while (S.shadow.list.length > 1 && (S.shadow.list.length > SHADOW_MAX || docBytes(shadowFull()) > DOC_LIMIT * 0.6)) patch.map[S.shadow.list.pop().id] = null;
+  Store.patch('shadow', shadowFull(), patch);
+}
+function removePassage(id) {
+  S.shadow.list = S.shadow.list.filter(p => p.id !== id);
+  const patch = { map: { [id]: null } };
+  if (S.shadow.cur === id) { S.shadow.cur = ''; patch.cur = ''; }
+  Store.patch('shadow', shadowFull(), patch);
+  renderTool();
+}
+function passagePrompt(o) {
+  const lv = LEVELS[o.level] || LEVELS.B1;
+  const about = String(S.settings.about || '').trim();
+  const words = o.level === 'A2' ? '5 to 10' : o.level === 'B2' ? '8 to 18' : '6 to 14';
+  return 'Write a short passage for an English learner to practise shadowing (listening, then repeating out loud right after a recording).\n'
+    + 'The learner is a Mandarin speaker from Taiwan at CEFR level ' + o.level + '. ' + lv.style + '\n'
+    + (about ? 'About the learner (use it to make the passage feel relevant): ' + about.slice(0, 300) + '\n' : '')
+    + 'Topic: ' + o.topicEn + '\n'
+    + 'Write ' + (o.len === 'long' ? 10 : 6) + ' sentences of natural spoken English, one person talking about the topic in the first person, like a short podcast or a story told to a friend. '
+    + 'Each sentence ' + words + ' words. Use contractions and 2 or 3 useful everyday chunks.\n'
+    + 'Reply with only one JSON object: {"title": "a short English title", "sentences": [{"en": "one sentence", "zh": "its meaning in Traditional Chinese as used in Taiwan"}]}';
+}
+// Splits a pasted transcript into sentences. The dots of abbreviations ("Mr.", "e.g.", "U.S.", "3.5") are protected
+// first so they never end a sentence; very long sentences are split again at commas.
+const DOT = '․';
+function splitSentences(text) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim()
+    .replace(/\b(Mr|Mrs|Ms|Dr|St|Jr|Sr|Prof|vs|approx)\.(?=\s+[\dA-Za-z])/g, '$1' + DOT)
+    .replace(/\b(No)\.(?=\s*\d)/g, '$1' + DOT).replace(/\b(etc)\.(?=\s+[a-z])/g, '$1' + DOT)
+    .replace(/\b(?:[A-Za-z]\.){2,}/g, m => m.replace(/\./g, DOT))
+    .replace(/(\d)\.(\d)/g, '$1' + DOT + '$2');
+  if (!t) return [];
+  const out = (t.match(/[^.!?]+(?:[.!?]+["'”’)\]]*|$)/g) || [t]).map(s => s.trim()).filter(Boolean);
+  const res = [];
+  for (const s of out) {
+    if (s.length <= 220) { res.push(s); continue; }
+    let cur = '';
+    for (const piece of s.split(/(?<=,)\s+/)) {
+      if (cur && (cur + ' ' + piece).length > 160) { res.push(cur); cur = piece; } else cur = cur ? cur + ' ' + piece : piece;
+    }
+    if (cur) res.push(cur);
+  }
+  return res.map(s => s.split(DOT).join('.').slice(0, 240)).slice(0, 30);
+}
+function openTool(name) {
+  if (!S.ready) return;
+  if (Mic.cur) micStop(true);
+  shStop();
+  if (S.tool === 'f432' && name !== 'f432') f432Reset();
+  S.tool = name;
+  if (name === 'shadow') {
+    S.sh = null;
+    if (!S.shGen) S.shGen = { topic: 'weekend', custom: '', len: 'short', busy: false, err: '', own: '', ctl: null };
+  }
+  if (name === 'f432' && !S.f432) S.f432 = f432New();
+  if (S.tab !== 'today') switchTab('today'); else renderToday();
+  window.scrollTo(0, 0);
+  focusHeading('#today-dyn h2');
+}
+// Leaving a tool stops its sound, microphone and timer (a running 4/3/2 asks first, in backBtn).
+function leaveTool() {
+  shStop();
+  if (Mic.cur) micStop(true);
+  if (S.f432) f432Reset();
+  if (S.shGen && S.shGen.ctl) { try { S.shGen.ctl.abort(); } catch (_) { /* settled */ } }
+  S.tool = null; S.sh = null;
+}
+function closeTool() {
+  leaveTool();
+  renderToday(); renderInbox();
+  focusHeading('#today-dyn .date-big');
+}
+const f432Busy = () => !!(S.f432 && (S.f432.state === 'run' || S.f432.state === 'pause' || S.f432.state === 'saving'));
+function renderTool() {
+  const root = $('#today-dyn'); if (!root || S.tab !== 'today' || !S.tool) return;
+  $('#today-inbox').hidden = true;
+  if (S.tool === 'shadow') fill(root, curPassage() ? playerView() : shadowSetupView());
+  else fill(root, f432View());
+}
+function backBtn() {
+  const busy = S.tool === 'f432' && f432Busy();
+  const armed = isArmed('tool-back');
+  return el('button', { type: 'button', class: 'btn ghost small' + (armed ? ' danger' : ''), 'data-fk': 'tool-back', onclick: () => (busy ? arm('tool-back', closeTool, renderTool) : closeTool()) },
+    el('span', { class: 'ico', html: ICON.left }), armed ? '再按一次離開（計時會停止）' : '回到今日');
+}
+function aiUnavailable(what) {
+  if (S.sampleState === 'loading') return [el('p', { class: 'help', text: '連線中…' })];
+  if (S.sampleState === 'blocked') return [el('p', { class: 'help', text: sampleErrMsg({ code: S.blockCode || 'not_granted' }) })];
+  if (window.claude) return [el('p', { class: 'help', text: 'AI 教練目前不能用，' + what + '要從 Claude 的連結開啟這個頁面。' })];
+  return [el('p', { class: 'help', text: '在這個網頁上，要先到設定輸入 Claude API 金鑰，教練才能' + what + '。' }),
+    el('div', { class: 'start-row' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'tool-key', onclick: openKeySettings }, '到設定輸入金鑰'))];
+}
+
+/* ---- shadowing ---- */
+function openPassage(id) {
+  shStop();
+  if (Mic.cur) micStop(true);
+  S.sh = { id, idx: -1, playing: false, mode: 'pause', script: true, zh: false };
+  if (S.shadow.cur !== id) { S.shadow.cur = id; Store.patch('shadow', shadowFull(), { cur: id }); }
+  renderTool();
+  window.scrollTo(0, 0);
+  focusHeading('#today-dyn h2');
+}
+async function genPassage() {
+  const g = S.shGen;
+  if (!g || g.busy || !S.sample || S.sampleState !== 'ok') return;
+  const t = TOPICS.find(x => x.k === g.topic) || TOPICS[0];
+  const custom = String(g.custom || '').trim();
+  if (t.k === 'custom' && !custom) { toast('先寫下想練的話題'); return; }
+  ttsUnlock();
+  const ctl = new AbortController();
+  g.busy = true; g.err = ''; g.ctl = ctl;
+  renderTool();
+  try {
+    const topicEn = t.k === 'custom' ? 'a topic the learner chose (it may be written in Chinese; write the passage in English): "' + custom + '"' : t.en;
+    const v = await askJson(passagePrompt({ level: S.settings.level, len: g.len, topicEn }), { modelTier: 'default', signal: ctl.signal });
+    const sents = normSents(v && (v.sentences || v.sents));
+    if (sents.length < 3) throw { code: 'invalid_json', message: 'too few sentences' };
+    if (S.shGen !== g || S.tool !== 'shadow') return;
+    const p = { id: newId(), title: String(v.title || '').trim().slice(0, 80) || (t.k === 'custom' ? custom : t.zh), level: S.settings.level, at: Date.now(), src: 'ai', sents, days: {} };
+    addPassage(p);
+    g.busy = false;
+    openPassage(p.id);
+    announce('短文寫好了，共 ' + sents.length + ' 句');
+  } catch (e) {
+    if (e && BLOCK_CODES.includes(e.code)) { S.sampleState = 'blocked'; S.blockCode = e.code; }
+    g.err = !e || e.code === 'cancelled' ? '' : sampleErrMsg(e);
+    if (g.err) announce(g.err);
+  } finally {
+    g.busy = false; g.ctl = null;
+    if (S.tool === 'shadow' && !curPassage()) renderTool();
+  }
+}
+function useOwnText() {
+  const g = S.shGen;
+  const text = String(g.own || '').trim();
+  if (!text) { toast('先貼上英文稿'); return; }
+  if (cjkRatio(text) > 0.3) { toast('這裡要貼英文稿；中文可以交給教練寫短文'); return; }
+  const sents = splitSentences(text).map(en => ({ en, zh: '' }));
+  if (!sents.length) { toast('找不到可以練的句子'); return; }
+  const words = sents[0].en.split(/\s+/);
+  addPassage({ id: newId(), title: words.slice(0, 6).join(' ') + (words.length > 6 ? '…' : ''), level: '', at: Date.now(), src: 'own', sents, days: {} });
+  g.own = '';
+  openPassage(S.shadow.cur);
+}
+// on: the player's own speech is playing (a whole run or one sentence), so stopping it may cancel speech.
+const Player = { tok: 0, timer: 0, on: false };
+// Speaks one sentence at the shadowing speed; done(ms) runs once, also when a browser never reports the end
+// (each sentence has its own fallback timer, so a late event of a cancelled sentence cannot clear the next one's).
+function shSpeak(text, done) {
+  let fired = false, t0 = 0, guard = 0;
+  const end = () => { if (fired) return; fired = true; clearTimeout(guard); done(t0 ? Date.now() - t0 : 0); };
+  try {
+    const u = new SpeechSynthesisUtterance(String(text).replace(/…/g, ', '));
+    const v = TTS.pick();
+    if (v) { u.voice = v; u.lang = v.lang; } else u.lang = S.settings.accent;
+    u.rate = clamp(Number(S.settings.shRate) || 0.85, 0.5, 1.2);
+    u.onstart = () => { t0 = Date.now(); };
+    u.onend = end; u.onerror = end;
+    speechSynthesis.speak(u);
+    guard = setTimeout(end, String(text).split(/\s+/).length / (2.2 * u.rate) * 2500 + 4000);
+  } catch (_) { setTimeout(end, 0); }
+}
+// While playing, only the highlighted sentence and the play button change (a full redraw would cut off a drag
+// on the speed slider and move a screen reader back to the top).
+function shSync() {
+  const sh = S.sh; if (!sh || S.tool !== 'shadow' || S.tab !== 'today') return;
+  $$('#today-dyn .sent').forEach((li, i) => {
+    const on = i === sh.idx;
+    li.classList.toggle('cur', on);
+    if (on) li.setAttribute('aria-current', 'true'); else li.removeAttribute('aria-current');
+  });
+  const b = $('#today-dyn [data-fk="sh-play"]');
+  if (b) fill(b, el('span', { class: 'ico', html: sh.playing ? ICON.pause : ICON.play }), sh.playing ? '暫停' : sh.idx > 0 ? '從第 ' + (sh.idx + 1) + ' 句繼續' : '從頭播放');
+}
+// "pause" mode leaves a gap after each sentence for repeating it (a little longer than the sentence took).
+function shPlayFrom(i) {
+  const p = curPassage(), sh = S.sh;
+  if (!p || !TTS.ok) return;
+  ttsUnlock();
+  if (Mic.cur) micStop(true);
+  const tok = ++Player.tok;
+  clearTimeout(Player.timer);
+  try { speechSynthesis.cancel(); } catch (_) { /* nothing playing */ }
+  sh.playing = true; Player.on = true;
+  const step = idx => {
+    if (tok !== Player.tok) return;
+    if (idx >= p.sents.length) { sh.playing = false; sh.idx = -1; Player.on = false; shSync(); announce('播完了'); return; }
+    sh.idx = idx;
+    shSync();
+    shSpeak(p.sents[idx].en, ms => {
+      if (tok !== Player.tok) return;
+      Player.timer = setTimeout(() => step(idx + 1), sh.mode === 'pause' ? clamp((ms || 2500) * 1.25 + 600, 1500, 15000) : 250);
+    });
+  };
+  step(i);
+}
+function shPlayOne(i) {
+  const p = curPassage(), sh = S.sh;
+  if (!p || !TTS.ok) return;
+  ttsUnlock();
+  if (Mic.cur) micStop(true);
+  const tok = ++Player.tok;
+  clearTimeout(Player.timer);
+  try { speechSynthesis.cancel(); } catch (_) { /* nothing playing */ }
+  sh.playing = false; sh.idx = i; Player.on = true;
+  shSync();
+  shSpeak(p.sents[i].en, () => { if (tok === Player.tok) Player.on = false; });
+}
+function shStop() {
+  Player.tok++;
+  clearTimeout(Player.timer);
+  const was = Player.on || !!(S.sh && S.sh.playing);
+  Player.on = false;
+  if (S.sh) S.sh.playing = false;
+  if (was) {
+    try { speechSynthesis.cancel(); } catch (_) { /* nothing playing */ }
+    shSync();
+  }
+}
+function finishShadow() {
+  const p = curPassage(); if (!p) return;
+  shStop();
+  const tk = todayKey();
+  if (!p.days[tk]) { p.days[tk] = 1; Store.patch('shadow', shadowFull(), { map: { [p.id]: { days: { [tk]: 1 } } } }); }
+  const rec = dayRec(tk);
+  if (!(rec && rec.items.shadow)) markItem(tk, 'shadow', true);
+  toast('今天的影子跟讀完成了（這篇練了 ' + Object.keys(p.days).length + ' 天）');
+  renderTool();
+  focusHeading('#today-dyn h2'); // the button just pressed is now disabled
+}
+function shadowSetupView() {
+  const g = S.shGen;
+  const parts = [el('section', { class: 'card' },
+    el('div', { class: 'tool-head' }, backBtn()),
+    el('h2', { class: 'card-title mt6', tabindex: '-1', text: '影子跟讀' }),
+    el('p', { class: 'help mt6', text: '一句一句播放短文：先聽懂，再看稿跟著唸，最後不看稿、延遲半拍跟唸。同一篇練 3–5 天，唸順了再換。' }),
+    TTS.ok ? null : el('p', { class: 'notice mt12', text: '這個瀏覽器不能朗讀，只能看稿自己唸。可以改用 Chrome、Edge 或 Safari。' }))];
+  if (S.shadow.list.length) {
+    parts.push(el('section', { class: 'card' },
+      el('h3', { class: 'card-title', text: '練過的短文' }),
+      el('div', { class: 'mt6' }, S.shadow.list.map(p => {
+        const n = Object.keys(p.days).length, armed = isArmed('shdel-' + p.id);
+        return el('div', { class: 'past' },
+          el('div', null,
+            el('b', { lang: 'en', text: p.title }),
+            el('div', { class: 'help', text: (p.src === 'own' ? '自己的稿' : '教練寫的') + (p.level ? '・' + p.level : '') + '・' + p.sents.length + ' 句・' + (n ? '練了 ' + n + ' 天' : '還沒練完一次') })),
+          el('div', { class: 'row-acts' },
+            el('button', { type: 'button', class: 'btn small' + (p.id === S.shadow.cur ? ' primary' : ''), 'data-fk': 'shopen-' + p.id, onclick: () => openPassage(p.id) }, '練這篇'),
+            iconBtn('trash', armed ? '再按一次刪除' : '刪除', () => arm('shdel-' + p.id, () => removePassage(p.id), renderTool), 'sm' + (armed ? ' danger' : ''), 'shdel-' + p.id)));
+      }))));
+  }
+  const gen = el('section', { class: 'card panel' }, el('h3', { class: 'card-title', text: '請教練寫一篇新的' }));
+  if (S.sampleState === 'ok') {
+    gen.append(chipGroup('聊什麼', TOPICS, g.topic, k => { g.topic = k; renderTool(); }));
+    if (g.topic === 'custom') {
+      gen.append(el('div', { class: 'field' },
+        el('label', { class: 'label', for: 'sh-custom', text: '自訂話題（中英文都可以）' }),
+        el('input', { id: 'sh-custom', class: 'input', maxlength: '160', value: g.custom, 'data-fk': 'sh-custom', placeholder: '例如：第一次出國出差', oninput: e => { g.custom = e.target.value; } })));
+    }
+    gen.append(el('div', { class: 'field' },
+      el('span', { class: 'label', text: '長度' }),
+      el('div', null, el('div', { class: 'seg', role: 'group', 'aria-label': '長度' }, [['short', '短・6 句'], ['long', '長・10 句']].map(([k, t]) =>
+        el('button', { type: 'button', 'aria-pressed': String(g.len === k), 'data-fk': 'shlen-' + k, onclick: () => { g.len = k; renderTool(); } }, t))))),
+      el('p', { class: 'help', text: '程度和教練一樣：' + S.settings.level + ' ' + LEVELS[S.settings.level].zh + '（在設定可以改）。' }),
+      el('div', { class: 'start-row' },
+        el('button', { type: 'button', class: 'btn primary', 'data-fk': 'sh-gen', disabled: g.busy, onclick: genPassage }, g.busy ? '教練正在寫…' : '產生短文'),
+        g.busy ? el('button', { type: 'button', class: 'btn', 'data-fk': 'sh-gen-stop', onclick: () => { if (g.ctl) g.ctl.abort(); } }, '取消') : null));
+    if (g.err) gen.append(el('p', { class: 'coach-note', text: g.err }));
+  } else gen.append(...aiUnavailable('寫短文'));
+  parts.push(gen);
+  parts.push(el('section', { class: 'card panel' },
+    el('h3', { class: 'card-title', text: '用自己的英文稿' }),
+    el('p', { class: 'help', text: '貼上 Podcast、新聞或課本的英文逐字稿（最多 30 句），用朗讀一句一句練。' }),
+    el('textarea', { id: 'sh-own', class: 'input', rows: '4', maxlength: '5000', lang: 'en', value: g.own, 'data-fk': 'sh-own', 'aria-label': '英文稿', placeholder: 'Paste an English transcript here…', oninput: e => { g.own = e.target.value; } }),
+    el('div', { class: 'start-row' }, el('button', { type: 'button', class: 'btn', 'data-fk': 'sh-own-go', onclick: useOwnText }, '用這段練習'))));
+  return el('div', { class: 'panel' }, parts);
+}
+function playerView() {
+  const p = curPassage(), sh = S.sh, tk = todayKey();
+  const n = Object.keys(p.days).length, doneToday = !!p.days[tk];
+  const rec = dayRec(tk);
+  const head = el('section', { class: 'card' },
+    el('div', { class: 'tool-head' }, backBtn(), el('span', { class: 'tag' + (doneToday ? ' on' : ''), text: doneToday ? '今天練過了・第 ' + n + ' 天' : '第 ' + (n + 1) + ' 天' })),
+    el('h2', { class: 'card-title mt6', tabindex: '-1', lang: 'en', text: p.title }),
+    el('p', { class: 'help', text: (p.src === 'own' ? '自己的稿' : '教練寫的') + (p.level ? '・' + p.level : '') + '・' + p.sents.length + ' 句' + (n >= 3 ? '・已經練 ' + n + ' 天，唸順了就可以換一篇' : '') }),
+    TTS.ok ? el('div', { class: 'ctl-row mt12' },
+      el('button', { type: 'button', class: 'btn primary', 'data-fk': 'sh-play', onclick: () => (sh.playing ? shStop() : shPlayFrom(sh.idx >= 0 ? sh.idx : 0)) },
+        el('span', { class: 'ico', html: sh.playing ? ICON.pause : ICON.play }), sh.playing ? '暫停' : sh.idx > 0 ? '從第 ' + (sh.idx + 1) + ' 句繼續' : '從頭播放'),
+      el('div', { class: 'seg', role: 'group', 'aria-label': '播放方式' }, [['pause', '聽一句、跟一句'], ['flow', '連續播放']].map(([k, t]) =>
+        el('button', { type: 'button', 'aria-pressed': String(sh.mode === k), 'data-fk': 'shm-' + k, onclick: () => { sh.mode = k; renderTool(); } }, t)))) : null,
+    el('div', { class: 'ctl-row mt12' },
+      TTS.ok ? el('label', { class: 'label', for: 'sh-rate', text: '語速' }) : null,
+      TTS.ok ? el('input', { type: 'range', id: 'sh-rate', min: '0.5', max: '1.2', step: '0.05', value: String(S.settings.shRate), 'data-fk': 'sh-rate',
+        oninput: e => { S.settings.shRate = clamp(Number(e.target.value) || 0.85, 0.5, 1.2); const o = $('#sh-rate-out'); if (o) o.textContent = S.settings.shRate.toFixed(2) + '×'; saveSettings('shRate'); } }) : null,
+      TTS.ok ? el('output', { id: 'sh-rate-out', class: 'mono', for: 'sh-rate', text: S.settings.shRate.toFixed(2) + '×' }) : null,
+      el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: sh.script, 'data-fk': 'sh-script', onchange: e => { sh.script = e.target.checked; renderTool(); } }), '顯示稿子'),
+      p.sents.some(s => s.zh) ? el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: sh.zh, 'data-fk': 'sh-zh', onchange: e => { sh.zh = e.target.checked; renderTool(); } }), '中文') : null));
+  const list = el('ol', { class: 'sents', 'aria-label': '句子' }, p.sents.map((s, i) => el('li', { class: 'sent' + (i === sh.idx ? ' cur' : ''), 'aria-current': i === sh.idx ? 'true' : null },
+    el('span', { class: 'sent-n', 'aria-hidden': 'true', text: String(i + 1) }),
+    el('span', { class: 'sent-en' + (sh.script ? '' : ' hide'), lang: 'en', 'aria-hidden': sh.script ? null : 'true', text: s.en }),
+    el('span', { class: 'sent-acts' }, TTS.ok ? iconBtn('play', '播放第 ' + (i + 1) + ' 句', () => shPlayOne(i), 'sm', 'shp-' + i) : null, sayBtn(s.en, 'sh' + i)),
+    sh.zh && s.zh ? el('span', { class: 'sent-zh', text: s.zh }) : null,
+    sayBox(s.en, 'sh' + i))));
+  const foot = el('section', { class: 'card' },
+    el('p', { class: 'help', text: '建議順序：先不看稿聽一遍 → 看稿「聽一句、跟一句」→ 關掉稿子，延遲半拍跟著唸。' }),
+    el('div', { class: 'start-row mt12' },
+      el('button', { type: 'button', class: 'btn primary', 'data-fk': 'sh-done', disabled: doneToday && !!(rec && rec.items.shadow), onclick: finishShadow }, doneToday && rec && rec.items.shadow ? '今天已完成' : '完成今天的跟讀'),
+      el('button', { type: 'button', class: 'btn', 'data-fk': 'sh-other', onclick: () => { shStop(); S.sh = null; renderTool(); focusHeading('#today-dyn h2'); } }, '換一篇')));
+  return el('div', { class: 'panel' }, head, el('section', { class: 'card' }, list), foot);
+}
+
+/* ---- 4/3/2: the same talk three times, in 4, 3 and 2 minutes ---- */
+const F432_SECS = [240, 180, 120];
+const F432_TOPICS = [
+  { k: 'intro', zh: '自我介紹', en: 'introduce yourself: your work, where you live and what you enjoy' },
+  { k: 'job', zh: '我的工作', en: 'what you do at work and what a typical day looks like' },
+  { k: 'trip', zh: '最近一次旅行', en: 'the last trip you took' },
+  { k: 'memory', zh: '難忘的經驗', en: 'a memorable experience' },
+  { k: 'show', zh: '推薦一部劇或電影', en: 'a show or film you would recommend, and why' },
+  { k: 'learn', zh: '最近在學的東西', en: 'something you are learning these days' },
+  { k: 'custom', zh: '自訂主題', en: '' },
+];
+const canRecord = () => !window.claude && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+const Rec = { stream: null, mr: null, chunks: [] };
+let f432Timer = 0, audioCtx = null;
+function f432New() { return { topic: 'intro', custom: '', state: 'setup', phase: 0, endsAt: 0, left: 0, recOn: canRecord(), recs: [], recErr: '', points: null }; }
+function f432Reset() {
+  clearInterval(f432Timer);
+  recRelease();
+  keepAwake(false);
+  if (S.f432) for (const r of S.f432.recs) if (r) URL.revokeObjectURL(r.url);
+  S.f432 = null;
+}
+// While a round runs the screen stays on, so a phone does not lock (and pause everything) in the middle of a talk.
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (!on) { const w = wakeLock; wakeLock = null; if (w) await w.release(); return; }
+    if (wakeLock || !navigator.wakeLock || document.visibilityState !== 'visible') return;
+    const w = await navigator.wakeLock.request('screen');
+    if (!S.f432 || S.f432.state !== 'run') { w.release(); return; }
+    wakeLock = w;
+    w.addEventListener('release', () => { if (wakeLock === w) wakeLock = null; });
+  } catch (_) { /* not available here: the round still runs */ }
+}
+function audioUnlock() {
+  try { const AC = window.AudioContext || window.webkitAudioContext; if (AC && !audioCtx) audioCtx = new AC(); if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); } catch (_) { /* no sound */ }
+}
+function beep() {
+  try {
+    if (audioCtx) {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime;
+      o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.3, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+      o.start(t); o.stop(t + 0.75);
+    }
+  } catch (_) { /* no sound */ }
+  try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (_) { /* no vibration */ }
+}
+async function recStart() {
+  if (!Rec.stream) Rec.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  Rec.chunks = [];
+  const mr = new MediaRecorder(Rec.stream);
+  mr.ondataavailable = e => { if (e.data && e.data.size) Rec.chunks.push(e.data); };
+  Rec.mr = mr;
+  mr.start(1000);
+}
+function recStop(phase) {
+  const mr = Rec.mr; if (!mr) return Promise.resolve();
+  Rec.mr = null;
+  const F = S.f432;
+  return new Promise(res => {
+    mr.onstop = () => {
+      const blob = new Blob(Rec.chunks, { type: mr.mimeType || 'audio/webm' });
+      if (F && S.f432 === F && blob.size) {
+        if (F.recs[phase]) URL.revokeObjectURL(F.recs[phase].url);
+        F.recs[phase] = { url: URL.createObjectURL(blob), type: blob.type };
+      }
+      res();
+    };
+    try { mr.stop(); } catch (_) { res(); }
+  });
+}
+function recRelease() {
+  if (Rec.mr) { try { Rec.mr.stop(); } catch (_) { /* stopped */ } Rec.mr = null; }
+  if (Rec.stream) { for (const t of Rec.stream.getTracks()) try { t.stop(); } catch (_) { /* stopped */ } Rec.stream = null; }
+}
+const mmss = s => Math.floor(s / 60) + ':' + pad(Math.floor(s % 60));
+async function f432Go() {
+  const F = S.f432; if (!F || F.state === 'run' || F.state === 'saving' || F.starting) return;
+  const topic = F432_TOPICS.find(x => x.k === F.topic) || F432_TOPICS[0];
+  if (topic.k === 'custom' && !String(F.custom || '').trim()) { toast('先寫下要講的主題'); return; }
+  audioUnlock();
+  const fresh = F.state !== 'pause';
+  if (!fresh) {
+    F.endsAt = Date.now() + F.left * 1000;
+    if (Rec.mr && Rec.mr.state === 'paused') try { Rec.mr.resume(); } catch (_) { /* keeps recording */ }
+  } else {
+    F.left = F432_SECS[F.phase];
+    F.recErr = '';
+    if (F.recOn && canRecord()) {
+      F.starting = true;
+      try { await recStart(); }
+      catch (e) { F.recOn = false; F.recErr = '沒辦法錄音（' + (e && e.name === 'NotAllowedError' ? '瀏覽器不允許使用麥克風' : '找不到麥克風') + '），計時照常進行。'; recRelease(); }
+      finally { F.starting = false; }
+      if (S.f432 !== F) { recRelease(); return; } // the tool was closed while the browser asked for the microphone
+    }
+    F.endsAt = Date.now() + F.left * 1000;
+  }
+  F.state = 'run';
+  clearInterval(f432Timer);
+  f432Timer = setInterval(f432Tick, 250);
+  keepAwake(true);
+  renderTool();
+  if (fresh) {
+    const tc = $('#today-dyn .timer');
+    if (tc) tc.closest('.card').scrollIntoView({ block: 'start' });
+    announce('第 ' + (F.phase + 1) + ' 次開始，' + F432_SECS[F.phase] / 60 + ' 分鐘');
+  }
+  const pb = $('#today-dyn [data-fk="f432-pause"]'); if (pb) pb.focus({ preventScroll: true });
+}
+// byUser: the 暫停 button (focus moves to 繼續); otherwise the page was left (another tab, the phone locked).
+function f432Pause(byUser) {
+  const F = S.f432; if (!F || F.state !== 'run') return;
+  F.left = Math.max(0, (F.endsAt - Date.now()) / 1000);
+  F.state = 'pause';
+  clearInterval(f432Timer);
+  keepAwake(false);
+  if (Rec.mr && Rec.mr.state === 'recording') try { Rec.mr.pause(); } catch (_) { /* keeps recording */ }
+  renderTool();
+  if (byUser === true) { const b = $('#today-dyn [data-fk="f432-resume"]'); if (b) b.focus({ preventScroll: true }); }
+}
+function f432Tick() {
+  const F = S.f432;
+  if (!F || F.state !== 'run') { clearInterval(f432Timer); return; }
+  F.left = Math.max(0, (F.endsAt - Date.now()) / 1000);
+  const c = $('#f432-clock'); if (c) c.textContent = mmss(Math.ceil(F.left));
+  const m = $('#f432-meter'); if (m) m.style.width = Math.round((1 - F.left / F432_SECS[F.phase]) * 100) + '%';
+  if (F.left <= 0) f432End();
+}
+async function f432End() {
+  const F = S.f432; if (!F || (F.state !== 'run' && F.state !== 'pause')) return;
+  clearInterval(f432Timer);
+  const phase = F.phase;
+  F.state = 'saving';
+  keepAwake(false);
+  beep();
+  await recStop(phase);
+  if (S.f432 !== F) return;
+  recRelease(); // the microphone is off between rounds; the next round asks for it again
+  F.phase = phase + 1;
+  if (F.phase >= 3) {
+    F.state = 'done';
+    const tk = todayKey(), rec = dayRec(tk);
+    if (!(rec && rec.items.f432)) markItem(tk, 'f432', true);
+    announce('三次都講完了');
+  } else {
+    F.state = 'gap';
+    announce('第 ' + (phase + 1) + ' 次完成');
+  }
+  if (S.tool === 'f432') { renderTool(); focusHeading('#today-dyn .timer-title'); }
+}
+async function f432Points() {
+  const F = S.f432;
+  if (!F || F.points === 'loading' || !S.sample || S.sampleState !== 'ok') return;
+  const t = F432_TOPICS.find(x => x.k === F.topic) || F432_TOPICS[0];
+  const topic = t.k === 'custom' ? String(F.custom || '').trim() : t.en;
+  if (!topic) { toast('先寫下要講的主題'); return; }
+  F.points = 'loading'; renderTool();
+  try {
+    const about = String(S.settings.about || '').trim();
+    const v = await askJson('An English learner (CEFR ' + S.settings.level + ', a Mandarin speaker from Taiwan) will talk about one topic three times, for 4, 3 and then 2 minutes. Topic: ' + topic + '\n'
+      + (about ? 'About them: ' + about.slice(0, 300) + '\n' : '')
+      + 'Give 3 short talking points to cover (questions in English they can answer, under 10 words each) and 3 useful spoken phrases for this topic at their level. '
+      + 'Reply with only one JSON object: {"points": ["..."], "phrases": [{"en": "...", "zh": "its meaning in Traditional Chinese as used in Taiwan"}]}', { modelTier: 'quick' });
+    const points = (Array.isArray(v && v.points) ? v.points : []).filter(x => typeof x === 'string' && x.trim()).map(x => x.trim().slice(0, 120)).slice(0, 4);
+    const phrases = (Array.isArray(v && v.phrases) ? v.phrases : []).filter(x => x && typeof x.en === 'string' && x.en.trim()).map(x => ({ en: x.en.trim().slice(0, 160), zh: typeof x.zh === 'string' ? x.zh.trim().slice(0, 120) : '' })).slice(0, 4);
+    if (!points.length && !phrases.length) throw { code: 'invalid_json', message: 'no points' };
+    if (S.f432 === F) F.points = { points, phrases };
+  } catch (e) {
+    if (e && BLOCK_CODES.includes(e.code)) { S.sampleState = 'blocked'; S.blockCode = e.code; }
+    if (S.f432 === F) F.points = { err: sampleErrMsg(e) };
+  }
+  if (S.tool === 'f432') renderTool();
+}
+function pointsBox(F) {
+  if (!F.points) return null;
+  if (F.points === 'loading') return el('p', { class: 'hint-loading' }, typing(), '教練正在想重點…');
+  if (F.points.err) return el('p', { class: 'coach-note', text: F.points.err });
+  return el('div', { class: 'field' },
+    F.points.points.length ? el('div', null, el('span', { class: 'label', text: '可以講的重點' }), el('ul', { class: 'points', lang: 'en' }, F.points.points.map(x => el('li', { text: x })))) : null,
+    F.points.phrases.length ? el('div', null, el('span', { class: 'label', text: '用得上的說法' }), el('div', null, F.points.phrases.map(x => el('div', { class: 'phrase' },
+      el('div', null, el('div', { class: 'phrase-en', lang: 'en', text: x.en }), x.zh ? el('div', { class: 'phrase-zh', text: x.zh }) : null),
+      el('div', { class: 'phrase-acts' }, speakBtn(x.en, 'sm', 'f4'), starBtn({ en: x.en, zh: x.zh, src: 'f432' }, 'sm', 'f4')))))) : null);
+}
+function f432View() {
+  const F = S.f432, tk = todayKey();
+  const plan = (dayRec(tk) || {}).plan || S.settings.plan;
+  const t = F432_TOPICS.find(x => x.k === F.topic) || F432_TOPICS[0];
+  const topicZh = t.k === 'custom' ? String(F.custom || '').trim() : t.zh;
+  const head = el('section', { class: 'card' },
+    el('div', { class: 'tool-head' }, backBtn(), el('span', { class: 'tag', text: '本週 ' + weekCount(tk, 'f432') + ' / ' + WEEKLY[1].target[plan === '60' ? '60' : '20'] })),
+    el('h2', { class: 'card-title mt6', tabindex: '-1', text: '4/3/2 口說' }),
+    el('p', { class: 'help mt6', text: '同一個主題講三次：4 分鐘、3 分鐘、2 分鐘。內容一樣、時間越來越短，第三次會比第一次順很多。卡住就換個說法繼續，不要停下來查字典。' }));
+  if (F.state === 'setup') {
+    const set = el('section', { class: 'card panel' },
+      chipGroup('講什麼', F432_TOPICS, F.topic, k => { F.topic = k; F.points = null; renderTool(); }));
+    if (F.topic === 'custom') {
+      set.append(el('div', { class: 'field' },
+        el('label', { class: 'label', for: 'f432-custom', text: '自訂主題（中英文都可以）' }),
+        el('input', { id: 'f432-custom', class: 'input', maxlength: '120', value: F.custom, 'data-fk': 'f432-custom', placeholder: '例如：我們團隊正在做的產品', oninput: e => { F.custom = e.target.value; } })));
+    }
+    if (S.sampleState === 'ok') set.append(el('div', { class: 'start-row' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'f432-points', disabled: F.points === 'loading', onclick: f432Points }, F.points && F.points !== 'loading' ? '換一組重點' : '請教練給 3 個重點')));
+    const pb = pointsBox(F); if (pb) set.append(pb);
+    if (canRecord()) set.append(el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: F.recOn, 'data-fk': 'f432-rec', onchange: e => { F.recOn = e.target.checked; } }), '每次都錄音（錄音只留在這個畫面，可以下載）'));
+    else set.append(el('p', { class: 'help', text: '想比較三次的差別，可以用手機的錄音程式把三次都錄下來。' }));
+    set.append(el('div', { class: 'start-row' }, el('button', { type: 'button', class: 'btn primary big', 'data-fk': 'f432-go', onclick: f432Go }, '開始第一次（4 分鐘）')));
+    return el('div', { class: 'panel' }, head, set);
+  }
+  const ph = Math.min(F.phase, 2);
+  const secs = F.state === 'run' || F.state === 'pause' ? Math.ceil(F.left) : F.state === 'done' ? 0 : F432_SECS[ph];
+  const meter = el('span', { id: 'f432-meter' });
+  meter.style.width = (F.state === 'run' || F.state === 'pause' ? Math.round((1 - F.left / F432_SECS[ph]) * 100) : F.state === 'done' ? 100 : 0) + '%';
+  const titles = { run: '第 ' + (ph + 1) + ' 次：講「' + topicZh + '」', pause: '暫停中', saving: '這次結束了', gap: '第 ' + F.phase + ' 次完成！', done: '三次都講完了！' };
+  const timer = el('section', { class: 'card' },
+    el('div', { class: 'phase-dots', 'aria-hidden': 'true' }, F432_SECS.map((s, i) => el('span', { class: i < F.phase ? 'done' : i === ph && F.state !== 'done' ? 'on' : null, text: s / 60 + ' 分鐘' }))),
+    el('div', { class: 'timer' },
+      el('h3', { class: 'card-title timer-title', tabindex: '-1', text: titles[F.state] || '' }),
+      F.state === 'done' ? null : el('b', { id: 'f432-clock', 'aria-hidden': F.state === 'run' ? 'true' : null, text: mmss(secs) }),
+      F.state === 'gap' ? el('p', { class: 'help', text: '喘口氣，準備用 ' + F432_SECS[F.phase] / 60 + ' 分鐘再講一次同樣的內容，試著說得更順、少一點停頓。' }) : null,
+      F.state === 'done' ? el('p', { class: 'help', text: '本週的「4/3/2 錄音」已打勾。' + (F.recs.some(Boolean) ? '聽聽看三次的差別：第三次是不是更流暢？' : '') }) : null),
+    F.state === 'done' ? null : el('div', { class: 'meter', role: 'progressbar', 'aria-label': '這一次的時間', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': meter.style.width.replace('%', '') }, meter),
+    F.recErr ? el('p', { class: 'notice mt12', text: F.recErr }) : null,
+    F.state === 'run' && Rec.mr ? el('p', { class: 'help mt12' }, el('span', { class: 'rec-dot', 'aria-hidden': 'true' }), '錄音中') : null,
+    el('div', { class: 'start-row mt12' },
+      F.state === 'run' ? el('button', { type: 'button', class: 'btn', 'data-fk': 'f432-pause', onclick: () => f432Pause(true) }, '暫停') : null,
+      F.state === 'pause' ? el('button', { type: 'button', class: 'btn primary', 'data-fk': 'f432-resume', onclick: f432Go }, '繼續') : null,
+      F.state === 'run' || F.state === 'pause' ? el('button', { type: 'button', class: 'btn', 'data-fk': 'f432-end', onclick: f432End }, '這次講完了') : null,
+      F.state === 'gap' ? el('button', { type: 'button', class: 'btn primary big', 'data-fk': 'f432-next', onclick: f432Go }, '開始第 ' + (F.phase + 1) + ' 次（' + F432_SECS[F.phase] / 60 + ' 分鐘）') : null,
+      F.state === 'done' ? el('button', { type: 'button', class: 'btn', 'data-fk': 'f432-again', onclick: () => { for (const r of F.recs) if (r) URL.revokeObjectURL(r.url); S.f432 = Object.assign(f432New(), { topic: F.topic, custom: F.custom, points: F.points }); renderTool(); } }, '換主題再練') : null));
+  const parts = [head, timer];
+  const pb = pointsBox(F);
+  if (pb && F.state !== 'done') parts.push(el('section', { class: 'card' }, pb));
+  if (F.recs.some(Boolean)) {
+    parts.push(el('section', { class: 'card' },
+      el('h3', { class: 'card-title', text: '錄音' }),
+      el('p', { class: 'help mt6', text: '錄音只留在這個畫面，離開或重新整理就會消失；想保存請下載。' }),
+      el('div', { class: 'recs mt12' }, F.recs.map((r, i) => (r ? el('div', null,
+        el('div', { class: 'card-head' }, el('b', { text: '第 ' + (i + 1) + ' 次（' + F432_SECS[i] / 60 + ' 分鐘）' }),
+          el('a', { class: 'link', href: r.url, download: '4-3-2-第' + (i + 1) + '次.' + (/mp4|aac/.test(r.type) ? 'm4a' : /ogg/.test(r.type) ? 'ogg' : 'webm'), 'data-fk': 'f432-dl-' + i }, '下載')),
+        el('audio', { controls: true, preload: 'metadata', src: r.url })) : null)))));
+  }
   return el('div', { class: 'panel' }, parts);
 }
 
@@ -2437,7 +3605,12 @@ function renderLog() {
     grid.append(el('button', {
       type: 'button', class: 'day s' + s + (k === tk ? ' today' : '') + (k === S.viewDate && k !== tk ? ' sel' : '') + (fut ? ' future' : ''),
       disabled: fut, 'data-fk': 'day-' + k, 'aria-label': mo + '月' + i + '日：' + ['沒有練習', '有練習', '達標'][s] + (fut ? '' : '，點一下看這天'),
-      onclick: () => { S.viewDate = k; switchTab('today'); focusHeading('#today-dyn .date-big'); },
+      onclick: () => {
+        // A 4/3/2 round in progress is never dropped by looking at another day.
+        if (S.tool === 'f432' && f432Busy()) { switchTab('today'); toast('4/3/2 還在進行中，先在這裡結束它，再看其他日子。'); return; }
+        if (S.tool) leaveTool();
+        S.viewDate = k; switchTab('today'); focusHeading('#today-dyn .date-big');
+      },
     }, el('span', { text: String(i) })));
   }
   const legend = el('div', { class: 'legend' },
@@ -2456,8 +3629,8 @@ function renderLog() {
 }
 function sessionCard(s) {
   const str = v => (typeof v === 'string' ? v : '');
-  const pats = Array.isArray(s.patterns) ? s.patterns : [];
-  const phr = Array.isArray(s.phrases) ? s.phrases : [];
+  const pats = (Array.isArray(s.patterns) ? s.patterns : []).filter(p => p && typeof p === 'object');
+  const phr = (Array.isArray(s.phrases) ? s.phrases : []).filter(p => p && typeof p === 'object');
   return el('article', { class: 'sess' },
     el('div', { class: 'sess-top' },
       el('span', { class: 'mono', text: str(s.date).slice(5).replace('-', '/') }),
@@ -2484,7 +3657,8 @@ function renderStarters() {
       el('div', null,
         el('div', { class: 'phrase-en', lang: 'en', text: en }),
         el('div', { class: 'phrase-zh' }, zh, el('span', { class: 'use', text: use }))),
-      el('div', { class: 'phrase-acts' }, speakBtn(say || en, 'sm'), starBtn({ en, zh, note: use, src: 'starter' }, 'sm', 'st')))))));
+      el('div', { class: 'phrase-acts' }, speakBtn(say || en, 'sm'), sayBtn(say || en, 'st'), starBtn({ en, zh, note: use, src: 'starter' }, 'sm', 'st')),
+      sayBox(say || en, 'st'))))));
 }
 function renderSavedList() {
   const box = $('#saved-list'); if (!box || S.tab !== 'saved') return;
@@ -2505,7 +3679,9 @@ function renderSavedList() {
         p.ex ? el('div', { class: 'phrase-ex', lang: 'en', text: p.ex }) : null),
       el('div', { class: 'phrase-acts' },
         speakBtn(p.en, 'sm'),
-        iconBtn('trash', armed ? '再按一次刪除' : '刪除', () => arm('del-' + p.id, () => removePhrase(p.id), renderSavedList), 'sm' + (armed ? ' danger' : ''), 'del-' + p.id)));
+        sayBtn(p.en, 'sv'),
+        iconBtn('trash', armed ? '再按一次刪除' : '刪除', () => arm('del-' + p.id, () => removePhrase(p.id), renderSavedList), 'sm' + (armed ? ' danger' : ''), 'del-' + p.id)),
+      sayBox(p.en, 'sv'));
   }));
 }
 // Anki text import: the header lines tell Anki the fields are tab-separated HTML, so every field is escaped.
@@ -2526,6 +3702,242 @@ function copyText(text, host, doneMsg) {
     if (p && typeof p.then === 'function') p.then(() => { if (host) host.hidden = true; toast(doneMsg || '已複製'); }, fallback);
     else fallback();
   } catch (_) { fallback(); }
+}
+
+/* ================= backup file ================= */
+/* A backup holds every practice document (not the chat in progress, not the API key). Importing merges it into
+   what is here: entries are only added, a day's ticks are kept from both sides, a phrase's review schedule
+   keeps whichever side reviewed it last, and nothing here is deleted. */
+const BACKUP_RE = /^(settings|phrases|inbox|srs|shadow|log-\d{4}-\d{2}|sessions-\d{4}-\d{2})$/;
+async function collectDocs() {
+  const out = {};
+  if (Store.mode === 'db') {
+    try {
+      const snap = await Store.db.collection('data/users/' + Store.uid).limit(1000).get();
+      for (const d of snap.docs) if (d.exists && BACKUP_RE.test(d.id)) out[d.id] = clone(d.data());
+    } catch (_) { /* the documents this device has loaded are still exported */ }
+  } else if (Store.mode === 'local') {
+    for (const n of localDocNames()) { const v = readLocal(n); if (v) out[n] = v; }
+  }
+  // What this device shows is the newest (it includes edits not saved yet), except a document it could not read;
+  // empty documents are left out.
+  const filled = (n, v) => n === 'settings' || (n.startsWith('log-') ? Object.keys(v.days || {}).length > 0 || !!v.monthRecord : Object.keys(v.map || {}).length > 0);
+  for (const [n, v] of Object.entries(allDocs())) if (BACKUP_RE.test(n) && !S.loadErrors.has(n) && (filled(n, v) || out[n])) out[n] = clone(v);
+  return out;
+}
+async function exportBackup() {
+  if (!S.ready || S.exporting) return;
+  S.exporting = true; fillSettings();
+  try {
+    const docs = await collectDocs();
+    const data = JSON.stringify({ app: 'kaikou-practice', v: 1, at: new Date().toISOString(), docs });
+    const filename = 'kaikou-backup-' + todayKey() + '.json'; // ASCII: some browsers drop a non-ASCII download name
+    if (window.claude && typeof window.claude.use === 'function') {
+      // Pages inside Claude hand files to the viewer through the downloads capability (the viewer confirms).
+      let dl = null;
+      try { dl = await window.claude.use('downloads'); } catch (_) { dl = null; }
+      if (!dl) { toast('這個畫面不能下載檔案'); return; }
+      try { await dl.save({ filename, data }); toast('已匯出備份檔'); }
+      catch (e) { if (!e || e.code !== 'declined') toast(e && e.code === 'rate_limited' ? '已經有一個下載在等你確認' : '沒有存成檔案，再試一次'); }
+    } else {
+      const url = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+      const a = el('a', { href: url, download: filename, hidden: true });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      toast('已匯出備份檔');
+    }
+  } finally { S.exporting = false; fillSettings(); }
+}
+function backupSummary(docs) {
+  let days = 0, sess = 0;
+  for (const [n, v] of Object.entries(docs)) {
+    if (n.startsWith('log-')) days += Object.values(normLog(v).days).filter(d => status(d) > 0).length;
+    if (n.startsWith('sessions-')) sess += normSessions(v).length;
+  }
+  return { phrases: normPhrases(docs.phrases).length, inbox: normInbox(docs.inbox).length, days, sess, shadow: normShadow(docs.shadow).list.length };
+}
+async function readBackup(file) {
+  if (!file) return;
+  let o = null;
+  try { if (file.size > 8 * 1024 * 1024) throw new Error('too big'); o = JSON.parse(await file.text()); } catch (_) { o = null; }
+  if (!o || o.app !== 'kaikou-practice' || !o.docs || typeof o.docs !== 'object') {
+    S.importing = { err: '這不是開口練習室的備份檔。請選「匯出備份檔」存下的 .json 檔。' };
+  } else {
+    const docs = {};
+    for (const [n, v] of Object.entries(o.docs)) if (BACKUP_RE.test(n) && v && typeof v === 'object' && !Array.isArray(v)) docs[n] = v;
+    S.importing = { at: String(o.at || ''), docs, sum: backupSummary(docs) };
+  }
+  fillSettings();
+}
+// A day that is new here: only what was done is written (an unticked item never overwrites a tick made elsewhere).
+const onlyTrue = o => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v === true));
+const dayStore = d => Object.assign({ plans: d.plans, items: onlyTrue(d.items), coach: d.coach }, d.lp ? { plan: d.lp } : {}, d.coachMin ? { coachMin: d.coachMin } : {});
+// A review from a backup file is checked like one made here, so a damaged file cannot break the 紀錄 tab.
+function importSession(s) {
+  if (!s || typeof s !== 'object' || !s.id || !DATE_RE.test(String(s.date))) return null;
+  const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
+  return Object.assign({ id: String(s.id).slice(0, 40), date: s.date, at: Number(s.at) || parseD(s.date).getTime(), mode: ['free', 'role', 'zh'].includes(s.mode) ? s.mode : 'free',
+    label: str(s.label, 80), level: LEVELS[s.level] ? s.level : 'B1', minutes: clamp(Math.round(Number(s.minutes) || 0), 0, 600), count: clamp(Math.round(Number(s.count) || 0), 0, 1000) }, normReview(s));
+}
+async function applyBackup() {
+  const imp = S.importing;
+  if (!imp || !imp.docs || S.uploading || !S.ready) return;
+  S.uploading = true; fillSettings();
+  const docs = imp.docs, n = { phrases: 0, inbox: 0, days: 0, sess: 0, shadow: 0 };
+  let full = false;
+  try {
+    // Every document the file touches must have been read here first, so the merge is applied to what is really
+    // stored: months not read yet are loaded, and documents whose read failed are read again (or the merge waits).
+    for (const name of Object.keys(docs)) {
+      if (name.startsWith('log-')) await loadMonth(name.slice(4));
+      if (name.startsWith('sessions-')) await loadSessions(name.slice(9));
+    }
+    const unread = () => Object.keys(docs).filter(name => S.loadErrors.has(name));
+    if (unread().length) await reloadDocs(unread());
+    if (unread().length) { toast('還讀不到這裡的部分資料，先不合併，等一下再試。'); return; }
+    if (docs.settings) {
+      const inc = pickSettings(docs.settings);
+      if (JSON.stringify(S.settings) === JSON.stringify(pickSettings({}))) { S.settings = inc; saveSettings(); }
+      else if (!S.settings.about && inc.about) { S.settings.about = inc.about; saveSettings('about'); }
+    }
+    if (docs.phrases) {
+      const patch = { map: {} };
+      for (const p of normPhrases(docs.phrases)) {
+        if (S.phrases.some(x => x.id === p.id)) continue;
+        if (S.phrases.length >= MAX_PHRASES || docBytes(phrasesFull()) + docBytes(p) > DOC_LIMIT * 0.8) { full = true; break; }
+        S.phrases.push(p); patch.map[p.id] = p; n.phrases++;
+      }
+      S.phrases.sort((a, b) => b.at - a.at);
+      if (n.phrases) Store.patch('phrases', phrasesFull(), patch);
+    }
+    // Lists with a size limit only take what fits; nothing already here is pushed out.
+    if (docs.inbox) {
+      const patch = { map: {} };
+      const add = normInbox(docs.inbox).filter(x => !S.inbox.some(y => y.id === x.id));
+      for (const x of add) {
+        if (S.inbox.length >= 100) { full = true; break; }
+        const item = { id: String(x.id).slice(0, 40), text: x.text.slice(0, 200), at: x.at };
+        S.inbox.push(item); patch.map[item.id] = item; n.inbox++;
+      }
+      S.inbox.sort((a, b) => b.at - a.at);
+      if (n.inbox) Store.patch('inbox', inboxFull(), patch);
+    }
+    if (docs.srs) {
+      const patch = { map: {} };
+      for (const [id, e] of Object.entries(normSrs(docs.srs))) {
+        if (!S.phrases.some(p => p.id === id)) continue;
+        const cur = S.srs[id];
+        if (!cur || (e.t || '') > (cur.t || '')) { S.srs[id] = e; patch.map[id] = e; }
+      }
+      if (Object.keys(patch.map).length) Store.patch('srs', srsFull(), patch);
+    }
+    if (docs.shadow) {
+      const patch = { map: {} };
+      for (const p of normShadow(docs.shadow).list) { // newest first
+        const cur = S.shadow.list.find(x => x.id === p.id);
+        if (cur) {
+          const add = Object.keys(p.days).filter(k => !cur.days[k]);
+          if (add.length) { for (const k of add) cur.days[k] = 1; patch.map[p.id] = { days: Object.fromEntries(add.map(k => [k, 1])) }; }
+          continue;
+        }
+        if (S.shadow.list.length >= SHADOW_MAX || docBytes(shadowFull()) + docBytes(p) > DOC_LIMIT * 0.6) { full = true; continue; }
+        S.shadow.list.push(p); patch.map[p.id] = p; n.shadow++;
+      }
+      S.shadow.list.sort((a, b) => b.at - a.at);
+      if (Object.keys(patch.map).length) Store.patch('shadow', shadowFull(), patch);
+    }
+    for (const [name, v] of Object.entries(docs)) {
+      if (!name.startsWith('log-')) continue;
+      const m = name.slice(4), inc = normLog(v), doc = logDoc(m), patch = { days: {} };
+      for (const [k, d] of Object.entries(inc.days)) {
+        const cur = doc.days[k];
+        if (!cur) {
+          const day = Object.assign({}, d, { items: onlyTrue(d.items) });
+          doc.days[k] = day; patch.days[k] = dayStore(day); S.editedDays.add(k);
+          if (status(day) > 0) n.days++;
+          continue;
+        }
+        const p = {};
+        for (const [key, on] of Object.entries(d.items)) if (on && !cur.items[key]) { cur.items[key] = true; (p.items = p.items || {})[key] = true; }
+        for (const [w, pl] of Object.entries(d.plans)) if (!(w in cur.plans)) { cur.plans[w] = pl; (p.plans = p.plans || {})[w] = pl; }
+        for (const [id, mins] of Object.entries(d.coach)) if (!(cur.coach[id] >= mins)) { cur.coach[id] = mins; (p.coach = p.coach || {})[id] = mins; }
+        if (Object.keys(p).length) {
+          const was = status(cur) > 0;
+          cur.plan = resolvePlan(cur.plans, cur.lp);
+          patch.days[k] = p; S.editedDays.add(k);
+          if (!was && status(cur) > 0) n.days++;
+        }
+      }
+      if (inc.monthRecord && !doc.monthRecord) { doc.monthRecord = true; patch.monthRecord = true; S.editedMonthRec.add(m); }
+      if (Object.keys(patch.days).length || patch.monthRecord) Store.patch(name, doc, patch);
+    }
+    for (const [name, v] of Object.entries(docs)) {
+      if (!name.startsWith('sessions-')) continue;
+      for (const raw of normSessions(v)) {
+        const s = importSession(raw);
+        if (!s || (S.sessions[s.date.slice(0, 7)] || []).some(x => x.id === s.id)) continue;
+        if (!S.sessLoaded.has(s.date.slice(0, 7))) await loadSessions(s.date.slice(0, 7));
+        if ((S.sessions[s.date.slice(0, 7)] || []).some(x => x.id === s.id)) continue;
+        addSession(s); n.sess++;
+      }
+    }
+    Store.flushAll();
+    S.importing = null;
+  } finally {
+    S.uploading = false;
+    if (S.importing) fillSettings(); // not merged (the data here could not be read): the file stays offered
+  }
+  if (S.importing) return;
+  const parts = [];
+  if (n.phrases) parts.push('收藏 ' + n.phrases + ' 句');
+  if (n.inbox) parts.push('隨手記 ' + n.inbox + ' 則');
+  if (n.days) parts.push('練習 ' + n.days + ' 天');
+  if (n.sess) parts.push('對話複習 ' + n.sess + ' 次');
+  if (n.shadow) parts.push('跟讀短文 ' + n.shadow + ' 篇');
+  toast((parts.length ? '已合併：新增' + parts.join('、') : '已合併，沒有新的資料') + (full ? '。這裡的收藏、隨手記或跟讀短文已經滿了，有些沒有加進來' : ''));
+  refreshStreak(); renderAll(); fillSettings();
+}
+function fillBackup() {
+  const ex = $('#set-export'), im = $('#set-import'), box = $('#set-import-box');
+  if (!ex) return;
+  ex.disabled = !S.ready || !!S.exporting; ex.textContent = S.exporting ? '匯出中…' : '匯出備份檔';
+  im.disabled = !S.ready || S.uploading;
+  const imp = S.importing;
+  box.hidden = !imp;
+  if (!imp) { fill(box); return; }
+  if (imp.err) { fill(box, el('p', { text: imp.err }), el('div', { class: 'row-acts mt6' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'imp-x', onclick: () => { S.importing = null; fillSettings(); } }, '關閉'))); return; }
+  const s = imp.sum, when = imp.at ? new Date(imp.at) : null;
+  const what = [s.phrases + ' 句收藏', s.inbox + ' 則隨手記', s.days + ' 天練習', s.sess + ' 次對話複習', s.shadow + ' 篇跟讀短文'].join('、');
+  fill(box,
+    el('p', { text: '備份檔' + (when && !isNaN(when) ? '（' + (when.getMonth() + 1) + '/' + when.getDate() + ' ' + pad(when.getHours()) + ':' + pad(when.getMinutes()) + '）' : '') + '裡有：' + what + '。合併到這裡不會刪掉任何東西。' }),
+    el('div', { class: 'row-acts mt6' },
+      el('button', { type: 'button', class: 'btn small primary', 'data-fk': 'imp-go', disabled: S.uploading, onclick: applyBackup }, S.uploading ? '合併中…' : '合併到這裡'),
+      el('button', { type: 'button', class: 'btn small', 'data-fk': 'imp-x', disabled: S.uploading, onclick: () => { S.importing = null; fillSettings(); } }, '取消')));
+}
+
+/* ================= add to home screen (GitHub Pages only) ================= */
+const canInstall = () => !window.claude && /^https?:$/.test(location.protocol);
+function setupInstall() {
+  if (!canInstall()) return;
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { /* works without offline support */ });
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); S.installEvt = e; fillInstall(); });
+  window.addEventListener('appinstalled', () => { S.installEvt = null; toast('已加到主畫面'); fillInstall(); });
+}
+function fillInstall() {
+  const f = $('#set-install-field'); if (!f) return;
+  f.hidden = !canInstall() || isStandalone();
+  if (f.hidden) return;
+  $('#set-install').hidden = !S.installEvt;
+  $('#set-install-help').textContent = S.installEvt
+    ? '裝到主畫面後，從圖示打開就像一個 App，沒有網路時也能打開頁面。'
+    : isIOS
+      ? 'iPhone／iPad：用 Safari 打開這個網址，按「分享」→「加入主畫面」。從主畫面打開時，資料可能和 Safari 分開存放：先在這裡匯出備份檔，再到主畫面那邊匯入（API 金鑰也要重新輸入）。另外，iPhone 從主畫面打開時不能用頁面裡的麥克風，要用的話請在 Safari 裡開。'
+      : 'Android：用 Chrome 打開，右上角選單 →「加到主畫面」或「安裝應用程式」。電腦：網址列右邊的安裝圖示。';
+}
+async function installApp() {
+  const e = S.installEvt; if (!e) return;
+  try { await e.prompt(); await e.userChoice; } catch (_) { /* dismissed */ }
+  S.installEvt = null; fillInstall();
 }
 
 /* ================= settings dialog ================= */
@@ -2569,6 +3981,17 @@ function fillSettings() {
   clear.hidden = Store.mode !== 'local';
   clear.textContent = armed ? '再按一次清除（無法復原）' : '清除這個瀏覽器裡的練習資料';
   clear.classList.toggle('danger', armed);
+  $('#set-mic-field').hidden = !Mic.ok;
+  if (Mic.ok) {
+    $('#set-mic-state').textContent = !Mic.blocked
+      ? '教練、收藏、句子複習和跟讀都可以按麥克風直接說，或按「唸一次」看看唸得清不清楚。'
+      : Mic.why === 'network'
+        ? '這次連不上語音辨識服務，先關掉了。網路正常後可以按下面的按鈕再試。'
+        : '瀏覽器不允許使用麥克風，所以先關掉了。在瀏覽器的網站設定允許麥克風後，按下面的按鈕再試。';
+    $('#set-mic-on').hidden = !Mic.blocked;
+  }
+  fillBackup();
+  fillInstall();
 }
 // Removes the practice data this app stored in this browser (local mode only), then starts fresh.
 // The API key stays: it has its own 移除金鑰 button.
@@ -2608,7 +4031,14 @@ function bindStatic() {
     addInbox(v); inp.value = ''; renderInbox(); toast('記下來了');
   });
   const ta = $('#msg-input');
-  ta.addEventListener('input', () => autosize(ta));
+  ta.addEventListener('input', e => { if (e.isTrusted && micOn('composer')) { micStop(true); updateMicBtn(); } autosize(ta); }); // typing takes over from dictation
+  $('#mic-btn').addEventListener('click', () => { ttsUnlock(); composerMic(); });
+  $('#mic-lang').addEventListener('click', () => {
+    S.micZh = !/^zh/.test(micLang());
+    if (micOn('composer')) micStop(true);
+    updateMicBtn();
+    toast(S.micZh ? '聽寫改成中文' : '聽寫改成英文');
+  });
   ta.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229 && !matchMedia('(pointer: coarse)').matches) {
       e.preventDefault();
@@ -2636,6 +4066,24 @@ function bindStatic() {
   });
   $('#set-clear').addEventListener('click', () => arm('clear-local', clearLocalData, fillSettings));
   $('#set-cloud').addEventListener('click', retryCloud);
+  $('#set-export').addEventListener('click', exportBackup);
+  $('#set-import').addEventListener('click', () => { const f = $('#set-import-file'); f.value = ''; f.click(); });
+  $('#set-import-file').addEventListener('change', e => readBackup(e.target.files && e.target.files[0]));
+  $('#set-install').addEventListener('click', installApp);
+  $('#set-mic-on').addEventListener('click', () => {
+    lsDel(MIC_OFF_LS); Mic.blocked = false; Mic.why = '';
+    renderAll(); updateComposer(); fillSettings();
+    toast('已重新啟用麥克風');
+  });
+  // Phrase review from the keyboard: space flips the card, 1 / 2 / 3 rate it.
+  document.addEventListener('keydown', e => {
+    const d = S.drill;
+    if (S.tab !== 'saved' || !d || d.done || e.altKey || e.ctrlKey || e.metaKey || e.defaultPrevented) return;
+    const t = e.target;
+    if ($('#settings').hasAttribute('open') || (t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]'))) return;
+    if (!d.flip && e.key === ' ' && !(t && t.closest && t.closest('button, a'))) { e.preventDefault(); drillFlip(); }
+    else if (d.flip && ['1', '2', '3'].includes(e.key)) { e.preventDefault(); drillRate(Number(e.key) - 1); }
+  });
   const saveKey = () => {
     const inp = $('#set-api-key');
     const v = inp.value.trim();
@@ -2671,7 +4119,12 @@ function bindStatic() {
   document.addEventListener('click', unlock, true);
   document.addEventListener('keydown', unlock, true);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') { Store.flushAll(); return; }
+    if (document.visibilityState === 'hidden') {
+      Store.flushAll();
+      if (S.f432 && S.f432.state === 'run') f432Pause(); // the phone locked or another app came up: pause the round
+      shStop();
+      return;
+    }
     renderToday(); refreshStreak();
     refresh();
     for (const n of Object.keys(Store.failed)) Store.flush(n);
@@ -2691,7 +4144,7 @@ function bindStatic() {
     if (e.key === API_KEY_LS && !window.claude) { keyChanged(); return; } // saved or removed in another tab
     if (Store.mode !== 'local' || !S.ready || !e.key || !e.key.startsWith('kaikou:')) return;
     const name = e.key.slice(7);
-    if (!/^(settings|phrases|inbox|chat|log-\d{4}-\d{2}|sessions-\d{4}-\d{2})$/.test(name) || Store.busyDoc(name)) return;
+    if (!/^(settings|phrases|inbox|srs|shadow|chat|log-\d{4}-\d{2}|sessions-\d{4}-\d{2})$/.test(name) || Store.busyDoc(name)) return;
     let d = null;
     try { d = e.newValue ? JSON.parse(e.newValue) : null; } catch (_) { return; }
     if (sameAsSeen(name, d)) return;
@@ -2722,6 +4175,8 @@ function applyDoc(name, d, raced) {
   if (name === 'settings') S.settings = pickSettings(d);
   else if (name === 'phrases') S.phrases = normPhrases(d);
   else if (name === 'inbox') S.inbox = normInbox(d);
+  else if (name === 'srs') S.srs = normSrs(d);
+  else if (name === 'shadow') S.shadow = normShadow(d);
   else if (name === 'chat') applyChat(d);
   else if (name.startsWith('log-')) applyLog(name.slice(4), d, !!raced);
   else if (name.startsWith('sessions-')) { const m = name.slice(9); S.sessions[m] = unionById(normSessions(d), S.sessions[m]); S.sessLoaded.add(m); }
@@ -2739,7 +4194,7 @@ function sameAsSeen(name, d) {
 async function loadAll() {
   const now = new Date();
   const months = [0, 1, 2].map(i => mkey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
-  const names = ['sessions-' + months[0], 'sessions-' + months[1], 'settings', 'phrases', 'inbox', 'chat'].concat(months.map(m => 'log-' + m));
+  const names = ['sessions-' + months[0], 'sessions-' + months[1], 'settings', 'phrases', 'inbox', 'srs', 'shadow', 'chat'].concat(months.map(m => 'log-' + m));
   const res = await Promise.all(names.map(n => Store.get(n).then(v => ({ ok: true, v }), () => ({ ok: false }))));
   names.forEach((n, i) => {
     if (res[i].ok) { sameAsSeen(n, res[i].v); applyDoc(n, res[i].v, false); S.loadErrors.delete(n); return; }
@@ -2796,7 +4251,7 @@ async function refresh() {
   try {
     const now = new Date();
     const m = mkey(now), prev = mkey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
-    const names = new Set(['settings', 'phrases', 'inbox', 'chat', 'log-' + m, 'sessions-' + m]);
+    const names = new Set(['settings', 'phrases', 'inbox', 'srs', 'shadow', 'chat', 'log-' + m, 'sessions-' + m]);
     if (S.loaded.has(prev)) names.add('log-' + prev);
     for (const n of S.loadErrors) names.add(n);
     changed = await reloadDocs([...names]);
@@ -2820,6 +4275,7 @@ async function boot(data) {
   const hashTab = String(location.hash || '').replace('#', '');
   S.tab = ['today', 'coach', 'log', 'saved'].includes(data && data.tab) ? data.tab : (['today', 'coach', 'log', 'saved'].includes(hashTab) ? hashTab : 'today');
   bindStatic();
+  setupInstall();
   switchTab(S.tab, true);
   renderAll();
   const c = window.claude;
@@ -2838,7 +4294,7 @@ async function boot(data) {
   if (data && data.draft) { const ta = $('#msg-input'); if (ta) { ta.value = data.draft; autosize(ta); } }
   if (S.tab === 'coach' && S.chat) scrollToEnd(true);
 }
-if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError };
+if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic };
 
 const hot = window.claude && window.claude.hot;
 try { if (hot && typeof hot.snapshot === 'function') hot.snapshot(() => ({ tab: S.tab, draft: ($('#msg-input') || {}).value || '' })); } catch (_) { /* optional */ }

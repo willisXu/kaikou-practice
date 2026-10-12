@@ -1,15 +1,17 @@
 // A stand-in for the Claude runtime (window.claude) used by test/run.js: an in-memory db with the platform's
-// update/merge rules and size limit, a user, and a sample() that streams canned coach replies.
+// update/merge rules and size limit (plus listing a user's documents), a user, a sample() that streams canned
+// coach replies and answers the JSON prompts, and a downloads.save() that keeps each file in window.__downloads.
 // Each test page can set window.__mockCfg before load:
 //   owner: false            the viewer is not the artifact's owner
 //   readOnly: true          the viewer may not write (reads see nothing, writes reject invalid_argument)
 //   failWrites: { name: { n, code } }   the next n writes to that document reject with that code
+//   failReads: { name: n }               the next n reads of that document reject "unavailable"
 //   refuse: 'text'          sample() rejects "refused" when the learner's last message contains this text
 //   slowMs: 600             each streamed chunk of a coach reply takes this long (to test Stop)
 //   persist: true           the cloud store survives a reload of the tab (kept in sessionStorage)
 window.__kaikouTest = true;
 (function () {
-  const cfg = Object.assign({ owner: true, readOnly: false, failWrites: {}, refuse: '', slowMs: 0, persist: false }, window.__mockCfg || {});
+  const cfg = Object.assign({ owner: true, readOnly: false, failWrites: {}, failReads: {}, refuse: '', slowMs: 0, persist: false }, window.__mockCfg || {});
   window.__mockCfg = cfg; // tests may change it while the page runs
   const store = new Map();
   const pad = n => String(n).padStart(2, '0');
@@ -88,7 +90,13 @@ window.__kaikouTest = true;
       if (!/^data\/users\/u_test\/[A-Za-z0-9_-]+$/.test(path)) throw err('invalid_argument', 'bad path ' + path);
       return {
         id: path.split('/').pop(), path,
-        get: async () => { await new Promise(r => setTimeout(r, 20)); window.__dbCalls.push({ op: 'get', name: path.split('/').pop(), code: '' }); return snap(path); },
+        get: async () => {
+          await new Promise(r => setTimeout(r, 20));
+          const name = path.split('/').pop();
+          if (cfg.failReads[name] > 0) { cfg.failReads[name]--; window.__dbCalls.push({ op: 'get', name, code: 'unavailable' }); throw err('unavailable', 'injected'); }
+          window.__dbCalls.push({ op: 'get', name, code: '' });
+          return snap(path);
+        },
         set: async d => { await new Promise(r => setTimeout(r, 10)); write('set', path, () => { if (bytes(d) > 262144) throw err('invalid_argument', 'too large'); store.set(path, clone(d)); }); },
         update: async d => {
           await new Promise(r => setTimeout(r, 10));
@@ -102,7 +110,24 @@ window.__kaikouTest = true;
         delete: async () => { store.delete(path); },
       };
     },
+    // Only what the page uses: every document directly under one user's folder.
+    collection(path) {
+      if (!/^data\/users\/u_test$/.test(path)) throw err('invalid_argument', 'bad collection ' + path);
+      const q = {
+        limit: () => q,
+        get: async () => {
+          await new Promise(r => setTimeout(r, 20));
+          window.__dbCalls.push({ op: 'list', name: path, code: '' });
+          const docs = cfg.readOnly ? [] : [...store.keys()].filter(k => k.startsWith(path + '/') && k.split('/').length === 4).sort().map(snap);
+          return { docs, size: docs.length, empty: !docs.length };
+        },
+      };
+      return q;
+    },
   };
+  // downloads.d.ts: save() resolves once the viewer accepts; here every save is accepted and kept for the test.
+  window.__downloads = [];
+  const downloads = { save: async req => { await new Promise(r => setTimeout(r, 20)); window.__downloads.push({ filename: req.filename, data: String(req.data) }); return { status: 'saved' }; } };
   const user = { id: async () => uid, isOwner: async () => !!cfg.owner, canEdit: async () => !!cfg.owner, can: async () => null };
   window.__calls = [];
   // Streams in two chunks; an aborted signal rejects "cancelled" with the text received so far (sample.d.ts).
@@ -118,8 +143,18 @@ window.__kaikouTest = true;
     }
     return { text, truncated: false, modelTierApplied: (opts && opts.modelTier) || 'default' };
   }
+  const JSON_PROMPTS = /Suggest 3 different replies|Review this English speaking practice session|practise shadowing|talk about one topic three times/;
   function answerJson(prompt) {
     if (/Suggest 3 different replies/.test(prompt)) return [{ en: 'The view from the top was amazing.', zh: '山頂的景色很棒。' }, { en: 'We had a picnic by the lake.', zh: '我們在湖邊野餐。' }, { en: 'Honestly, my legs still hurt!', zh: '老實說，我的腿到現在還在痛！' }];
+    if (/practise shadowing/.test(prompt)) return { title: 'A Slow Saturday', sentences: [
+      { en: "I didn't have any plans last Saturday.", zh: '上週六我沒有任何計畫。' },
+      { en: 'So I slept in until about ten.', zh: '所以我睡到大概十點。' },
+      { en: 'Then I grabbed a coffee near my place.', zh: '然後我在家附近買了杯咖啡。' },
+      { en: "It was sunny, so I went for a walk by the river.", zh: '天氣很好，所以我去河邊散步。' },
+      { en: 'In the evening, I cooked pasta for my sister.', zh: '晚上我煮了義大利麵給我妹妹吃。' },
+      { en: 'It was a simple day, but I really needed it.', zh: '很簡單的一天，但我真的很需要。' },
+    ] };
+    if (/talk about one topic three times/.test(prompt)) return { points: ['What do you do at work?', 'Where do you live?', 'What do you enjoy on weekends?'], phrases: [{ en: 'I work in marketing.', zh: '我在做行銷。' }, { en: "I'm based in Taipei.", zh: '我住在台北。' }, { en: "In my free time, I'm into hiking.", zh: '有空的時候我喜歡爬山。' }] };
     return { summary: '你能把週末的經過說得很完整，回答也越來越長。過去式還不穩，是下次的重點。', strengths: ['會主動補充細節', '敢用新的單字'], patterns: [{ issue: '過去的事常用現在式', example: 'I go to hiking', fix: 'I went hiking' }, { issue: '可數名詞忘了加 s', example: 'my friend', fix: 'my friends' }], phrases: [{ en: 'The view was breathtaking.', zh: '景色美得令人屏息。', example: 'The view from the top was breathtaking.' }, { en: 'We called it a day.', zh: '我們就收工了。', example: 'We got tired, so we called it a day.' }, { en: 'It was worth the climb.', zh: '爬上去很值得。', example: 'It was hard, but it was worth the climb.' }, { en: 'I could use a rest.', zh: '我需要休息一下。', example: 'After that hike, I could use a rest.' }, { en: 'Do you hike a lot?', zh: '你常爬山嗎？', example: 'Do you hike a lot on weekends?' }], next: '試著用過去式描述上一次出遊的完整經過' };
   }
   const sample = async (input, opts) => {
@@ -129,7 +164,7 @@ window.__kaikouTest = true;
     if (Array.isArray(input) && (!input.length || input[0].role !== 'user' || input[input.length - 1].role !== 'user')) throw err('invalid_request', 'turns must start and end with a user turn');
     if (typeof input === 'string') {
       call.head = input.slice(0, 40);
-      if (/Suggest 3 different replies/.test(input) || /Review this English speaking practice session/.test(input)) {
+      if (JSON_PROMPTS.test(input)) {
         const v = answerJson(input);
         await new Promise(r => setTimeout(r, 30));
         // vary the wrapping so the page's JSON extraction gets exercised
@@ -146,5 +181,5 @@ window.__kaikouTest = true;
     return stream('That sounds fun! What was the best part of the day?\n###\n{"you": "I eat a big lunch", "better": "I had a big lunch", "why": "吃飯常用 have，過去式 had"}\n{"you": "it make me happy", "better": "it made me happy", "why": "過去式"}', opts);
   };
   sample.limits = async () => ({ maxPromptBytes: 65536 });
-  window.claude = { use: async name => { await new Promise(r => setTimeout(r, 30)); return ({ db, user, sample })[name] || null; } };
+  window.claude = { use: async name => { await new Promise(r => setTimeout(r, 30)); return ({ db, user, sample, downloads })[name] || null; } };
 })();
