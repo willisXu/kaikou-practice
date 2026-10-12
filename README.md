@@ -60,7 +60,7 @@
 2. 打開 GitHub Pages 網址，按右上角的設定，在「Claude API 金鑰」貼上、按「儲存」。
 3. 回到「教練」分頁開始對話。
 
-- **費用**：對話、提示、翻譯用 Claude Haiku 5.5（`claude-haiku-5-5`），「結束並複習」用 Claude Sonnet 5.5（`claude-sonnet-5-5`），依實際用量計費。可以在 Claude Console 設定花費上限。
+- **費用**：對話、提示、翻譯和 4/3/2 的重點用 Claude Haiku 5.5（`claude-haiku-5-5`），「結束並複習」和跟讀短文用 Claude Sonnet 5.5（`claude-sonnet-5-5`），依實際用量計費。可以在 Claude Console 設定花費上限。
 - **安全**：金鑰只存在這個瀏覽器（localStorage 的 `kaikou:api-key`），只送到 `api.anthropic.com`，不會存進雲端資料或 git。畫面上只顯示最後 4 碼。金鑰在瀏覽器裡，就可能被這個網域的其他頁面讀到：`willisxu.github.io` 底下的其他 GitHub Pages 專案和這個頁面共用同一份 localStorage。所以只在自己的裝置存，公用電腦不要存。
 - **外流時**：到 Console 的 API keys 停用或刪除那把金鑰，再建一把新的。
 - 「清除這個瀏覽器裡的練習資料」不會刪掉金鑰；要刪金鑰，按設定裡的「移除金鑰」。
