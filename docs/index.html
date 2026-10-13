@@ -119,6 +119,7 @@ a{color:var(--accent)}
 .btn.small{min-height:34px;padding:4px 12px;font-size:14px}
 .btn.big{min-height:50px;padding:10px 24px;font-size:17px}
 .btn.danger{color:var(--pen);border-color:var(--pen)}
+.btn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--ink)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .icon-btn{display:inline-grid;place-items:center;flex:none;width:38px;height:38px;padding:0;border-radius:10px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer}
 .icon-btn:hover{color:var(--accent);background:var(--surface-2)}
@@ -335,6 +336,40 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
 .say-heard{color:var(--muted)}
 .rec-dot{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:var(--pen);vertical-align:1px;animation:blink 1.2s infinite both}
 
+/* coach: voice conversation (the coach speaks, the microphone listens, what you said is sent by itself) */
+.voice-bar{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin:0 2px 6px;padding:6px 6px 6px 12px;border-radius:12px;border:1px solid var(--accent);background:var(--accent-soft);font-size:14px}
+.voice-bar:focus{outline:none}
+.voice-bar.listen{border-color:var(--pen);background:var(--pen-soft)}
+.voice-bar.paused{border-color:var(--line-strong);background:var(--surface-2)}
+.vb-msg{flex:1 1 200px;min-width:0;display:flex;align-items:center;gap:8px;font-weight:700}
+.vb-acts{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto}
+.vb-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--accent);animation:blink 1.2s infinite both}
+.vb-meter{flex-basis:100%;height:4px;margin:0 6px 2px 0;border-radius:99px;background:var(--surface);overflow:hidden}
+.vb-meter span{display:block;height:100%;background:var(--accent);animation:vbdrain 2.5s linear both}
+@keyframes vbdrain{from{width:100%}to{width:0}}
+
+/* saved: pronunciation lessons */
+.lessons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.lesson{display:grid;align-content:start;gap:2px;padding:10px 12px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);text-align:left;cursor:pointer}
+.lesson:hover{border-color:var(--accent)}
+.lesson b{font-size:16px}
+.lesson span{font-size:13px;color:var(--muted)}
+.pairs{display:grid;gap:8px}
+.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:8px}
+.word{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 6px;padding:4px 4px 4px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2)}
+.word>b{font-size:19px;overflow-wrap:normal;white-space:nowrap}
+.word-acts{display:flex;align-items:center}
+.word .say{background:var(--surface)}
+.quiz{display:grid;justify-items:center;gap:10px;margin-top:12px;padding:16px 12px;border-radius:var(--r);background:var(--surface-2);text-align:center}
+.quiz-opts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%;max-width:420px}
+.quiz-opt{min-height:56px;padding:8px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font-size:20px;font-weight:700;cursor:pointer}
+.quiz-opt:hover:not(:disabled){border-color:var(--accent)}
+.quiz-opt:disabled{cursor:default}
+.quiz-opt.right{border-color:var(--accent);background:var(--accent-soft)}
+.quiz-opt.wrong{border-color:var(--pen);color:var(--pen)}
+.quiz-score{font-family:var(--font-display);font-size:34px;font-weight:700;font-variant-numeric:tabular-nums}
+.sent-list{display:grid;gap:2px;margin-top:6px}
+
 /* saved: daily phrase review */
 .drill-top{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}
 .drill-q{display:grid;gap:8px;margin-top:12px;padding:20px 16px;border-radius:var(--r);background:var(--surface-2);text-align:center}
@@ -378,10 +413,18 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
 
 @media (max-width:600px){
   .modes{grid-template-columns:1fr}
+  .lessons{grid-template-columns:1fr}
   .timer b{font-size:56px}
   .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .brand-sub{display:none}
   .date-big{font-size:22px}
+}
+/* A word with its speaker and microphone buttons needs a full row on a phone; one word per row there. */
+@media (max-width:480px){
+  .pairs.mic .pair{grid-template-columns:1fr;gap:4px}
+}
+@media (max-width:340px){
+  .pair{grid-template-columns:1fr;gap:4px}
 }
 @media (max-width:360px){
   .day{font-size:12px}
@@ -389,6 +432,7 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  .vb-meter{display:none}
 }
 </style>
 </head>
@@ -438,6 +482,7 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
       <div id="composer" class="composer" hidden>
         <div id="composer-tip" class="tip"><span id="composer-tip-text">用說的：手機切到英文鍵盤點麥克風，電腦按 <span class="kbd">Win + H</span>，說完再送出。</span><button type="button" id="tip-close" class="btn ghost small">知道了</button></div>
         <div id="mic-msg" class="mic-msg" hidden></div>
+        <div id="voice-bar" class="voice-bar" tabindex="-1" hidden></div>
         <div class="composer-row">
           <button id="hint-btn" type="button" class="icon-btn" aria-label="不知道怎麼回？看提示" title="不知道怎麼回？"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 17.5h6M10 20.5h4M12 3.5a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2h5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           <textarea id="msg-input" rows="1" maxlength="1000" placeholder="先大聲說，再用聽寫打進來…" aria-label="你的回覆"></textarea>
@@ -454,6 +499,7 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
 
     <section id="tab-saved" class="tab panel" role="tabpanel" aria-labelledby="t-saved" hidden>
       <div id="drill"></div>
+      <div id="pron"></div>
       <div id="starters"></div>
       <section id="mine-card" class="card" aria-labelledby="mine-title">
         <div class="card-head">
@@ -639,6 +685,8 @@ const ICON = {
   mic: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3.5" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg>',
   pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="5.5" width="4" height="13" rx="1" fill="currentColor"/><rect x="13.5" y="5.5" width="4" height="13" rx="1" fill="currentColor"/></svg>',
+  wave: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4M8 6.5v11M12 4v16M16 8v8M20 10.5v3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
+  close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
 };
 const DEFAULTS = { plan: '20', level: 'B1', about: '', accent: 'en-US', voiceURI: '', rate: 0.95, autoSpeak: true, shRate: 0.85 };
 const LEVELS = {
@@ -722,8 +770,9 @@ const S = {
   busy: false, ctl: null, askStartedAt: 0, reviewing: false, reviewStart: 0,
   hints: null, hintSeq: 0, note: null, noteNoRetry: false, unsavedReview: null, held: null, uploading: false,
   streak: 0, justStamped: false, armed: null, tipHidden: false,
-  micZh: null, say: {},                 // dictation language override (中翻英), read-aloud results
+  micZh: null, say: {}, hintFill: '',   // dictation language override (中翻英), read-aloud results, a hint put in the box
   srs: {}, drill: null,                 // review schedule per saved phrase, the running review
+  pron: null,                           // the open pronunciation lesson { k, quiz }
   shadow: { cur: '', list: [] }, tool: null, sh: null, shGen: null, f432: null, // today tools
   importing: null, installEvt: null,
 };
@@ -1293,6 +1342,7 @@ async function startDrill() {
   const q = drillQueue(tk);
   if (!q.length) { toast(S.phrases.length ? '今天要複習的句子都完成了' : '先收藏一些句子，才能開始複習'); return; }
   if (Mic.cur) micStop(true);
+  S.pron = null;
   S.drill = { tk, q, i: 0, flip: false, n: 0, tally: [0, 0, 0], again: {}, done: false };
   if (S.tab !== 'saved') switchTab('saved'); else renderSaved();
   window.scrollTo(0, 0);
@@ -1334,12 +1384,21 @@ function finishDrill(early) {
   renderSaved(); renderToday();
   focusHeading('#drill .card-title');
 }
-function renderSaved() { renderDrill(); renderStarters(); renderSavedList(); }
+function renderSaved() { renderDrill(); renderPron(); renderStarters(); renderSavedList(); }
+// The 收藏 tab shows a running review alone, an open pronunciation lesson alone, or everything.
+function savedView() {
+  const m = S.drill && !S.drill.done ? 'drill' : S.pron ? 'pron' : 'list';
+  $('#drill').hidden = m === 'pron';
+  $('#pron').hidden = m === 'drill';
+  $('#starters').hidden = m !== 'list';
+  $('#mine-card').hidden = m !== 'list';
+  return m;
+}
 function renderDrill() {
   const box = $('#drill'); if (!box || S.tab !== 'saved') return;
   const d = S.drill;
   const active = !!(d && !d.done);
-  $('#starters').hidden = active; $('#mine-card').hidden = active;
+  savedView();
   if (active) {
     // A phrase deleted meanwhile (on this or another device) is skipped; the next card starts face down.
     let skipped = false;
@@ -1422,6 +1481,223 @@ function drillDone(d) {
       st.todo ? el('button', { type: 'button', class: 'btn primary', 'data-fk': 'drill-more', onclick: startDrill }, '再複習一輪（' + st.todo + ' 句）') : el('span', { class: 'help', text: '今天的複習都完成了。' + (st.tomorrow ? '明天有 ' + st.tomorrow + ' 句到期。' : '') })));
 }
 
+/* ================= pronunciation: sounds Mandarin speakers from Taiwan often mix up ================= */
+/* Each lesson: how to make the sound, six minimal pairs (the first word has the sound of the lesson), and three
+   sentences full of it. Pairs avoid words a speech voice may say two ways (live, read…). A word is checked by what
+   the browser's speech recognition hears: the word, the other word of the pair, or something else. */
+const PRON = [
+  { k: 'th', title: 'th：think 不是 sink', tip: '舌尖輕輕放在上下門牙之間，往外吹氣。think、thank 只吹氣、喉嚨不震動；they、this 要讓喉嚨震動。不要用「ㄙ」「ㄈ」或「ㄉ」代替。',
+    pairs: [['think', 'sink'], ['thing', 'sing'], ['thank', 'sank'], ['three', 'free'], ['mouth', 'mouse'], ['they', 'day']],
+    sents: ['I think there are three things we need to fix.', "Thanks, that's really thoughtful of you.", "They'll be here on Thursday."] },
+  { k: 'v', title: 'v：very 不是 wery', tip: '上排牙齒輕碰下唇，喉嚨震動發出 v。w 是嘴唇先嘟圓再張開，牙齒不碰嘴唇；f 的嘴形和 v 一樣，但只吹氣、喉嚨不震動。',
+    pairs: [['vest', 'west'], ['vine', 'wine'], ['vet', 'wet'], ['van', 'fan'], ['very', 'ferry'], ['view', 'few']],
+    sents: ["We'll visit them over the weekend.", "I've never seen a view like this.", 'Have a very good weekend!'] },
+  { k: 'end', title: '字尾子音：bag 和 back', tip: '字尾的子音要唸出來，不要吞掉，也不要多加「ㄜ」。bag、seed 這種字尾震動的字，前面的母音拉長一點；back、seat 的母音短，收得乾脆。',
+    pairs: [['bag', 'back'], ['seed', 'seat'], ['cab', 'cap'], ['bed', 'bet'], ['prize', 'price'], ['pig', 'pick']],
+    sents: ['I left my bag in the back of the cab.', 'We need to find a good seat.', 'Did you get the job you applied for?'] },
+  { k: 'ee', title: '長短 i：sheep 和 ship', tip: 'sheep、seat 的長音 /iː/ 嘴角往兩邊拉、聲音拉長；ship、sit 的短音 /ɪ/ 嘴巴放鬆、短促，聽起來介於「ㄧ」和「ㄝ」之間。',
+    pairs: [['sheep', 'ship'], ['seat', 'sit'], ['feel', 'fill'], ['heat', 'hit'], ['steal', 'still'], ['cheap', 'chip']],
+    sents: ['Could you fill in this sheet, please?', 'I think we need a bit more time.', 'This seat is free, so feel free to sit.'] },
+  { k: 'ae', title: 'æ 和 e：bad 和 bed', tip: 'bad、sat 的 /æ/ 嘴巴張大、下巴往下，介於「ㄝ」和「ㄚ」之間；bed、set 的 /ɛ/ 嘴巴張小一點，接近「ㄝ」。',
+    pairs: [['bad', 'bed'], ['sat', 'set'], ['sad', 'said'], ['had', 'head'], ['pat', 'pet'], ['bag', 'beg']],
+    sents: ['Can I have a black coffee, please?', 'I left my pen in my bag.', "Let's grab a cab back to the hotel."] },
+  { k: 'sh', title: 's 和 sh：see 和 she', tip: 'she、ship 的 /ʃ/：嘴唇嘟起往前推，像叫人安靜的「噓——」；see、sip 的 /s/：嘴角往兩邊、舌尖靠近上排牙齒後面，像「ㄙ」。see 不要唸成「西」，聽起來會像 she。',
+    pairs: [['she', 'see'], ['ship', 'sip'], ['sheet', 'seat'], ['shell', 'sell'], ['short', 'sort'], ['shave', 'save']],
+    sents: ["She said she'd see us on Sunday.", "I'm sure the shop is still open.", 'She sells seashells by the seashore.'] },
+  { k: 'ng', title: 'n 和 ng：win 和 wing', tip: 'win、ran 的 n 是舌尖頂住上排牙齒後面；wing、rang 的 ng 是舌根往上頂、舌尖放下，聲音從鼻子出來，像「ㄥ」的尾巴。',
+    pairs: [['win', 'wing'], ['ran', 'rang'], ['ban', 'bang'], ['sin', 'sing'], ['thin', 'thing'], ['fan', 'fang']],
+    sents: ["I'm thinking of going running in the morning.", 'Can I bring my son along?', 'The meeting ran long again.'] },
+  { k: 'rl', title: 'r 和 l：right 和 light', tip: 'r 的舌尖不碰任何地方、稍微往後捲，嘴唇微微嘟起；l 的舌尖頂住上排牙齒後面。grass、pray 這種和其他子音連在一起的最容易混，先放慢唸。',
+    pairs: [['right', 'light'], ['road', 'load'], ['grass', 'glass'], ['pray', 'play'], ['fry', 'fly'], ['correct', 'collect']],
+    sents: ["Really? I'd love to learn more.", 'Could you correct my grammar, please?', "Let's grab a quick lunch."] },
+];
+// Other spellings a recogniser may write for the same sounds (sea for see, write for right…).
+const PRON_ALTS = { sink: ['sync'], see: ['sea', 'c'], sell: ['cell'], seed: ['cede'], prize: ['pries'], wine: ['whine'], wet: ['whet'], very: ['vary'], ferry: ['fairy'], few: ['phew'], fill: ['phil'], steal: ['steel'], cheap: ['cheep'], right: ['write', 'rite', 'wright'], light: ['lite'], road: ['rode', 'rowed'], load: ['lode'], pray: ['prey'] };
+// 'ok' when the word (or one of its spellings) was heard, 'other' when the other word of the pair was, else 'unclear'.
+function pronVerdict(word, other, heard) {
+  const hh = sayTokens(heard);
+  const has = w => [w].concat(PRON_ALTS[w] || []).some(f => sayTokens(f).every(t => hh.includes(t)));
+  if (has(word)) return 'ok';
+  if (other && has(other)) return 'other';
+  return 'unclear';
+}
+// Per browser, not synced: { [lesson]: { said: the last 20 checks as '1' (heard right) and '0', quiz: [right, of], t: day } }.
+const PRON_LS = 'kaikou:pron';
+function pronStats() {
+  let o = null;
+  try { o = JSON.parse(lsGet(PRON_LS) || 'null'); } catch (_) { o = null; }
+  const out = {};
+  if (!o || typeof o !== 'object') return out;
+  for (const p of PRON) {
+    const e = o[p.k];
+    if (!e || typeof e !== 'object') continue;
+    const said = typeof e.said === 'string' ? e.said.replace(/[^01]/g, '').slice(-20) : '';
+    const q = Array.isArray(e.quiz) ? e.quiz.map(Number) : null;
+    const quiz = q && q.length === 2 && q.every(n => Number.isInteger(n) && n >= 0) && q[0] <= q[1] && q[1] > 0 ? q : null;
+    if (said || quiz) out[p.k] = { said, quiz, t: DATE_RE.test(e.t) ? e.t : '' };
+  }
+  return out;
+}
+function pronSave(k, fn) {
+  if (!PRON.some(p => p.k === k)) return;
+  const all = pronStats();
+  const e = all[k] || { said: '', quiz: null, t: '' };
+  fn(e);
+  e.t = todayKey();
+  all[k] = e;
+  lsSet(PRON_LS, JSON.stringify(all));
+}
+function pronStatText(st) {
+  const tk = todayKey();
+  const days = st.t ? Math.round((parseD(tk) - parseD(st.t)) / 86400000) : -1;
+  const hits = st.said.split('').filter(c => c === '1').length;
+  return [days === 0 ? '今天練過' : days > 0 ? days + ' 天前練過' : '',
+    st.said ? '唸對 ' + hits + ' / ' + st.said.length : '',
+    st.quiz ? '聽辨 ' + st.quiz[0] + ' / ' + st.quiz[1] : ''].filter(Boolean).join('・');
+}
+function renderPron() {
+  const box = $('#pron'); if (!box || S.tab !== 'saved') return;
+  if (S.pron && !PRON.some(p => p.k === S.pron.k)) S.pron = null;
+  savedView();
+  const p = S.pron && PRON.find(x => x.k === S.pron.k);
+  fill(box, p ? pronLesson(p) : pronList());
+}
+function openPron(k) {
+  if (Mic.cur) micStop(true);
+  S.pron = { k, quiz: null };
+  renderPron();
+  window.scrollTo(0, 0);
+  focusHeading('#pron h2');
+}
+function closePron() {
+  const k = S.pron && S.pron.k;
+  if (Mic.cur) micStop(true);
+  for (const key of Object.keys(S.say)) if (/^p[ws]/.test(key)) delete S.say[key];
+  S.pron = null;
+  renderSaved();
+  const b = $('#pron [data-fk="pron-' + k + '"]');
+  if (b) b.focus({ preventScroll: true });
+}
+function pronList() {
+  const stats = pronStats(), mic = Mic.ok && !Mic.blocked;
+  return el('section', { class: 'card' },
+    el('h2', { class: 'card-title', text: '發音重點練習' }),
+    el('p', { class: 'help mt6', text: '說中文的人常混在一起的 8 組音。每組有發音方法、一對一對的字' + (TTS.ok ? '、聽辨小測驗' : '') + '和練習句' + (mic ? '，也可以唸給電腦聽，看它聽到的是哪一個字。' : '。') }),
+    el('div', { class: 'lessons mt12' }, PRON.map(p => {
+      const st = stats[p.k];
+      return el('button', { type: 'button', class: 'lesson', 'data-fk': 'pron-' + p.k, onclick: () => openPron(p.k) },
+        el('b', { text: p.title }),
+        el('span', { text: st ? pronStatText(st) : p.pairs.slice(0, 3).map(x => x.join(' / ')).join('、') }));
+    })));
+}
+function pronLesson(p) {
+  const mic = Mic.ok && !Mic.blocked;
+  const guess = '電腦常會往常見的字猜，結果當參考就好。';
+  const how = mic ? (TTS.ok ? '先按喇叭聽兩個字的差別，再按麥克風唸其中一個，看電腦聽到的是哪一個。' : '按麥克風唸其中一個字，看電腦聽到的是哪一個。') + guess
+    : TTS.ok ? '先按喇叭聽兩個字的差別，再跟著唸。' + (window.claude ? '在 Claude 裡不能用麥克風；網頁版可以唸給電腦聽，看它聽到哪一個字。' : '')
+      : '大聲唸每一對字，注意兩個字的差別。';
+  const ctx = 'pw' + p.k;
+  // The buttons of each word are described by the word, so a screen reader says which one they are for.
+  const word = (w, other) => {
+    const id = ctx + '-' + w;
+    const acts = [speakBtn(w, 'sm', ctx), sayBtn(w, ctx, { other, lesson: p.k })].filter(Boolean);
+    for (const b of acts) b.setAttribute('aria-describedby', id);
+    return el('div', { class: 'word' }, el('b', { id, lang: 'en', text: w }), el('span', { class: 'word-acts' }, acts), sayBox(w, ctx));
+  };
+  return el('div', { class: 'panel' },
+    el('section', { class: 'card' },
+      el('div', { class: 'tool-head' }, el('button', { type: 'button', class: 'btn ghost small', 'data-fk': 'pron-back', onclick: closePron }, el('span', { class: 'ico', html: ICON.left }), '回到收藏')),
+      el('div', { class: 'eyebrow mt6', text: '發音重點' }),
+      el('h2', { class: 'card-title', tabindex: '-1', text: p.title }),
+      el('p', { class: 'mt6', text: p.tip })),
+    el('section', { class: 'card' },
+      el('h3', { class: 'card-title', text: '一對一對唸' }),
+      el('p', { class: 'help mt6', text: how }),
+      el('div', { class: 'pairs mt12' + (mic ? ' mic' : '') }, p.pairs.map(pair => el('div', { class: 'pair', role: 'group', 'aria-label': pair.join(' 和 ') }, word(pair[0], pair[1]), word(pair[1], pair[0]))))),
+    TTS.ok ? pronQuiz(p) : null,
+    el('section', { class: 'card' },
+      el('h3', { class: 'card-title', text: '放進句子裡唸' }),
+      el('p', { class: 'help mt6', text: TTS.ok ? (mic ? '聽一次再唸，按麥克風看看每個字有沒有被聽出來。' : '聽一次，再跟著唸三遍。') : (mic ? '按麥克風唸，看看每個字有沒有被聽出來。' : '大聲唸三遍。') }),
+      el('div', { class: 'sent-list' }, p.sents.map(s => el('div', { class: 'phrase' },
+        el('div', null, el('div', { class: 'phrase-en', lang: 'en', text: s })),
+        el('div', { class: 'phrase-acts' }, speakBtn(s, 'sm', 'ps' + p.k), sayBtn(s, 'ps' + p.k)),
+        sayBox(s, 'ps' + p.k))))));
+}
+/* ---- the listening quiz: one word of a pair is spoken, you pick which one ---- */
+const QUIZ_LEN = 6;
+function pronQuiz(p) {
+  const z = S.pron.quiz;
+  const card = el('section', { class: 'card' }, el('h3', { class: 'card-title', text: '聽辨小測驗' }));
+  if (!z) {
+    const st = pronStats()[p.k];
+    card.append(el('p', { class: 'help mt6', text: '播一個字，選出你聽到的是哪一個。耳朵先分得出來，嘴巴才唸得出來。' }),
+      el('div', { class: 'start-row mt12' },
+        el('button', { type: 'button', class: 'btn primary', 'data-fk': 'quiz-start', onclick: () => quizStart(p) }, '開始（' + QUIZ_LEN + ' 題）'),
+        st && st.quiz ? el('span', { class: 'help', text: '上次聽對 ' + st.quiz[0] + ' / ' + st.quiz[1] }) : null));
+    return card;
+  }
+  if (z.i >= z.q.length) {
+    card.append(el('div', { class: 'quiz' },
+      el('p', { class: 'quiz-score', tabindex: '-1', 'data-fk': 'quiz-score', text: '聽對 ' + z.score + ' / ' + z.q.length }),
+      el('p', { class: 'help', text: z.score === z.q.length ? '全對！可以換下一組，或到上面唸給電腦聽。' : '聽錯的那幾對，按喇叭多聽幾次兩個字的差別，再測一次。' }),
+      el('div', { class: 'start-row' },
+        el('button', { type: 'button', class: 'btn primary', 'data-fk': 'quiz-again', onclick: () => quizStart(p) }, '再測一次'),
+        el('button', { type: 'button', class: 'btn', 'data-fk': 'quiz-close', onclick: () => { S.pron.quiz = null; renderPron(); const b = $('#pron [data-fk="quiz-start"]'); if (b) b.focus({ preventScroll: true }); } }, '收起'))));
+    return card;
+  }
+  const [pi, side] = z.q[z.i], pair = p.pairs[pi], ans = pair[side], picked = z.pick !== null;
+  card.append(el('div', { class: 'quiz' },
+    el('span', { class: 'eyebrow', text: '第 ' + (z.i + 1) + ' / ' + z.q.length + ' 題' }),
+    el('button', { type: 'button', class: 'btn', 'data-fk': 'quiz-play', 'aria-label': '第 ' + (z.i + 1) + ' 題，再聽一次', onclick: () => { clearTimeout(z.timer); ttsUnlock(); speak(ans); } }, el('span', { class: 'ico', html: ICON.speaker }), '再聽一次'),
+    el('p', { class: picked ? (z.pick === side ? 'say-ok' : 'help') : 'help', text: picked ? (z.pick === side ? '答對了！' : '答案是「' + ans + '」，再聽聽看兩個字的差別。') : '聽到的是哪一個？' }),
+    el('div', { class: 'quiz-opts' }, pair.map((w, j) => el('button', {
+      type: 'button', class: 'quiz-opt' + (picked && j === side ? ' right' : picked && j === z.pick ? ' wrong' : ''), lang: 'en', 'data-fk': 'quiz-' + j,
+      'aria-disabled': picked ? 'true' : null, onclick: () => quizPick(p, j) }, w))),
+    picked ? el('div', { class: 'start-row' },
+      pair.map(w => el('button', { type: 'button', class: 'btn small', 'data-fk': 'quiz-hear-' + w, onclick: () => { ttsUnlock(); speak(w); } }, el('span', { class: 'ico', html: ICON.speaker }), el('span', { lang: 'en', text: w }))),
+      el('button', { type: 'button', class: 'btn primary', 'data-fk': 'quiz-next', onclick: () => quizNext(p) }, z.i + 1 < z.q.length ? '下一題' : '看結果')) : null));
+  return card;
+}
+function quizStart(p) {
+  ttsUnlock();
+  if (Mic.cur) micStop(true);
+  const order = p.pairs.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  S.pron.quiz = { q: order.slice(0, QUIZ_LEN).map(i => [i, Math.random() < 0.5 ? 0 : 1]), i: 0, pick: null, score: 0 };
+  quizShow(p);
+}
+// Shows the current question with keyboard focus on the replay button, then says its word (a moment later, so a
+// screen reader reading the button does not talk over it).
+function quizShow(p) {
+  const z = S.pron.quiz, i = z.i;
+  renderPron();
+  const [pi, side] = z.q[i];
+  const b = $('#pron [data-fk="quiz-play"]'); if (b) b.focus({ preventScroll: true });
+  clearTimeout(z.timer);
+  z.timer = setTimeout(() => { if (S.pron && S.pron.quiz === z && z.i === i && z.pick === null && S.tab === 'saved') speak(p.pairs[pi][side]); }, 400);
+}
+function quizPick(p, j) {
+  const z = S.pron && S.pron.quiz;
+  if (!z || z.pick !== null || z.i >= z.q.length) return;
+  const [pi, side] = z.q[z.i];
+  clearTimeout(z.timer);
+  z.pick = j;
+  if (j === side) z.score++;
+  renderPron();
+  announce(j === side ? '答對了' : '答案是 ' + p.pairs[pi][side]);
+  const b = $('#pron [data-fk="quiz-next"]'); if (b) b.focus({ preventScroll: true });
+}
+function quizNext(p) {
+  const z = S.pron && S.pron.quiz;
+  if (!z || z.pick === null) return;
+  z.i++; z.pick = null;
+  if (z.i < z.q.length) { quizShow(p); return; }
+  pronSave(p.k, e => { e.quiz = [z.score, z.q.length]; });
+  renderPron();
+  announce('聽對 ' + z.score + ' 題，共 ' + z.q.length + ' 題');
+  focusHeading('#pron [data-fk="quiz-score"]');
+}
+
 /* ================= text to speech ================= */
 const TTS = {
   ok: typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance !== 'undefined',
@@ -1443,6 +1719,8 @@ const TTS = {
 };
 function speak(text) {
   if (!TTS.ok || !text) return;
+  // Any other speech (a speaker button, a hint) takes over from the voice conversation, which waits for 繼續說.
+  if (Voice.on && ['speaking', 'listening', 'countdown'].includes(Voice.phase)) voicePause();
   if (Mic.cur) micStop(true); // the coach's voice must not end up in the dictation
   try {
     speechSynthesis.cancel();
@@ -1459,6 +1737,51 @@ function ttsUnlock() {
   TTS.unlocked = true;
   try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (_) { /* ignore */ }
 }
+// Speaks a coach's reply at the coach's speed, one sentence at a time (Chrome may stop a long utterance without
+// an end event), and calls done() once: when every sentence has been said, when one was cut off or failed, or when
+// the voice stops reporting. A sentence counts as said on its end event, when speechSynthesis stops speaking after
+// it started, or after a fallback time (about 1.3× its expected length plus 1.5 s). TTS.cur keeps the utterance
+// referenced, or Chrome may never fire its events. alive(): false once the caller has moved on (換我說, a pause…);
+// after that no further sentence starts, whatever the voice reports (a cancel may look like a normal end).
+function speakThen(text, done, alive) {
+  const t = String(text || '').replace(/…/g, ', ').trim();
+  let fired = false;
+  const live = () => !fired && (!alive || alive());
+  const finish = () => { if (fired) return; fired = true; done(); };
+  if (!TTS.ok || !t) { setTimeout(finish, 0); return; }
+  if (Mic.cur) micStop(true);
+  const parts = splitSentences(t);
+  if (!parts.length) parts.push(t);
+  try { speechSynthesis.cancel(); } catch (_) { /* nothing playing */ }
+  let i = 0;
+  const next = () => {
+    if (!live()) { fired = true; return; }
+    if (i >= parts.length) { finish(); return; }
+    const line = parts[i++];
+    let over = false, guard = 0, poll = 0, began = false;
+    const u = new SpeechSynthesisUtterance(line);
+    const end = cut => {
+      if (over) return;
+      over = true; clearTimeout(guard); clearInterval(poll);
+      if (TTS.cur === u) TTS.cur = null;
+      if (cut) finish(); else next();
+    };
+    const busy = () => { try { return !!(speechSynthesis.speaking || speechSynthesis.pending); } catch (_) { return false; } };
+    try {
+      const v = TTS.pick();
+      if (v) { u.voice = v; u.lang = v.lang; } else u.lang = S.settings.accent;
+      u.rate = clamp(Number(S.settings.rate) || 0.95, 0.6, 1.3);
+      u.onend = () => end(false);
+      u.onerror = () => end(true); // cut off (another sound took over) or the voice failed: stop here
+      TTS.cur = u;
+      speechSynthesis.speak(u);
+      began = busy();
+      guard = setTimeout(() => end(false), line.split(/\s+/).length / (2.2 * u.rate) * 1300 + 1500);
+      poll = setInterval(() => { if (!live()) { over = true; clearTimeout(guard); clearInterval(poll); return; } if (busy()) began = true; else if (began) end(false); }, 250);
+    } catch (_) { end(true); }
+  };
+  next();
+}
 
 /* ================= microphone (speech recognition) ================= */
 // The browser's own speech recognition: Chrome and Edge (Chrome sends the audio to Google's service) and Safari.
@@ -1467,10 +1790,16 @@ function ttsUnlock() {
 // iPhone apps opened from the home screen get no speech recognition from WebKit, even though the constructor exists.
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 const Mic = { ok: !!SR && !window.claude && !(isIOS && isStandalone()), blocked: false, why: '', cur: null };
+// Voice conversation (教練分頁): phase is off, waiting (for the coach's reply), speaking, listening, countdown (a
+// moment to stop the send) or paused. tok changes whenever the phase moves on, so a late callback of an earlier
+// phase does nothing.
+const VOICE_SEND_MS = 2500;
+const Voice = { on: false, phase: 'off', tok: 0, timer: 0, miss: 0, msg: '', drop: null, stopAsked: false, typed: false };
 // A refused microphone is remembered for 30 days (設定 can switch it back on), so the buttons do not fail on every visit.
 const MIC_OFF_LS = 'kaikou:mic-off';
 try { const o = JSON.parse(lsGet(MIC_OFF_LS) || 'null'); if (o && Date.now() - Number(o.at) < 30 * 86400000) { Mic.blocked = true; Mic.why = String(o.why || ''); } } catch (_) { /* never refused */ }
 // h.onUpdate(final, interim) while listening; h.onEnd(final, error, aborted) once at the end.
+// h.auto: started without a tap (voice conversation). Some browsers refuse that, so a refusal then is not remembered.
 function micStart(key, lang, h) {
   micStop(true);
   if (!Mic.ok || Mic.blocked) return false;
@@ -1495,7 +1824,7 @@ function micStart(key, lang, h) {
     if (Mic.cur === st) Mic.cur = null;
     // Refused: off until 設定 turns it back on. No connection to the recognition service (Chrome in mainland China,
     // for example): off for this visit only, since a later visit may well connect.
-    const off = st.err === 'not-allowed' || st.err === 'service-not-allowed' || st.err === 'network';
+    const off = ((st.err === 'not-allowed' || st.err === 'service-not-allowed') && !h.auto) || st.err === 'network';
     if (off && !Mic.blocked) {
       Mic.blocked = true; Mic.why = st.err;
       if (st.err !== 'network') lsSet(MIC_OFF_LS, JSON.stringify({ why: st.err, at: Date.now() }));
@@ -1554,10 +1883,11 @@ function compareSaid(target, heard) {
   return { marks: words.map((w, i) => ({ w, ok: ok[i] })), hit: hit.filter(Boolean).length, total: n };
 }
 const sayKey = (ctx, text) => ctx + ':' + phraseId(text);
-function sayBtn(text, ctx) {
+// opt (pronunciation pairs): { other: the word it is often confused with, lesson }: the result says which word was heard.
+function sayBtn(text, ctx, opt) {
   if (!Mic.ok || Mic.blocked || !String(text || '').trim()) return null;
   const key = sayKey(ctx, text);
-  const b = el('button', { type: 'button', class: 'icon-btn sm', 'data-say-btn': key, 'data-fk': 'say:' + key, onclick: () => sayCheck(text, key) });
+  const b = el('button', { type: 'button', class: 'icon-btn sm', 'data-say-btn': key, 'data-fk': 'say:' + key, onclick: () => sayCheck(text, key, opt) });
   setSayBtn(b, key);
   return b;
 }
@@ -1591,6 +1921,15 @@ function fillSay(box, key) {
     return;
   }
   if (s.state === 'error') { fill(box, el('div', { class: 'say-head' }, el('span', { text: micErrMsg(s.err) }), close)); return; }
+  if (s.word) {
+    const v = s.word;
+    fill(box,
+      el('div', { class: 'say-head' }, el('b', { class: v === 'ok' ? 'say-ok' : null }, v === 'ok' ? '唸對了！' : v === 'other' ? '聽起來像「' : '聽到「', v === 'ok' ? null : el('span', { lang: 'en', text: s.heard }), v === 'ok' ? null : '」'), close),
+      v === 'ok' ? el('p', { class: 'say-heard' }, '電腦聽到：', el('span', { lang: 'en', text: s.heard }))
+        : el('p', { class: 'help' }, v === 'other' ? (TTS.ok ? '先按喇叭聽「' : '照上面的方法再唸一次「') : '不確定是哪一個字。一次只唸一個字、聲音大一點，再唸一次「',
+          el('span', { lang: 'en', text: s.target }), v === 'other' && TTS.ok ? '」，照上面的方法再唸一次。' : '」。'));
+    return;
+  }
   const all = s.hit === s.total;
   const words = el('p', { class: 'say-words', lang: 'en' });
   s.marks.forEach((m, i) => { if (i) words.append(' '); words.append(el('span', { class: m.ok === false ? 'miss' : null, text: m.w })); });
@@ -1605,9 +1944,10 @@ function updateSay(key) {
   for (const b of $$('[data-say="' + esc + '"]')) fillSay(b, key);
   for (const b of $$('[data-say-btn="' + esc + '"]')) setSayBtn(b, key);
 }
-function sayCheck(text, key) {
+function sayCheck(text, key, opt) {
   const mk = 'say:' + key;
   if (micOn(mk)) { micStop(false); return; }
+  voicePause(); // the voice conversation must not take the microphone back in the middle of the check
   const s = { state: 'listening', heard: '', interim: '' };
   S.say[key] = s;
   const keys = Object.keys(S.say);
@@ -1617,7 +1957,12 @@ function sayCheck(text, key) {
     onUpdate: (fin, interim) => { if (S.say[key] !== s || s.state !== 'listening') return; s.heard = fin; s.interim = interim; updateSay(key); },
     onEnd: (fin, err, aborted) => {
       if (S.say[key] !== s) return;
-      if (fin) {
+      if (fin && opt) {
+        const v = pronVerdict(text, opt.other, fin);
+        Object.assign(s, { state: 'done', heard: fin, interim: '', word: v, target: text });
+        if (v !== 'unclear') pronSave(opt.lesson, e => { e.said = (e.said + (v === 'ok' ? '1' : '0')).slice(-20); });
+        announce(v === 'ok' ? '唸對了' : (v === 'other' ? '聽起來像 ' : '聽到 ') + fin);
+      } else if (fin) {
         Object.assign(s, { state: 'done', heard: fin, interim: '' }, compareSaid(text, fin));
         announce(s.hit === s.total ? '每個字都聽出來了' : '聽出 ' + s.hit + ' 個字，共 ' + s.total + ' 個');
       } else if (aborted) delete S.say[key];
@@ -1969,7 +2314,8 @@ function confirmTwice(key, msg) {
   return false;
 }
 // Returns true once the new chat has started (and its first message, if any, was sent).
-async function startSession(setup, firstMessage) {
+// voice: start in voice conversation (the coach's opening is spoken, then the microphone listens).
+async function startSession(setup, firstMessage, voice) {
   if (!S.ready || S.sampleState !== 'ok' || S.reviewing || S.busy) return false;
   ttsUnlock();
   // Work out everything a new chat could lose, then ask once (a second tap within 5 s confirms).
@@ -2002,8 +2348,10 @@ async function startSession(setup, firstMessage) {
     focusInput();
     return sent;
   }
+  if (voice && voiceAvailable()) { Voice.on = true; Voice.miss = 0; }
   saveChat(); renderCoach(); renderToday(); focusInput();
   ask();
+  if (Voice.on && Voice.phase === 'off') voicePause();
   return true;
 }
 function saveChat() {
@@ -2172,6 +2520,7 @@ function normChat(d) {
   };
 }
 function discardChat() {
+  voiceOff();
   cancelInflight();
   const c = S.chat;
   if (c) S.endedChats.add(c.id);
@@ -2197,6 +2546,7 @@ async function ask() {
   const tail = c.turns[c.turns.length - 1];
   if (tail && tail.r === 'c' && tail.cut && !tail.sys) c.turns.pop(); // asking again replaces an interrupted reply
   S.note = null; S.noteNoRetry = false;
+  voiceWait();
   const ctl = new AbortController();
   S.ctl = ctl; S.busy = true; S.askStartedAt = Date.now();
   const turn = { r: 'c', t: '', raw: '', pending: true, streaming: true, at: Date.now() };
@@ -2227,6 +2577,7 @@ async function ask() {
       else if (i >= 0) c.turns.splice(i, 1);
     }
     onSampleError(e);
+    if (Voice.phase === 'waiting') voicePause(); // stopped or failed: the note says why, 繼續說 goes on
   } finally {
     if (S.ctl === ctl) { S.ctl = null; S.busy = false; }
     if (S.chat === c) { touchChat(c); saveChat(); }
@@ -2245,7 +2596,10 @@ function finishTurn(c, turn, raw, cut) {
     prev.fx = p.fixes;
     prev.ok = !p.fixes.length && p.none && isEnglish(prev.t);
   }
-  if (S.settings.autoSpeak && !cut && S.tab === 'coach') speak(p.speakText);
+  if (Voice.on && Voice.phase === 'waiting') {
+    if (cut || S.tab !== 'coach' || document.visibilityState !== 'visible') voicePause();
+    else voiceSpeak(p.speakText);
+  } else if (S.settings.autoSpeak && !cut && S.tab === 'coach') speak(p.speakText);
 }
 async function translateTurn(t) {
   if (t.zh) { t.zhOpen = !t.zhOpen; renderMessages(); return; }
@@ -2303,6 +2657,7 @@ async function review() {
   if (!c || S.busy || S.reviewing || !S.sample) return;
   const count = meCountOf(c);
   if (count < 3) { toast('再說 ' + (3 - count) + ' 句就能複習'); return; }
+  voiceOff();
   const ctl = new AbortController();
   S.ctl = ctl; S.reviewing = true; S.reviewStart = Date.now();
   S.note = null; S.noteNoRetry = false; S.hints = null; S.hintSeq++;
@@ -2422,7 +2777,10 @@ function focusHeading(sel) {
 }
 function switchTab(t, keepScroll) {
   if (!['today', 'coach', 'log', 'saved'].includes(t)) t = 'today';
-  if (Mic.cur) micStop(true);
+  if (t !== S.tab) { // the tab already shown (tapped again, or drawn at start) keeps what is going on
+    if (t !== 'coach') voicePause(); // the voice conversation never talks or listens from another tab
+    if (Mic.cur) micStop(true);
+  }
   if (t !== 'today') { shStop(); if (S.f432 && S.f432.state === 'run') f432Pause(); } // a round never runs unseen
   const from = document.activeElement;
   const fromPanel = !!(from && from.closest && from.closest('section.tab'));
@@ -2615,6 +2973,7 @@ async function askCoachAbout(it) {
 function renderCoach() {
   const root = $('#coach-dyn'); if (!root) return;
   const composer = $('#composer');
+  if (Voice.on && (!voiceAvailable() || S.review || S.reviewing)) voiceOff(); // the chat ended, or the microphone or coach went away
   // The chat is rebuilt in steps (frame first, then messages), so the focused control is restored at the end.
   const ae = document.activeElement;
   const fk = ae && ae !== document.body && root.contains(ae) && ae.dataset ? ae.dataset.fk : null;
@@ -2682,16 +3041,23 @@ function startView() {
     el('div', null, el('div', { class: 'seg', role: 'group', 'aria-label': '教練說話程度' }, ['A2', 'B1', 'B2'].map(k =>
       el('button', { type: 'button', 'aria-pressed': String(S.settings.level === k), 'data-fk': 'lvl-' + k, onclick: () => { S.settings.level = k; saveSettings('level'); renderCoach(); } }, k + ' ' + LEVELS[k].zh))))));
   const startLabel = S.sampleState === 'loading' || !S.ready ? '連線中…' : '開始對話';
+  const mic = Mic.ok && !Mic.blocked, voice = mic && TTS.ok && s.mode !== 'zh';
   opts.append(el('div', { class: 'start-row' },
     el('button', { id: 'start-btn', type: 'button', class: 'btn primary big', 'data-fk': 'start', onclick: () => { ttsUnlock(); startSession(Object.assign({}, s)); } }, startLabel),
-    el('span', { class: 'help', text: '教練用你的 Claude 帳號回覆，第一次會詢問是否允許。' })));
+    voice ? el('button', { id: 'start-voice', type: 'button', class: 'btn big', 'data-fk': 'start-voice', onclick: () => { ttsUnlock(); startSession(Object.assign({}, s), '', true); } }, el('span', { class: 'ico', html: ICON.wave }), '開始語音對話') : null,
+    el('span', { class: 'help', text: window.claude ? '教練用你的 Claude 帳號回覆，第一次會詢問是否允許。'
+      : voice ? '語音對話：教練說完會自動聽你說，你說完停一下就自動送出，不用碰螢幕。' : '教練用你在設定輸入的 Claude API 金鑰回覆。' })));
   parts.push(opts);
   parts.push(el('section', { class: 'card' },
     el('h3', { class: 'card-title', text: '怎麼「用說的」' }),
-    el('ul', { class: 'tips' },
-      el('li', null, el('b', { text: '手機：' }), '把鍵盤切到英文，點鍵盤上的麥克風，說完再按送出。'),
-      el('li', null, el('b', { text: 'Windows：' }), '按 ', el('span', { class: 'kbd', text: 'Win + H' }), ' 開聽寫；', el('b', { text: 'Mac：' }), '按兩下 ', el('span', { class: 'kbd', text: 'Fn' }), ' 或鍵盤上的麥克風鍵。'),
-      el('li', null, '聽寫要設定成英文才會辨識英文。說錯沒關係，照原樣送出，教練會幫你改。'))));
+    mic ? el('ul', { class: 'tips' },
+      el('li', null, el('b', { text: '直接說：' }), '按輸入框旁的麥克風說英文，停下來就會自動結束；文字不對可以改，確認後再送出。'),
+      el('li', null, el('b', { text: '語音對話：' }), '像講電話一樣，教練說完自動聽你說，說完自動送出（自由聊天和情境角色扮演可以用）。'),
+      el('li', null, '說錯沒關係，照原樣送出，教練會幫你改。'))
+      : el('ul', { class: 'tips' },
+        el('li', null, el('b', { text: '手機：' }), '把鍵盤切到英文，點鍵盤上的麥克風，說完再按送出。'),
+        el('li', null, el('b', { text: 'Windows：' }), '按 ', el('span', { class: 'kbd', text: 'Win + H' }), ' 開聽寫；', el('b', { text: 'Mac：' }), '按兩下 ', el('span', { class: 'kbd', text: 'Fn' }), ' 或鍵盤上的麥克風鍵。'),
+        el('li', null, '聽寫要設定成英文才會辨識英文。說錯沒關係，照原樣送出，教練會幫你改。'))));
   const wrap = el('div', { class: 'panel' }, parts);
   queueMicrotask(updateStartBtn);
   return wrap;
@@ -2706,6 +3072,7 @@ function updateStartBtn() {
   const s = S.setup;
   const needCustom = (s.mode === 'free' && s.topic === 'custom') || (s.mode === 'role' && s.scene === 'custom');
   b.disabled = !S.ready || S.sampleState !== 'ok' || (needCustom && !String(s.custom || '').trim());
+  const v = $('#start-voice'); if (v) v.disabled = b.disabled;
 }
 function chatView() {
   const c = S.chat;
@@ -2718,7 +3085,8 @@ function chatView() {
         el('b', { text: chatLabel(c) }),
         el('small', { text: '教練程度 ' + c.level + ' · 你說了 ' + count + ' 句' + (count < 3 ? ' · 再說 ' + (3 - count) + ' 句就能複習' : '') })),
       el('div', { class: 'chat-acts' },
-        TTS.ok ? el('button', { type: 'button', class: 'icon-btn', 'aria-pressed': String(auto), 'aria-label': '自動朗讀', title: auto ? '自動朗讀：開' : '自動朗讀：關', html: auto ? ICON.speaker : ICON.mute, 'data-fk': 'auto',
+        voiceToggle(),
+        TTS.ok ? el('button', { type: 'button', class: 'icon-btn', 'aria-pressed': String(auto), 'aria-label': '自動朗讀', title: auto ? '自動朗讀：開' : '自動朗讀：關', html: auto ? ICON.speaker : ICON.mute, 'data-fk': 'auto', hidden: Voice.on,
           onclick: () => { S.settings.autoSpeak = !S.settings.autoSpeak; if (!S.settings.autoSpeak && TTS.ok) speechSynthesis.cancel(); saveSettings('autoSpeak'); renderCoach(); toast(S.settings.autoSpeak ? '教練回覆時會自動朗讀' : '已關閉自動朗讀'); } }) : null,
         el('button', { type: 'button', class: 'btn small' + (armed ? ' danger' : ''), disabled: S.reviewing, 'data-fk': 'discard', onclick: () => arm('discard', discardChat, renderCoach) }, armed ? '確定放棄？' : '放棄'),
         el('button', { type: 'button', class: 'btn small primary', disabled: S.busy, 'data-fk': 'review', onclick: review }, '結束並複習'))),
@@ -2805,8 +3173,10 @@ function renderHints() {
   fill(box,
     el('div', { class: 'hints-head' }, el('span', { text: '可以這樣回：點一下放進輸入框，先唸出來再送出' }), el('button', { type: 'button', class: 'btn ghost small', onclick: () => { S.hints = null; renderHints(); $('#msg-input').focus(); } }, '收起')),
     S.hints.map((h, i) => el('button', { type: 'button', class: 'hint', lang: 'en', 'data-fk': 'hint-' + i, onclick: () => {
+      voicePause(); // nothing is sent or heard on its own while you look at a hint
       if (micOn('composer')) { micStop(true); updateMicBtn(); } // a late dictation result must not replace the hint
       const ta = $('#msg-input'); ta.value = h.en; autosize(ta); ta.focus();
+      S.hintFill = h.en; // saying it (dictation or 繼續說) replaces it instead of adding to it
       if (S.settings.autoSpeak) speak(h.en);
     } }, el('span', { class: 'hint-en', text: h.en }), h.zh ? el('small', { lang: 'zh-Hant-TW', text: h.zh }) : null)));
 }
@@ -2851,9 +3221,11 @@ function updateComposer() {
   hint.disabled = !ok || S.busy || zh;
   hint.hidden = zh;
   const mic = Mic.ok && !Mic.blocked;
-  ta.placeholder = zh ? (mic ? '按麥克風用說的，或打出想說的話，中文也可以…' : '打出想說的話，中文也可以…') : (mic ? '按麥克風用說的，說完確認再送出…' : '先大聲說，再用聽寫打進來…');
+  ta.placeholder = Voice.on ? '說英文，說完停一下就會送出…'
+    : zh ? (mic ? '按麥克風用說的，或打出想說的話，中文也可以…' : '打出想說的話，中文也可以…') : (mic ? '按麥克風用說的，說完確認再送出…' : '先大聲說，再用聽寫打進來…');
   const tip = $('#composer-tip-text');
-  if (mic) tip.textContent = '按麥克風直接說，停下來就會自動結束；文字不對可以改，確認後再送出。';
+  if (Voice.on) tip.textContent = '語音對話中：說完停一下就會自動送出。要改字就點輸入框，會先暫停。';
+  else if (mic) tip.textContent = '按麥克風直接說，停下來就會自動結束；文字不對可以改，確認後再送出。';
   else fill(tip, '用說的：手機切到英文鍵盤點麥克風，電腦按 ', el('span', { class: 'kbd', text: 'Win + H' }), '，說完再送出。');
   $('#composer-tip').hidden = S.tipHidden || lsGet('kaikou:tip') === 'hide';
   updateMicBtn();
@@ -2864,7 +3236,7 @@ function sendFromComposer() {
   if (micOn('composer')) micStop(true); // what was heard is already in the box; a late result must not refill it
   const v = ta.value.trim();
   if (!v) { ta.focus(); return; }
-  if (send(v)) { ta.value = ''; autosize(ta); micMsg(''); }
+  if (send(v)) { ta.value = ''; autosize(ta); micMsg(''); S.hintFill = ''; }
 }
 /* ---- dictation into the composer ---- */
 // In 中翻英 the learner types Chinese, then says one of the offered English versions out loud.
@@ -2882,6 +3254,12 @@ function micLang() {
   const zh = S.micZh === null ? !expectEnglish(c) : S.micZh;
   return zh ? 'zh-TW' : S.settings.accent;
 }
+// Dictation adds to what is in the box, except a hint put there and not changed since: saying it replaces it
+// (the hint asks you to say it out loud first, and what the coach should see is what you actually said).
+function micBase(ta) {
+  const v = ta.value;
+  return S.hintFill && v.trim() === S.hintFill ? '' : v.replace(/\s+$/, '');
+}
 let micMsgTimer = 0;
 function micMsg(text) {
   const n = $('#mic-msg'); if (!n) return;
@@ -2894,31 +3272,44 @@ function updateMicBtn() {
   const b = $('#mic-btn'), lb = $('#mic-lang'); if (!b) return;
   const on = micOn('composer');
   const zhLang = /^zh/.test(micLang());
+  const counting = Voice.on && Voice.phase === 'countdown';
+  // In a voice conversation the button does what the moment needs: 說完了, 還沒說完 (no send yet), 換我說 or 繼續說.
+  const label = !Voice.on ? (on ? '停止聽寫' : '用說的（' + (zhLang ? '中文' : '英文') + '）')
+    : counting ? '還沒說完，接著聽' : on ? '說完了' : Voice.phase === 'speaking' ? '換我說' : '繼續說';
   b.hidden = !Mic.ok || Mic.blocked;
-  b.disabled = !on && !(S.sampleState === 'ok' && !!S.chat);
+  b.disabled = (!on && !(S.sampleState === 'ok' && !!S.chat)) || (Voice.on && Voice.phase === 'waiting');
   b.classList.toggle('rec', on);
   b.setAttribute('aria-pressed', String(on));
-  b.setAttribute('aria-label', on ? '停止聽寫' : '用說的（' + (zhLang ? '中文' : '英文') + '）');
-  b.title = b.getAttribute('aria-label');
-  b.innerHTML = on ? ICON.stop : ICON.mic;
+  b.setAttribute('aria-label', label);
+  b.title = label;
+  b.innerHTML = on && !counting ? ICON.stop : ICON.mic;
   lb.hidden = b.hidden || !(S.chat && S.chat.mode === 'zh');
   lb.textContent = zhLang ? '中' : 'EN';
   lb.setAttribute('aria-label', '聽寫語言：' + (zhLang ? '中文' : '英文') + '，按一下切換');
   lb.title = lb.getAttribute('aria-label');
 }
-function composerMic() {
+// pressed: the voice phase when the button was pressed (see bindStatic), or null for the current one.
+function composerMic(pressed) {
+  if (Voice.on) {
+    const ph = pressed || Voice.phase;
+    if (ph === 'countdown') { if (Voice.phase === 'countdown') voiceMore(); } // already listening again: nothing to do
+    else if (micOn('composer')) voiceDone();
+    else voiceListen(true); // 繼續說 / 換我說
+    return;
+  }
   if (micOn('composer')) { micStop(false); return; }
   const ta = $('#msg-input');
   if (ta.disabled) return;
   const lang = micLang();
-  const base = ta.value.replace(/\s+$/, '');
+  const start = ta.value, base = micBase(ta), hint = base ? '' : S.hintFill;
   const join = (...xs) => xs.filter(Boolean).join(/^zh/.test(lang) ? '' : ' ');
   micMsg('');
   const ok = micStart('composer', lang, {
-    onUpdate: (fin, interim) => { ta.value = join(base, fin, interim); autosize(ta); },
+    onUpdate: (fin, interim) => { if (fin || interim) S.hintFill = ''; ta.value = join(base, fin, interim); autosize(ta); },
     onEnd: (fin, err, aborted) => {
       if (!aborted) {
-        ta.value = join(base, fin); autosize(ta);
+        ta.value = fin ? join(base, fin) : start; autosize(ta);
+        if (!fin && hint && start.trim() === hint) S.hintFill = hint; // nothing was said: the hint is back as it was
         if (err) micMsg(micErrMsg(err));
         else if (fin && !matchMedia('(pointer: coarse)').matches) ta.focus({ preventScroll: true });
       }
@@ -2927,6 +3318,209 @@ function composerMic() {
   });
   if (!ok) micMsg('這個瀏覽器不能用語音辨識，請改用系統的語音輸入。');
   updateMicBtn();
+}
+/* ---- voice conversation: the coach speaks, the microphone listens, and what you said is sent by itself ---- */
+// Web version only (it needs both the microphone and a speech voice), for 自由聊天 and 情境角色扮演.
+// The loop: waiting → speaking → listening → countdown → waiting… Anything else you do (typing or tapping into
+// the text, a hint, a speaker button, 唸一次, settings, another tab, locking the phone) pauses it; 繼續說 goes on.
+// The bar is not a live region on purpose: a screen reader reading it aloud would be heard by the microphone.
+const voiceAvailable = () => Mic.ok && !Mic.blocked && TTS.ok && S.sampleState === 'ok' && !!S.chat && S.chat.mode !== 'zh';
+const VOICE_EDIT_MSG = '先不送了。改好了按送出，或按「繼續說」接著說。';
+const VOICE_TYPE_MSG = '你在打字，語音對話先暫停。打好按送出，或按「繼續說」接著說。';
+function voiceSet(phase, msg) {
+  Voice.phase = phase; Voice.msg = msg || '';
+  renderVoice();
+  updateMicBtn();
+}
+function renderVoice() {
+  const bar = $('#voice-bar'); if (!bar) return;
+  const ph = Voice.on ? Voice.phase : 'off';
+  const had = bar.contains(document.activeElement);
+  bar.hidden = ph === 'off';
+  bar.className = 'voice-bar' + (ph === 'listening' ? ' listen' : ph === 'paused' ? ' paused' : '');
+  if (ph === 'off') {
+    fill(bar);
+    // Ended from the bar: focus goes to the switch that turns it back on (or to the text box when it is gone).
+    if (had) { const t = $('#coach-dyn [data-fk="voice"]') || $('#msg-input'); if (t && !t.disabled) t.focus({ preventScroll: true }); }
+    updateScrollPad();
+    return;
+  }
+  const btn = (fk, label, fn, primary) => el('button', { type: 'button', class: 'btn small' + (primary ? ' primary' : ''), 'data-fk': fk, onclick: fn }, label);
+  let msg, acts = [], meter = null;
+  if (ph === 'waiting') msg = [el('span', { class: 'vb-dot', 'aria-hidden': 'true' }), '教練正在回覆…'];
+  else if (ph === 'speaking') { msg = [el('span', { class: 'ico', html: ICON.speaker }), '教練正在說…']; acts = [btn('vb-skip', '換我說', () => voiceListen(true), true)]; }
+  else if (ph === 'listening') { msg = [el('span', { class: 'rec-dot', 'aria-hidden': 'true' }), '換你說。說完停一下，會自動送出。']; acts = [btn('vb-done', '說完了', voiceDone, true), btn('vb-pause', '暫停', () => voicePause())]; }
+  else if (ph === 'countdown') {
+    msg = ['即將送出。還沒說完就接著說。'];
+    acts = [btn('vb-send', '現在送出', voiceSendNow, true), btn('vb-hold', '先不要送', () => voicePause(VOICE_EDIT_MSG))];
+    meter = el('div', { class: 'vb-meter', 'aria-hidden': 'true' }, el('span', { style: 'animation-duration:' + VOICE_SEND_MS + 'ms' }));
+  } else { msg = [Voice.msg || '語音對話暫停了。']; acts = [btn('vb-go', '繼續說', () => voiceListen(true), true)]; }
+  fill(bar,
+    el('span', { class: 'vb-msg' }, msg),
+    el('span', { class: 'vb-acts' }, acts, iconBtn('close', '結束語音對話', voiceOff, 'sm', 'vb-end')),
+    meter);
+  // A control that just disappeared leaves the focus on the bar, never on the page (and never on a new button).
+  if (had && !bar.contains(document.activeElement)) bar.focus({ preventScroll: true });
+  updateScrollPad();
+}
+function voiceToggle() {
+  if (!Voice.on && !voiceAvailable()) return null;
+  return el('button', { type: 'button', class: 'btn small' + (Voice.on ? ' on' : ''), 'aria-pressed': String(Voice.on), 'data-fk': 'voice',
+    title: Voice.on ? '結束語音對話' : '語音對話：教練說完自動聽你說，說完自動送出', onclick: () => (Voice.on ? voiceOff() : voiceOn()) },
+  el('span', { class: 'ico', html: ICON.wave }), '語音對話');
+}
+// The switch shows the state; 自動朗讀 is hidden meanwhile (a voice conversation always reads the replies).
+function updateVoiceToggle() {
+  const a = $('#coach-dyn [data-fk="auto"]'); if (a) a.hidden = Voice.on;
+  const old = $('#coach-dyn [data-fk="voice"]'); if (!old) return;
+  const nb = voiceToggle(), focused = document.activeElement === old;
+  if (!nb) {
+    old.remove();
+    if (focused) { const t = $('#msg-input'); if (t && !t.disabled) t.focus({ preventScroll: true }); } // the microphone went away: type instead
+    return;
+  }
+  old.replaceWith(nb);
+  if (focused) nb.focus({ preventScroll: true });
+}
+function voiceOn() {
+  if (Voice.on || !voiceAvailable()) return;
+  ttsUnlock();
+  Voice.on = true; Voice.miss = 0;
+  updateVoiceToggle(); updateComposer();
+  const need = chatNeeds(S.chat);
+  if (S.busy) voiceSet('waiting');
+  else if (need && !(S.note && S.noteNoRetry)) ask(); // the coach still owes a reply: ask for it, then the loop starts
+  else if (need) voicePause(); // the note above says what is wrong
+  else voiceListen(true);
+}
+function voiceOff() {
+  if (!Voice.on) return;
+  const was = Voice.phase;
+  Voice.on = false; Voice.tok++; clearTimeout(Voice.timer);
+  voiceDrop();
+  if (micOn('composer')) micStop(true);
+  if (was === 'speaking') { try { speechSynthesis.cancel(); } catch (_) { /* nothing playing */ } }
+  updateVoiceToggle(); // first, so the focus can move to the new switch
+  voiceSet('off');
+  updateComposer();
+}
+// keep: the learner is about to fix the text, so what is shown stays (even words not yet confirmed).
+function voicePause(msg, keep) {
+  if (!Voice.on || (Voice.phase === 'paused' && !msg)) return;
+  const was = Voice.phase;
+  Voice.tok++; clearTimeout(Voice.timer);
+  if (keep) Voice.drop = null; else voiceDrop();
+  if (micOn('composer')) micStop(true);
+  if (was === 'speaking') { try { speechSynthesis.cancel(); } catch (_) { /* nothing playing */ } }
+  voiceSet('paused', msg);
+  if (msg) announce(msg);
+}
+// A listen that is cut off keeps only the words the recogniser had confirmed (or what the box held before), so
+// 繼續說 does not repeat half a sentence. Nothing changes when the text was edited meanwhile.
+function voiceDrop() { const d = Voice.drop; Voice.drop = null; if (d) d(); }
+// Called when a message goes to the coach (sent, retried or the opening).
+function voiceWait() {
+  if (!Voice.on) return;
+  Voice.tok++; clearTimeout(Voice.timer);
+  voiceDrop();
+  if (micOn('composer')) micStop(true);
+  voiceSet('waiting');
+}
+function voiceSpeak(text) {
+  const tok = ++Voice.tok;
+  clearTimeout(Voice.timer);
+  Voice.typed = false;
+  voiceSet('speaking');
+  speakThen(text, () => {
+    if (tok !== Voice.tok || !Voice.on) return;
+    // Typing during the reply: the coach finishes, then the loop waits instead of opening the microphone.
+    if (Voice.typed) { voicePause(VOICE_TYPE_MSG); return; }
+    // A short gap, so the end of the coach's voice does not reach the microphone.
+    Voice.timer = setTimeout(() => { if (tok === Voice.tok) voiceListen(false); }, 350);
+  }, () => tok === Voice.tok && Voice.on);
+}
+// 說完了: what is in the box goes to the countdown even when nothing new was heard.
+function voiceDone() {
+  if (!Voice.on || !micOn('composer')) return;
+  Voice.stopAsked = true;
+  micStop(false);
+}
+// 還沒說完 during the countdown: no send; the microphone (still on) keeps listening, or starts again.
+function voiceMore() {
+  if (!Voice.on || Voice.phase !== 'countdown') return;
+  if (micOn('composer')) { clearTimeout(Voice.timer); voiceSet('listening'); }
+  else voiceListen(true);
+}
+// gesture: started by a tap (繼續說, 換我說…); otherwise the browser may refuse to listen until there is one.
+// more: what was said is in the box and about to be sent; the microphone listens on through the countdown, so a
+// learner who pauses mid-sentence (the recogniser stops at the first pause) can simply go on talking.
+function voiceListen(gesture, more) {
+  if (!Voice.on) return;
+  if (!voiceAvailable()) { voiceOff(); return; }
+  // Still waiting for the coach: a tap rejoins the loop, which goes on once the reply has been spoken.
+  if (S.busy) { if (gesture) voiceWait(); else voicePause(); return; }
+  if (S.reviewing || S.tab !== 'coach' || document.visibilityState !== 'visible') { voicePause(); return; }
+  const was = Voice.phase;
+  const tok = ++Voice.tok;
+  clearTimeout(Voice.timer);
+  Voice.drop = null; Voice.stopAsked = false;
+  if (was === 'speaking') { try { speechSynthesis.cancel(); } catch (_) { /* nothing playing */ } }
+  if (gesture) Voice.miss = 0;
+  const ta = $('#msg-input');
+  const start = ta.value, base = micBase(ta), hint = base ? '' : S.hintFill;
+  const join = (...xs) => xs.filter(Boolean).join(' ');
+  const unsaid = () => { if (hint && start.trim() === hint) S.hintFill = hint; }; // nothing was said: the hint is back
+  let shown = null, heard = '';
+  micMsg('');
+  if (more) {
+    voiceSet('countdown');
+    Voice.timer = setTimeout(() => { if (tok === Voice.tok && Voice.on) voiceSendNow(); }, VOICE_SEND_MS);
+  } else voiceSet('listening');
+  const ok = micStart('composer', micLang(), {
+    auto: !gesture,
+    onUpdate: (fin, interim) => {
+      if (tok !== Voice.tok) return;
+      if (fin || interim) S.hintFill = ''; // what you say replaces the hint, and later words are added to it
+      heard = fin; shown = join(base, fin, interim);
+      ta.value = shown; autosize(ta);
+      // Talking again during the countdown: nothing is sent yet, the new words are added.
+      if (Voice.phase === 'countdown' && (fin || interim)) { clearTimeout(Voice.timer); voiceSet('listening'); }
+    },
+    onEnd: (fin, err, aborted) => {
+      updateMicBtn();
+      if (tok !== Voice.tok || !Voice.on) return;
+      if (aborted) { voicePause(); return; }
+      Voice.drop = null;
+      ta.value = fin ? join(base, fin) : start; autosize(ta);
+      if (!fin) unsaid();
+      if (Mic.blocked) { const m = micErrMsg(err); voiceOff(); micMsg(m); return; }
+      if (Voice.phase === 'countdown') return; // nothing more was said: the send goes ahead
+      if (err === 'not-allowed' || err === 'service-not-allowed') { voicePause('瀏覽器要你先按一下才會開始聽：按「繼續說」。'); return; }
+      if (err && err !== 'no-speech') { voicePause(micErrMsg(err)); return; }
+      const stop = Voice.stopAsked; Voice.stopAsked = false;
+      if (!fin) {
+        if (stop) { if (ta.value.trim()) voiceListen(false, true); else voicePause(); return; }
+        // Nothing new heard (Chrome says no-speech after a few seconds, Safari may just stop): listen again twice
+        // (time to think), then wait for 繼續說.
+        if (Voice.miss < 2) { Voice.miss++; Voice.timer = setTimeout(() => { if (tok === Voice.tok) voiceListen(false); }, 300); return; }
+        voicePause('一直沒有聽到聲音。想好了再按「繼續說」。');
+        return;
+      }
+      Voice.miss = 0;
+      voiceListen(false, true);
+    },
+  });
+  if (ok) Voice.drop = () => { if (shown !== null && ta.value === shown) { ta.value = heard ? join(base, heard) : start; if (!heard) unsaid(); autosize(ta); } };
+  else if (!more) voicePause('這個瀏覽器現在不能用語音辨識。');
+  updateMicBtn();
+}
+function voiceSendNow() {
+  if (!Voice.on) return;
+  Voice.tok++; clearTimeout(Voice.timer);
+  Voice.drop = null; // what is in the box is sent as it is
+  if (!$('#msg-input').value.trim()) { voicePause(); return; }
+  sendFromComposer(); // → ask() → waiting
+  if (Voice.phase !== 'waiting') voicePause();
 }
 function autosize(ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 170) + 'px'; }
 function focusInput() { const ta = $('#msg-input'); if (ta && !matchMedia('(pointer: coarse)').matches) ta.focus({ preventScroll: true }); }
@@ -4031,8 +4625,24 @@ function bindStatic() {
     addInbox(v); inp.value = ''; renderInbox(); toast('記下來了');
   });
   const ta = $('#msg-input');
-  ta.addEventListener('input', e => { if (e.isTrusted && micOn('composer')) { micStop(true); updateMicBtn(); } autosize(ta); }); // typing takes over from dictation
-  $('#mic-btn').addEventListener('click', () => { ttsUnlock(); composerMic(); });
+  ta.addEventListener('input', e => {
+    // Typing takes over from dictation and from a voice conversation (nothing is sent or heard on its own then).
+    // While the coach is speaking it finishes first (voiceSpeak), then the loop waits.
+    if (e.isTrusted && Voice.on && Voice.phase === 'speaking') Voice.typed = true;
+    else if (e.isTrusted && Voice.on && Voice.phase !== 'paused') voicePause(Voice.phase === 'countdown' ? VOICE_EDIT_MSG : VOICE_TYPE_MSG, true);
+    if (e.isTrusted && micOn('composer')) { micStop(true); updateMicBtn(); }
+    autosize(ta);
+  });
+  // Tapping into the text or moving the caret to fix a word stops a send that is about to happen; the words shown
+  // stay as they are. (Focus alone does not count: it also comes back when the window is switched to.)
+  const editing = () => { if (Voice.on && (Voice.phase === 'countdown' || Voice.phase === 'listening')) voicePause(VOICE_EDIT_MSG, true); };
+  ta.addEventListener('pointerdown', e => { if (e.isTrusted) editing(); });
+  ta.addEventListener('keydown', e => { if (/^(Arrow|Home$|End$|Backspace$|Delete$)/.test(e.key)) editing(); });
+  // A tap acts on what the button showed when the finger went down (in a voice conversation its meaning can change
+  // a moment later, when the learner starts talking again during the countdown).
+  let micDown = null;
+  $('#mic-btn').addEventListener('pointerdown', () => { micDown = { phase: Voice.phase, at: Date.now() }; });
+  $('#mic-btn').addEventListener('click', () => { ttsUnlock(); const d = micDown; micDown = null; composerMic(d && Date.now() - d.at < 1500 ? d.phase : null); });
   $('#mic-lang').addEventListener('click', () => {
     S.micZh = !/^zh/.test(micLang());
     if (micOn('composer')) micStop(true);
@@ -4050,7 +4660,7 @@ function bindStatic() {
     if (S.busy) { if (S.ctl && Date.now() - S.askStartedAt > 700) S.ctl.abort(); return; } // ignore a double tap right after sending
     sendFromComposer();
   });
-  $('#hint-btn').addEventListener('click', getHints);
+  $('#hint-btn').addEventListener('click', () => { voicePause('看完提示，按「繼續說」或直接送出。'); getHints(); });
   $('#tip-close').addEventListener('click', () => { S.tipHidden = true; lsSet('kaikou:tip', 'hide'); $('#composer-tip').hidden = true; updateScrollPad(); });
   $('#saved-search').addEventListener('input', renderSavedList);
   $('#copy-anki').addEventListener('click', () => {
@@ -4061,6 +4671,7 @@ function bindStatic() {
   const closeDlg = () => { try { dlg.close(); } catch (_) { dlg.removeAttribute('open'); } };
   $('#btn-settings').addEventListener('click', () => {
     if (!S.ready) { toast('還在載入，稍等一下'); return; }
+    voicePause();
     fillSettings();
     try { dlg.showModal(); } catch (_) { dlg.setAttribute('open', ''); }
   });
@@ -4123,6 +4734,7 @@ function bindStatic() {
       Store.flushAll();
       if (S.f432 && S.f432.state === 'run') f432Pause(); // the phone locked or another app came up: pause the round
       shStop();
+      voicePause();
       return;
     }
     renderToday(); refreshStreak();
@@ -4294,7 +4906,7 @@ async function boot(data) {
   if (data && data.draft) { const ta = $('#msg-input'); if (ta) { ta.value = data.draft; autosize(ta); } }
   if (S.tab === 'coach' && S.chat) scrollToEnd(true);
 }
-if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic };
+if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, PRON, PRON_ALTS, pronVerdict, pronStats };
 
 const hot = window.claude && window.claude.hot;
 try { if (hot && typeof hot.snapshot === 'function') hot.snapshot(() => ({ tab: S.tab, draft: ($('#msg-input') || {}).value || '' })); } catch (_) { /* optional */ }

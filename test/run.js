@@ -90,6 +90,14 @@ function serve(root) {
     return page;
   }
   const until = (page, fn, arg, timeout) => page.waitForFunction(fn, arg, { timeout: timeout || 8000 });
+  // Stores a made-up API key the way the page itself does, then reloads. (In Chromium, a file:// page whose first
+  // localStorage access comes from an init script sometimes loses its later writes on reload, so no init script
+  // touches storage.)
+  async function giveKey(page, key) {
+    await page.evaluate(k => localStorage.setItem('kaikou:api-key', k), key);
+    await page.reload();
+    await page.waitForFunction(() => window.__kaikouTest && window.__kaikouTest.S && window.__kaikouTest.S.ready, null, { timeout: 10000 });
+  }
   const sync = page => page.evaluate(() => document.querySelector('#sync').textContent);
   const shot = (p, name, fullPage) => p.screenshot({ path: path.join(out, name), fullPage: !!fullPage });
   const horiz = p => p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
@@ -174,7 +182,7 @@ function serve(root) {
     check('送出一句：教練回覆並附上 2 個更自然的說法', () => { eq(chat.turns, 7); eq(chat.fixes, 2); eq(chat.chatCall, [['uuauauau', false]]); });
     check('提示與翻譯', () => { eq(chat.hintButtons, 3); eq(chat.hintCall, [false]); eq(chat.zh, '我很好，謝謝！你這個週末過得怎麼樣？'); });
 
-    await page.click('.chat-acts .btn.primary');
+    await page.click('[data-fk="review"]');
     await until(page, () => !!window.__kaikouTest.S.review && !window.__kaikouTest.S.reviewing, null, 10000);
     await until(page, () => window.__store.get('data/users/u_test/chat').active === false, null, 6000);
     const rv = await page.evaluate(() => {
@@ -216,8 +224,8 @@ function serve(root) {
     const { page } = await open(ARTIFACT + '#coach', { viewport: { width: 1200, height: 900 }, colorScheme: 'dark' }, 'desk');
     await until(page, () => document.querySelector('#sync').textContent === '已同步');
     await shot(page, '7-coach-desk-dark.png');
-    await page.click('.chat-acts .btn:not(.primary)');
-    await page.click('.chat-acts .btn:not(.primary)');
+    await page.click('[data-fk="discard"]');
+    await page.click('[data-fk="discard"]');
     await until(page, () => !!document.querySelector('#start-btn'));
     await page.click('.mode:nth-child(2)');
     await shot(page, '8-coach-start-desk-dark.png', true);
@@ -650,6 +658,68 @@ function serve(root) {
       eq(gap, '第 1 次完成！');
       eq(f, { ticked: true, title: '三次都講完了！', rec: false, tag: '本週 1 / 1' });
     });
+
+    // Pronunciation in Claude: the pairs can be heard (no microphone here) and the listening quiz works.
+    await page.click('#t-saved');
+    const lessons =await T(() => [...document.querySelectorAll('#pron .lesson b')].map(n => n.textContent));
+    await page.click('[data-fk="pron-th"]');
+    const lesson = await T(() => ({
+      title: document.querySelector('#pron h2').textContent, focus: document.activeElement === document.querySelector('#pron h2'),
+      pairs: document.querySelectorAll('#pron .pair').length, speakers: document.querySelectorAll('#pron .word [data-fk^="spk:"]').length,
+      mics: document.querySelectorAll('#pron [data-say-btn]').length, sents: document.querySelectorAll('#pron .sent-list .phrase').length,
+      hidden: ['#drill', '#starters', '#mine-card'].map(s => document.querySelector(s).hidden),
+    }));
+    await T(() => { window.__spoken = []; });
+    await page.click('[data-fk="quiz-start"]');
+    const asked = [], feedback = [], focus = [];
+    for (let i = 0; i < 6; i++) {
+      const q = await T(() => { const X = window.__kaikouTest, z = X.S.pron.quiz, [pi, side] = z.q[z.i]; return { side, word: X.PRON[0].pairs[pi][side] }; });
+      asked.push(q.word);
+      // The word is said a moment after the question shows (focus is on 再聽一次 first).
+      focus.push(await T(() => [document.activeElement.dataset.fk, document.activeElement.getAttribute('aria-label')]));
+      await until(page, n => window.__spoken.length === n, i + 1);
+      await page.click('[data-fk="quiz-' + (i < 2 ? q.side : 1 - q.side) + '"]'); // the first two right, the rest wrong
+      feedback.push(await T(() => document.querySelector('#pron .quiz p').textContent));
+      focus.push(await T(() => document.activeElement.dataset.fk));
+      if (i === 1) await shot(page, '14-pron-quiz-phone.png');
+      await page.click('[data-fk="quiz-next"]');
+    }
+    const result = await T(() => ({ score: document.querySelector('#pron .quiz-score').textContent, focus: document.activeElement && document.activeElement.dataset.fk, stored: JSON.parse(localStorage.getItem('kaikou:pron')).th, spoken: window.__spoken.map(s => s.text) }));
+    // 再聽一次 pressed right away replaces the word that was about to be said (it is not said twice).
+    await T(() => { window.__spoken = []; });
+    await page.click('[data-fk="quiz-again"]');
+    await page.click('[data-fk="quiz-play"]');
+    await page.waitForTimeout(700);
+    const replay = await T(() => window.__spoken.length);
+    await page.click('[data-fk="pron-back"]');
+    const back = await T(() => ({ stat: document.querySelector('[data-fk="pron-th"] span').textContent, focus: document.activeElement && document.activeElement.dataset.fk, shown: ['#drill', '#starters', '#mine-card'].map(s => !document.querySelector(s).hidden) }));
+    check('發音練習（Claude 版）：8 組重點、每組 6 對字與 3 句，可以聽但沒有麥克風；打開時收藏的其他部分先收起', () => {
+      eq(lessons.length, 8);
+      eq(lessons[0], 'th：think 不是 sink');
+      eq(lesson, { title: 'th：think 不是 sink', focus: true, pairs: 6, speakers: 12, mics: 0, sents: 3, hidden: [true, true, true] });
+    });
+    check('發音練習：聽辨小測驗播出題目的字、選完告訴你對錯，6 題後記下成績；鍵盤焦點跟著走', () => {
+      eq(result.spoken, asked);
+      eq([feedback[0], feedback[1]], ['答對了！', '答對了！']);
+      eq(focus.slice(0, 4), [['quiz-play', '第 1 題，再聽一次'], 'quiz-next', ['quiz-play', '第 2 題，再聽一次'], 'quiz-next']);
+      assert.ok(feedback[2].startsWith('答案是「' + asked[2] + '」'), feedback[2]);
+      eq([result.score, result.focus, result.stored.quiz, result.stored.t, replay], ['聽對 2 / 6', 'quiz-score', [2, 6], tk, 1]);
+      eq(back, { stat: '今天練過・聽辨 2 / 6', focus: 'pron-th', shown: [true, true, true] });
+    });
+
+    // A phrase review started from 今日 while a lesson is open takes the 收藏 tab over.
+    await page.click('[data-fk="pron-th"]');
+    await page.click('#t-today');
+    await page.click('[data-fk="tool-back"]'); // the finished 4/3/2 is still open there
+    await page.click('[data-fk="go-drill"]');
+    const drillOver = await T(() => ({ pron: window.__kaikouTest.S.pron, drill: !!window.__kaikouTest.S.drill, shown: ['#drill', '#pron'].map(s => !document.querySelector(s).hidden), focus: document.activeElement === document.querySelector('#drill .card-title') }));
+    await page.click('[data-fk="drill-end"]');
+    check('發音練習開著時從今日開始句子複習：課程收起，複習卡出現並取得焦點', () => eq(drillOver, { pron: null, drill: true, shown: [true, false], focus: true }));
+
+    // No voice conversation inside Claude (no microphone there), even with an open chat.
+    await page.click('#t-coach');
+    const noVoice = await T(() => ({ chat: !!window.__kaikouTest.S.chat, toggle: !!document.querySelector('[data-fk="voice"]'), bar: document.querySelector('#voice-bar').hidden }));
+    check('Claude 版沒有語音對話（不能用麥克風）', () => eq(noVoice, { chat: true, toggle: false, bar: true }));
     await ctx.close();
   }
 
@@ -675,7 +745,8 @@ function serve(root) {
   // ---------- 6. GitHub Pages with a microphone: dictation and the read-aloud check ----------
   {
     const KEY = 'sk-ant-api03-' + 'TESTONLY'.repeat(6) + '-AA';
-    const { ctx, page } = await open(PAGES + '#coach', { viewport: { width: 1000, height: 800 } }, 'mic', null, speech + ';localStorage.setItem("kaikou:api-key", ' + JSON.stringify(KEY) + ');');
+    const { ctx, page } = await open(PAGES + '#coach', { viewport: { width: 1000, height: 800 } }, 'mic', null, speech);
+    await giveKey(page, KEY);
     const sent = [];
     await page.route('https://api.anthropic.com/v1/messages', route => {
       const msgs = (JSON.parse(route.request().postData() || '{}').messages) || [];
@@ -694,6 +765,12 @@ function serve(root) {
         same: c("I'll get back to you on that.", 'I will get back to you on that'),
         miss: c('Could you speak a bit more slowly?', 'could you speak more slowly'),
         nums: c('I have two kids.', 'I have 2 kids'),
+        verdicts: [['see', 'she', 'Sea'], ['right', 'light', 'Write it down.'], ['think', 'sink', 'I think so'], ['light', 'right', 'right'], ['ship', 'sip', 'chip'], ['three', 'free', '3'], ['light', 'right', 'write'], ['fill', 'feel', 'Phil']].map(a => X.pronVerdict(...a)),
+        lessons: X.PRON.map(p => [p.pairs.length, new Set(p.pairs.flat()).size, p.sents.length]),
+        // Words a speech voice may say two ways never appear, and every other spelling belongs to a word in a pair.
+        twoWay: X.PRON.flatMap(p => p.pairs.flat()).filter(w => ['live', 'read', 'lead', 'close', 'wind', 'tear', 'bow', 'row', 'use', 'minute', 'wound', 'does'].includes(w)),
+        altsKnown: Object.keys(X.PRON_ALTS).every(w => X.PRON.some(p => p.pairs.flat().includes(w))),
+        stats: (() => { localStorage.setItem('kaikou:pron', '{"th":{"said":"01x1","quiz":[7,6],"t":"bad"},"zz":{"said":"1"},"v":5}'); const s = X.pronStats(); localStorage.removeItem('kaikou:pron'); return s; })(),
       };
     });
     check('唸一次的比對：不分大小寫、標點，縮寫和數字寫法不同也算對', () => {
@@ -701,6 +778,12 @@ function serve(root) {
       eq(pure.same, [8, 8, []]);
       eq(pure.miss, [5, 7, ['a', 'bit']]);
       eq(pure.nums, [4, 4, []]);
+    });
+    check('發音字對：同音的拼法也算對，聽成另一個字或聽不出來分開判斷；8 組都是 6 對不重複的字和 3 句；壞掉的紀錄不會出錯', () => {
+      eq(pure.verdicts, ['ok', 'ok', 'ok', 'other', 'unclear', 'ok', 'other', 'ok']);
+      eq(pure.lessons, Array(8).fill([6, 12, 3]));
+      eq([pure.twoWay, pure.altsKnown], [[], true]);
+      eq(pure.stats, { th: { said: '011', quiz: null, t: '' } });
     });
 
     await page.click('#start-btn');
@@ -739,8 +822,8 @@ function serve(root) {
     });
 
     // 中翻英: dictation starts in Chinese, switches to English after the coach offers ways to say it.
-    await page.click('.chat-acts .btn:not(.primary)');
-    await page.click('.chat-acts .btn:not(.primary)');
+    await page.click('[data-fk="discard"]');
+    await page.click('[data-fk="discard"]');
     await page.click('[data-fk="mode-zh"]');
     await page.click('#start-btn');
     await until(page, () => !!window.__kaikouTest.S.chat && window.__kaikouTest.S.chat.mode === 'zh');
@@ -778,28 +861,353 @@ function serve(root) {
       eq(shmic.head, '每個字都聽出來了！');
     });
     await page.click('[data-fk="tool-back"]');
+
+    // Pronunciation pairs with the microphone: the result says which word of the pair the browser heard.
+    await page.click('#t-saved');
+    await page.click('[data-fk="pron-th"]');
+    const sayWord = async (w, heard, lesson) => {
+      const k = await T(([x, l]) => 'pw' + l + ':' + window.__kaikouTest.phraseId(x), [w, lesson || 'th']);
+      await T(h => window.__srScript.push({ text: h }), heard);
+      await page.click('[data-say-btn="' + k + '"]');
+      await until(page, x => { const b = document.querySelector('[data-say="' + x + '"]'); return !!b && !b.hidden && !!b.querySelector('.say-head b') && !window.__kaikouTest.Mic.cur; }, k);
+      return T(x => { const b = document.querySelector('[data-say="' + x + '"]'); return [b.querySelector('.say-head b').textContent, (b.querySelector('.help') || b.querySelector('.say-heard')).textContent]; }, k);
+    };
+    const words = [];
+    words.push(await sayWord('think', 'sink'));
+    words.push(await sayWord('think', 'think'));
+    words.push(await sayWord('sink', 'sync'));
+    words.push(await sayWord('three', '3'));
+    words.push(await sayWord('mouth', 'mouse'));
+    words.push(await sayWord('they', 'hey there'));
+    await shot(page, '15-pron-mic-desk.png', true);
+    const said = await T(() => JSON.parse(localStorage.getItem('kaikou:pron')).th.said);
+    // On phones every word with its two buttons gets a whole row, and no word breaks inside.
+    const fits = [];
+    for (const w of [360, 390]) {
+      await page.setViewportSize({ width: w, height: 800 });
+      await page.click('[data-fk="pron-back"]');
+      await page.click('[data-fk="pron-rl"]');
+      // A long result inside a word's box wraps instead of pushing the page sideways.
+      await sayWord('glass', 'I am not sure what you said there at all', 'rl');
+      fits.push(await T(() => ({
+        cols: getComputedStyle(document.querySelector('#pron .pair')).gridTemplateColumns.split(' ').length,
+        broken: [...document.querySelectorAll('#pron .word>b')].filter(b => b.getClientRects().length !== 1 || b.scrollWidth > b.clientWidth + 1).map(b => b.textContent),
+        wide: document.documentElement.scrollWidth > window.innerWidth,
+      })));
+      if (w === 360) await shot(page, '17-pron-mic-phone.png');
+    }
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await page.click('[data-fk="pron-back"]');
+    await page.click('[data-fk="pron-th"]');
+    const reopened = await T(() => [...document.querySelectorAll('#pron .say')].filter(b => !b.hidden).length);
+    const descr = await T(() => { const b = document.querySelector('#pron .word [data-say-btn]'); return document.getElementById(b.getAttribute('aria-describedby')).textContent; });
+    await page.click('[data-fk="pron-back"]');
+    const stat = await page.textContent('[data-fk="pron-th"] span');
+    check('發音練習（網頁版）：唸一個字，說出電腦聽到的是這個字、另一個字，還是聽不出來；只有聽得出來的才記進成績', () => {
+      eq(words[0], ['聽起來像「sink」', '先按喇叭聽「think」，照上面的方法再唸一次。']);
+      eq(words[1], ['唸對了！', '電腦聽到：think']);
+      eq([words[2][0], words[3][0]], ['唸對了！', '唸對了！']);
+      eq(words[4][0], '聽起來像「mouse」');
+      eq(words[5], ['聽到「hey there」', '不確定是哪一個字。一次只唸一個字、聲音大一點，再唸一次「they」。']);
+      eq(said, '01110');
+      eq(stat, '今天練過・唸對 3 / 5');
+    });
+    check('發音練習（網頁版）：手機上一個字一行、字不會被切開；回到收藏再打開時結果已清掉；按鈕說明是哪一個字', () => {
+      eq(fits, [{ cols: 1, broken: [], wide: false }, { cols: 1, broken: [], wide: false }]);
+      eq([reopened, descr], [0, 'think']);
+    });
     await page.click('#t-coach');
 
     // A browser that refuses the microphone: the buttons go away and the system dictation tip comes back.
     await T(() => window.__srScript.push({ error: 'not-allowed' }));
     await page.click('#mic-btn');
     await until(page, () => window.__kaikouTest.Mic.blocked && document.querySelector('#mic-btn').hidden);
-    const off = await T(() => ({ say: document.querySelectorAll('[data-say-btn]').length, tip: document.querySelector('#composer-tip-text').textContent, msg: document.querySelector('#mic-msg').textContent }));
+    const off = await T(() => ({ say: document.querySelectorAll('#tab-coach [data-say-btn]').length, tip: document.querySelector('#composer-tip-text').textContent, msg: document.querySelector('#mic-msg').textContent }));
     const keptOff = await T(() => JSON.parse(localStorage.getItem('kaikou:mic-off') || 'null'));
     await page.reload();
     await page.waitForFunction(() => window.__kaikouTest && window.__kaikouTest.S && window.__kaikouTest.S.ready, null, { timeout: 10000 });
     const after = await T(() => ({ blocked: window.__kaikouTest.Mic.blocked, hidden: document.querySelector('#mic-btn').hidden }));
+    await page.click('#t-saved'); // no 唸一次 buttons on the other tabs either
+    off.saved = await T(() => document.querySelectorAll('#tab-saved [data-say-btn]').length);
     await page.click('#btn-settings');
     await page.click('#set-mic-on');
     await page.click('#set-done');
     const on = await T(() => ({ blocked: window.__kaikouTest.Mic.blocked, hidden: document.querySelector('#mic-btn').hidden, kept: localStorage.getItem('kaikou:mic-off') }));
     check('瀏覽器不允許麥克風：說明怎麼開啟，麥克風按鈕收起來，改回系統聽寫的提示；下次打開仍記得，設定裡可以重新啟用', () => {
-      eq(off.say, 0);
+      eq([off.say, off.saved], [0, 0]);
       assert.ok(/Win \+ H/.test(off.tip), off.tip);
       assert.ok(/允許麥克風/.test(off.msg), off.msg);
       eq(keptOff && keptOff.why, 'not-allowed');
       eq(after, { blocked: true, hidden: true });
       eq(on, { blocked: false, hidden: false, kept: null });
+    });
+    await ctx.close();
+  }
+
+  // ---------- 6b. GitHub Pages: voice conversation (the coach speaks, the microphone listens, it sends by itself) ----------
+  {
+    const KEY = 'sk-ant-api03-' + 'TESTONLY'.repeat(6) + '-AA';
+    const { ctx, page } = await open(PAGES + '#coach', { viewport: { width: 400, height: 860 }, deviceScaleFactor: 2 }, 'voice', null, speech);
+    await giveKey(page, KEY);
+    const sent = [];
+    const LONG = 'Great, I love hearing about your plans because a good weekend makes the whole week feel lighter and happier for everyone around you';
+    const MORE = ['What was the film about?', 'Did your sister like it?'];
+    let slowNext = false;
+    await page.route('https://api.anthropic.com/v1/messages', async route => {
+      const msgs = (JSON.parse(route.request().postData() || '{}').messages) || [];
+      const last = String((msgs[msgs.length - 1] || {}).content || '');
+      if (/^An English learner/.test(last)) return sseReply(route, '[{"en": "Sounds great to me", "zh": "聽起來很棒"}, {"en": "I had a lovely time", "zh": "我玩得很開心"}]');
+      if (msgs.length > 1) sent.push(last);
+      if (slowNext) { slowNext = false; await new Promise(r => setTimeout(r, 1500)); }
+      if (/I go to park yesterday$/.test(last)) return sseReply(route, 'Nice! Which park did you go to?\n###\n{"you": "I go to park yesterday", "better": "I went to the park yesterday", "why": "過去式"}');
+      if (/by the river$/.test(last)) return sseReply(route, 'That sounds lovely. What did you eat?\n###\n{"none": true}');
+      if (/^Sounds great to me.*$/.test(last)) return sseReply(route, LONG + '.\n###\n{"none": true}');
+      if (/^I went to the cinema with my sister$/.test(last)) return sseReply(route, LONG + '. ' + MORE.join(' ') + '\n###\n{"none": true}');
+      if (msgs.length > 1) return sseReply(route, 'Great! Tell me more.\n###\n{"none": true}');
+      return sseReply(route, 'Hi! What did you do last weekend?\n###\n{"none": true}');
+    });
+    const T = (fn, a) => page.evaluate(fn, a);
+    const VOICE_WAIT = 3200; // longer than the countdown before a send
+    const phase = (p, ms) => until(page, x => window.__kaikouTest.Voice.phase === x, p, ms || 10000);
+    const bar = () => T(() => ({ on: window.__kaikouTest.Voice.on, phase: window.__kaikouTest.Voice.phase, text: document.querySelector('#voice-bar').textContent, hidden: document.querySelector('#voice-bar').hidden }));
+    const input = () => T(() => document.querySelector('#msg-input').value);
+    const script = (...steps) => T(x => window.__srScript.push(...x), steps);
+    const turns = n => until(page, x => window.__kaikouTest.S.chat.turns.filter(t => t.r === 'm').length === x && !window.__kaikouTest.S.busy, n, 10000);
+    const micBtn = () => T(() => { const b = document.querySelector('#mic-btn'); return { label: b.getAttribute('aria-label'), rec: b.classList.contains('rec'), disabled: b.disabled }; });
+    const starts = () => T(() => window.__srStarts.length);
+
+    // The start menu offers it for free talk and role-play, not for 中翻英.
+    const offer = [await T(() => !!document.querySelector('#start-voice'))];
+    await page.click('[data-fk="mode-zh"]');
+    offer.push(await T(() => !!document.querySelector('#start-voice')));
+    await page.click('[data-fk="mode-role"]');
+    offer.push(await T(() => !!document.querySelector('#start-voice')));
+    await page.click('[data-fk="mode-free"]');
+
+    // The opening is spoken, then the microphone listens; what was heard goes out by itself after a short countdown.
+    await script({ text: 'I go to park yesterday' });
+    await page.click('#start-voice');
+    await phase('countdown');
+    const counting = Object.assign(await bar(), { input: await input(), sent: sent.length, mic: await micBtn(), auto: await T(() => document.querySelector('[data-fk="auto"]').hidden) });
+    await shot(page, '16-voice-countdown-phone.png');
+    // The reply (with its correction) is spoken and the microphone listens again; three silences in a row pause it.
+    await until(page, () => /一直沒有聽到聲音/.test(document.querySelector('#voice-bar').textContent), null, 15000);
+    const loop = await T(() => ({ log: window.__speechLog.slice(), fix: window.__kaikouTest.S.chat.turns[1].fx.map(f => f.better), mic: !!window.__kaikouTest.Mic.cur, input: document.querySelector('#msg-input').value, toggle: document.querySelector('[data-fk="voice"]').getAttribute('aria-pressed') }));
+    check('語音對話：教練開場會唸出來，接著自動聽你說，說完倒數一下自動送出', () => {
+      eq(offer, [true, false, true]);
+      eq([counting.on, counting.phase, counting.input, counting.sent, counting.auto], [true, 'countdown', 'I go to park yesterday', 0, true]);
+      assert.ok(/即將送出/.test(counting.text) && /現在送出/.test(counting.text) && /先不要送/.test(counting.text), counting.text);
+      eq(counting.mic.label, '還沒說完，接著聽');
+      eq(sent.slice(0, 1), ['I go to park yesterday']);
+      eq(loop.fix, ['I went to the park yesterday']);
+    });
+    check('語音對話：教練一句一句唸，唸完才開麥克風；倒數時也在聽；一直沒聽到聲音就停下來等你', () => {
+      // listen → heard → (the countdown listens on, hears nothing) → the reply, sentence by sentence → three silences.
+      eq(loop.log, ['say:Hi!', 'said', 'say:What did you do last weekend?', 'said', 'listen', 'heard:I go to park yesterday', 'stop-listen', 'listen', 'stop-listen',
+        'say:Nice!', 'said', 'say:Which park did you go to?', 'said', 'listen', 'stop-listen', 'listen', 'stop-listen', 'listen', 'stop-listen']);
+      eq([loop.mic, loop.input, loop.toggle], [false, '', 'true']);
+    });
+
+    // 暫停 in the middle of a sentence drops the half-heard words, so saying it again does not repeat them.
+    await script({ text: 'It was a really lovely day', hold: 3000 });
+    await page.click('[data-fk="vb-go"]');
+    await until(page, () => document.querySelector('#msg-input').value === 'It was a');
+    const midMic = await micBtn();
+    await page.click('[data-fk="vb-pause"]');
+    const afterPause = await input();
+    await script({ text: 'It was a really lovely day' });
+    await page.click('[data-fk="vb-go"]');
+    await turns(2);
+    // Going on talking during the countdown adds to the sentence instead of sending half of it.
+    await script({ text: 'We had a picnic' }, { text: 'by the river' }); // heard once the reply has been spoken
+    await turns(3);
+    check('語音對話：說到一半按暫停，沒確定的字不留，再說一次不會重複；停頓後接著說，會接在後面一起送', () => {
+      eq([midMic.label, midMic.rec], ['說完了', true]);
+      eq(afterPause, '');
+      eq(sent.slice(1, 3), ['It was a really lovely day', 'We had a picnic by the river']);
+    });
+
+    // A hint put in the box and then said aloud replaces the hint instead of being added to it.
+    await page.click('#hint-btn');
+    await until(page, () => document.querySelectorAll('#hints .hint').length === 2);
+    const hinted = await bar();
+    await page.click('[data-fk="hint-0"]');
+    // Said aloud it replaces the hint; going on during the countdown is added to what was said.
+    await script({ text: 'Sounds great to me' }, { text: 'and really fun' });
+    await page.click('[data-fk="vb-go"]');
+    await until(page, () => window.__kaikouTest.Voice.phase === 'countdown' && document.querySelector('#msg-input').value === 'Sounds great to me and really fun');
+    const fromHint = await input();
+    await page.click('[data-fk="vb-send"]');
+    // Typing while the coach speaks: the coach finishes the sentence, then the loop waits (no microphone).
+    await phase('speaking');
+    await page.type('#msg-input', 'Hi');
+    const typedSpeaking = Object.assign(await bar(), { starts: await starts() });
+    await phase('paused');
+    await page.waitForTimeout(600);
+    const typedAfter = Object.assign(await bar(), { starts: await starts(), log: await T(() => window.__speechLog.slice(-2)) });
+    check('語音對話：看提示時暫停，把提示唸出來會取代提示、不會重複；教練說話時打字，教練說完就停下來等，不會自己開麥克風', () => {
+      eq([hinted.phase, /看完提示/.test(hinted.text)], ['paused', true]);
+      eq([fromHint, sent[3]], ['Sounds great to me and really fun', 'Sounds great to me and really fun']);
+      eq([typedSpeaking.phase, typedAfter.phase, /你在打字/.test(typedAfter.text), typedAfter.starts, typedAfter.log], ['speaking', 'paused', true, typedSpeaking.starts, ['say:' + LONG + '.', 'said']]);
+    });
+
+    // Tapping into the text during the countdown stops the send (to fix a word).
+    await page.fill('#msg-input', '');
+    await script({ text: 'We ate sandwiches' });
+    await page.click('[data-fk="vb-go"]');
+    await phase('countdown');
+    await page.click('#msg-input');
+    const tapped = Object.assign(await bar(), { input: await input() });
+    await page.waitForTimeout(VOICE_WAIT);
+    const tappedSent = sent.length;
+    // The microphone button during the countdown means "not finished yet": no send, it listens again and adds.
+    await page.fill('#msg-input', '');
+    await script({ text: 'I went to the' });
+    await page.click('[data-fk="vb-go"]');
+    await phase('countdown');
+    await script({ text: 'cinema with my sister' });
+    await page.click('#mic-btn');
+    await until(page, () => window.__kaikouTest.Voice.phase === 'countdown' && document.querySelector('#msg-input').value === 'I went to the cinema with my sister');
+    await turns(5);
+    check('語音對話：倒數時點輸入框就先不送；按麥克風表示還沒說完，接著聽並接在後面', () => {
+      eq([tapped.phase, tapped.input, /先不送了/.test(tapped.text), tappedSent], ['paused', 'We ate sandwiches', true, 4]);
+      eq(sent[4], 'I went to the cinema with my sister');
+    });
+
+    // 換我說 cuts the coach short and listens, and the rest of the reply is never spoken, even with a voice that
+    // reports nothing when it is cut off; 說完了 keeps what was heard so far and counts down.
+    await script({ text: 'It was a lot of fun', hold: 3000 });
+    await phase('speaking');
+    await T(() => { window.__ttsDrop = true; });
+    await page.click('[data-fk="vb-skip"]');
+    await until(page, () => document.querySelector('#msg-input').value === 'It was a');
+    await page.waitForTimeout(700);
+    await T(() => { window.__ttsDrop = false; });
+    const skipLog = await T(x => window.__speechLog.slice(window.__speechLog.lastIndexOf('say:' + x)), LONG + '.');
+    await page.click('[data-fk="vb-done"]');
+    await phase('countdown');
+    const done = await input();
+    // Tapping the coach tab again or a focus that comes back to the text does not stop anything; tapping into the
+    // text pauses and keeps the words shown, even those not confirmed yet; opening 設定 pauses and drops them.
+    await page.click('[data-fk="vb-hold"]');
+    await script({ text: 'and very relaxing', hold: 3000 });
+    await page.click('[data-fk="vb-go"]');
+    await until(page, () => window.__kaikouTest.Voice.phase === 'listening' && document.querySelector('#msg-input').value === 'It was a and very');
+    await page.click('#t-coach');
+    await page.focus('#msg-input');
+    const sameTab = Object.assign(await bar(), { mic: await T(() => !!window.__kaikouTest.Mic.cur) });
+    await page.click('#msg-input');
+    const tapKeep = Object.assign(await bar(), { input: await input() });
+    await script({ text: 'more words here', hold: 3000 });
+    await page.click('[data-fk="vb-go"]');
+    await until(page, () => document.querySelector('#msg-input').value === 'It was a and very more words');
+    await page.click('#btn-settings');
+    const inSettings = Object.assign(await bar(), { mic: await T(() => !!window.__kaikouTest.Mic.cur), input: await input() });
+    await page.click('#set-done');
+    check('語音對話：換我說會打斷教練開始聽，教練不會接著說下一句；說完了留下聽到的字並倒數；再按一次教練分頁或焦點回到輸入框不會中斷；點輸入框暫停並留下顯示的字；打開設定會暫停', () => {
+      eq(skipLog, ['say:' + LONG + '.', 'cut', 'listen']);
+      eq(done, 'It was a');
+      eq([sameTab.phase, sameTab.mic], ['listening', true]);
+      eq([tapKeep.phase, tapKeep.input, /先不送了/.test(tapKeep.text)], ['paused', 'It was a and very', true]);
+      eq([inSettings.phase, inSettings.mic, inSettings.input], ['paused', false, 'It was a and very']);
+    });
+
+    // A tap on the microphone button that starts during the countdown means "not finished", even if the learner
+    // starts talking again (and the button turns into 說完了) before the finger is lifted.
+    await page.fill('#msg-input', '');
+    await script({ text: 'We went home' }, { text: 'after the film', wait: 800, hold: 1500 });
+    await page.click('[data-fk="vb-go"]');
+    await phase('countdown');
+    await page.dispatchEvent('#mic-btn', 'pointerdown');
+    await phase('listening');
+    await page.dispatchEvent('#mic-btn', 'click');
+    const lateTap = { mic: await T(() => !!window.__kaikouTest.Mic.cur), phase: (await bar()).phase };
+    await until(page, () => window.__kaikouTest.Voice.phase === 'countdown' && document.querySelector('#msg-input').value === 'We went home after the film');
+    await page.click('[data-fk="vb-hold"]');
+    check('語音對話：倒數時按下麥克風鍵、放開前又開始說話，仍然當作「還沒說完」，不會把話切斷', () => eq(lateTap, { mic: true, phase: 'listening' }));
+
+    // While the coach is still answering, 繼續說 rejoins the loop: the reply is spoken and the microphone opens.
+    await page.fill('#msg-input', 'It was a lot of fun');
+    slowNext = true;
+    await page.click('#send-btn');
+    await phase('waiting');
+    await page.click('#btn-settings');
+    await page.click('#set-done');
+    const waitPaused = await bar();
+    await page.click('[data-fk="vb-go"]');
+    const rejoined = await bar();
+    await T(() => { window.__ttsDrop = true; }); // and the voice drops its events: the loop must not stall
+    await until(page, () => !window.__kaikouTest.S.busy && window.__kaikouTest.Voice.phase === 'speaking', null, 8000);
+    const t0 = Date.now();
+    await until(page, () => window.__kaikouTest.Voice.phase === 'listening', null, 8000);
+    const stalled = Date.now() - t0;
+    await T(() => { window.__ttsDrop = false; });
+    check('語音對話：教練還在回覆時按繼續說，回覆唸完照樣開麥克風；朗讀收不到結束通知也不會卡住', () => {
+      eq([waitPaused.phase, rejoined.phase], ['paused', 'waiting']);
+      assert.ok(stalled < 2000, 'the microphone opened ' + stalled + ' ms after the reply started to be spoken');
+    });
+
+    // The × ends voice conversation and gives the focus to its switch; 自動朗讀 comes back.
+    await phase('paused', 12000);
+    await page.click('[data-fk="vb-end"]');
+    const ended = Object.assign(await bar(), { toggle: await T(() => document.querySelector('[data-fk="voice"]').getAttribute('aria-pressed')), focus: await T(() => document.activeElement && document.activeElement.dataset.fk), auto: await T(() => document.querySelector('[data-fk="auto"]').hidden), mic: await micBtn() });
+    check('語音對話：按 × 結束，焦點回到語音對話按鈕，自動朗讀按鈕回來', () => {
+      eq([ended.on, ended.hidden, ended.toggle, ended.focus, ended.auto], [false, true, 'false', 'voice', false]);
+      eq(ended.mic.label, '用說的（英文）');
+    });
+
+    // A recognition service that cannot be reached turns it off (the focus goes to the text box, to type instead).
+    await page.fill('#msg-input', '');
+    await script({ text: 'Nothing much' });
+    await page.click('[data-fk="voice"]');
+    await phase('countdown');
+    await page.click('[data-fk="vb-hold"]');
+    await page.fill('#msg-input', '');
+    await script({ error: 'network' });
+    await page.focus('[data-fk="vb-go"]');
+    await page.keyboard.press('Enter');
+    await until(page, () => !window.__kaikouTest.Voice.on, null, 6000);
+    const net = await T(() => ({ msg: document.querySelector('#mic-msg').textContent, toggle: !!document.querySelector('[data-fk="voice"]'), bar: document.querySelector('#voice-bar').hidden, focus: document.activeElement && document.activeElement.id }));
+    await page.click('#btn-settings');
+    await page.click('#set-mic-on');
+    await page.click('#set-done');
+    // An automatic start the browser refuses (some want a tap first) only pauses; a refusal after a tap turns the microphone off.
+    await script({ text: 'It was great' }, { error: 'no-speech' }, { error: 'not-allowed' });
+    await page.click('[data-fk="voice"]');
+    await until(page, () => /先按一下/.test(document.querySelector('#voice-bar').textContent), null, 12000);
+    const autoRefused = await T(() => ({ blocked: window.__kaikouTest.Mic.blocked, kept: localStorage.getItem('kaikou:mic-off'), phase: window.__kaikouTest.Voice.phase }));
+    await script({ error: 'not-allowed' });
+    await page.click('[data-fk="vb-go"]');
+    await until(page, () => !window.__kaikouTest.Voice.on, null, 6000);
+    const tapRefused = await T(() => ({ blocked: window.__kaikouTest.Mic.blocked, kept: !!localStorage.getItem('kaikou:mic-off'), toggle: !!document.querySelector('[data-fk="voice"]'), msg: document.querySelector('#mic-msg').textContent }));
+    check('語音對話：連不上語音辨識就關掉並說明，焦點移到輸入框；自動開始被拒只先暫停，按了還被拒才關掉麥克風', () => {
+      assert.ok(/Google/.test(net.msg), net.msg);
+      eq([net.toggle, net.bar, net.focus], [false, true, 'msg-input']);
+      eq(sent.slice(-1), ['It was great']);
+      eq(autoRefused, { blocked: false, kept: null, phase: 'paused' });
+      eq([tapRefused.blocked, tapRefused.kept, tapRefused.toggle], [true, true, false]);
+      assert.ok(/允許麥克風/.test(tapRefused.msg), tapRefused.msg);
+    });
+    await ctx.close();
+  }
+
+  // ---------- 6c. A browser with speech recognition but no speech voice ----------
+  {
+    const noVoice = speech + ';Object.defineProperty(window, "speechSynthesis", { value: undefined, configurable: true }); window.SpeechSynthesisUtterance = undefined;';
+    const { ctx, page } = await open(PAGES + '#saved', { viewport: { width: 1000, height: 800 } }, 'novoice', null, noVoice);
+    const T = (fn, a) => page.evaluate(fn, a);
+    const list = await T(() => document.querySelector('#pron .help').textContent);
+    await page.click('[data-fk="pron-th"]');
+    const lesson = await T(() => ({ quiz: [...document.querySelectorAll('#pron h3')].map(h => h.textContent), how: document.querySelector('#pron .pairs').previousElementSibling.textContent, speakers: document.querySelectorAll('#pron [data-fk^="spk:"]').length, mics: document.querySelectorAll('#pron [data-say-btn]').length }));
+    const k = await T(() => 'pwth:' + window.__kaikouTest.phraseId('think'));
+    await T(() => window.__srScript.push({ text: 'sink' }));
+    await page.click('[data-say-btn="' + k + '"]');
+    await until(page, x => { const b = document.querySelector('[data-say="' + x + '"]'); return !!b && !!b.querySelector('.help'); }, k);
+    const help = await T(x => document.querySelector('[data-say="' + x + '"] .help').textContent, k);
+    check('沒有朗讀聲音的瀏覽器：發音練習不提聽辨測驗和喇叭，只用麥克風唸', () => {
+      assert.ok(!/聽辨/.test(list) && /唸給電腦聽/.test(list), list);
+      eq(lesson, { quiz: ['一對一對唸', '放進句子裡唸'], how: '按麥克風唸其中一個字，看電腦聽到的是哪一個。電腦常會往常見的字猜，結果當參考就好。', speakers: 0, mics: 15 });
+      eq(help, '照上面的方法再唸一次「think」。');
     });
     await ctx.close();
   }
@@ -970,4 +1378,4 @@ function serve(root) {
   const bad = failures.length + errors.length;
   console.log(bad ? '有 ' + failures.length + ' 項檢查失敗、' + errors.length + ' 個頁面錯誤' : '全部檢查通過');
   process.exit(bad ? 1 : 0);
-})().catch(e => { console.error('RUN FAILED', e); process.exit(1); });
+})().catch(e => { console.error('RUN FAILED', e); if (errors.length) console.error('ERRORS:\n' + errors.join('\n')); process.exit(1); });
