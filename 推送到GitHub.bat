@@ -33,6 +33,9 @@ if errorlevel 2 goto cancelled
 git commit -m "Update kaikou practice room"
 if errorlevel 1 goto failed
 set "COMMITTED=1"
+rem Remember when this commit was written (a rebase keeps it), to recognise it later.
+set "OURTIME="
+for /f %%t in ('git log -1 "--format=%%at" HEAD') do set "OURTIME=%%t"
 
 :sync
 echo.
@@ -67,7 +70,11 @@ goto failed
 set "AHEAD=0"
 for /f %%n in ('git rev-list --count origin/main..HEAD') do set "AHEAD=%%n"
 if "%AHEAD%"=="0" goto uptodate
-if "%COMMITTED%%AHEAD%"=="11" goto push
+rem Push without asking only when the one commit ahead is the one just reviewed above. The rebase drops that
+rem commit when GitHub already has the same change; then the commit ahead is another one and is listed below.
+set "HEADTIME="
+for /f %%t in ('git log -1 "--format=%%at" HEAD') do set "HEADTIME=%%t"
+if "%COMMITTED%%AHEAD%"=="11" if defined OURTIME if "%HEADTIME%"=="%OURTIME%" goto push
 echo.
 echo These commits on this computer are not on GitHub yet:
 git -c core.quotepath=false log --oneline origin/main..HEAD

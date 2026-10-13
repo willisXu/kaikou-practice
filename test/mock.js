@@ -14,9 +14,18 @@
 //   failUse: ['db']         use() rejects for these capabilities
 //   failList: n             the next n listings of the user's documents reject "unavailable"
 //   jsonDelay: 800          JSON answers (hints, review, passage, 4/3/2 points) take this long
+//   sampleCode: 'not_granted'   every sample() call rejects with this code (the viewer declined the coach)
+//   refuseTask: true        a single-prompt call (hints, review, translation, passage, points) rejects "refused"
+//   noSample: true          use('sample') resolves null (this view cannot run the coach)
+//   noDownloads: true       use('downloads') resolves null
+//   saveFail: 'declined'    downloads.save() rejects with this code ('declined', 'rate_limited'…)
+//   settings: { plan: '60' }  fields that replace the seeded settings
+//   noToday: true           the cloud has no record of today yet
+//   writeDelay: { name: ms }  writes to that document take this long before they land or fail
 window.__kaikouTest = true;
 (function () {
-  const cfg = Object.assign({ owner: true, readOnly: false, failWrites: {}, failReads: {}, refuse: '', slowMs: 0, persist: false, noDb: false, noUser: false, failUse: [], failList: 0, jsonDelay: 30 }, window.__mockCfg || {});
+  const cfg = Object.assign({ owner: true, readOnly: false, failWrites: {}, failReads: {}, refuse: '', slowMs: 0, persist: false, noDb: false, noUser: false, failUse: [], failList: 0, jsonDelay: 30,
+    sampleCode: '', refuseTask: false, noSample: false, noDownloads: false, saveFail: '', settings: null, noToday: false, writeDelay: {} }, window.__mockCfg || {});
   window.__mockCfg = cfg; // tests may change it while the page runs
   const store = new Map();
   const pad = n => String(n).padStart(2, '0');
@@ -42,9 +51,9 @@ window.__kaikouTest = true;
   put(dk(back(6)), '20', { shadow: true });
   put(dk(back(9)), '20', { shadow: true, ai: true, tutor: true });
   put(dk(back(12)), '60', { shadow: true, ai: true, chunk: true, listen: true });
-  put(dk(today), '20', { shadow: true });
+  if (!cfg.noToday) put(dk(today), '20', { shadow: true });
   for (const [m, doc] of Object.entries(logs)) store.set(P('log-' + m), doc);
-  store.set(P('settings'), { plan: '20', level: 'B1', about: 'I live in Taipei and work in marketing.', accent: 'en-US', voiceURI: '', rate: 0.95, autoSpeak: false });
+  store.set(P('settings'), Object.assign({ plan: '20', level: 'B1', about: 'I live in Taipei and work in marketing.', accent: 'en-US', voiceURI: '', rate: 0.95, autoSpeak: false }, cfg.settings || {}));
   store.set(P('phrases'), { items: [
     { id: 'p1', en: 'I went hiking with my friends.', zh: '', note: '過去式；hiking 不加 to', ex: '', src: 'fix', at: 3 },
     { id: 'p2', en: "I'll get back to you on that.", zh: '這個我再回覆你。', note: '工作場合', ex: '', src: 'starter', at: 2 },
@@ -102,9 +111,9 @@ window.__kaikouTest = true;
           window.__dbCalls.push({ op: 'get', name, code: '' });
           return snap(path);
         },
-        set: async d => { await new Promise(r => setTimeout(r, 10)); write('set', path, () => { if (bytes(d) > 262144) throw err('invalid_argument', 'too large'); store.set(path, clone(d)); }); },
+        set: async d => { await new Promise(r => setTimeout(r, cfg.writeDelay[path.split('/').pop()] || 10)); write('set', path, () => { if (bytes(d) > 262144) throw err('invalid_argument', 'too large'); store.set(path, clone(d)); }); },
         update: async d => {
-          await new Promise(r => setTimeout(r, 10));
+          await new Promise(r => setTimeout(r, cfg.writeDelay[path.split('/').pop()] || 10));
           write('update', path, () => {
             if (!store.has(path)) throw err('invalid_argument', 'missing');
             const next = merge(store.get(path), d);
@@ -131,9 +140,15 @@ window.__kaikouTest = true;
       return q;
     },
   };
-  // downloads.d.ts: save() resolves once the viewer accepts; here every save is accepted and kept for the test.
+  // downloads.d.ts: save() resolves once the viewer accepts; here every save is accepted and kept for the test
+  // (unless saveFail is set: the viewer declined, another save is waiting…).
   window.__downloads = [];
-  const downloads = { save: async req => { await new Promise(r => setTimeout(r, 20)); window.__downloads.push({ filename: req.filename, data: String(req.data) }); return { status: 'saved' }; } };
+  const downloads = { save: async req => {
+    await new Promise(r => setTimeout(r, 20));
+    if (cfg.saveFail) throw err(cfg.saveFail, 'injected');
+    window.__downloads.push({ filename: req.filename, data: String(req.data) });
+    return { status: 'saved' };
+  } };
   const user = { id: async () => uid, isOwner: async () => !!cfg.owner, canEdit: async () => !!cfg.owner, can: async () => null };
   window.__calls = [];
   // Streams in two chunks; an aborted signal rejects "cancelled" with the text received so far (sample.d.ts).
@@ -168,8 +183,10 @@ window.__kaikouTest = true;
     window.__calls.push(call);
     // sample.d.ts: a turn array starts and ends with a user turn.
     if (Array.isArray(input) && (!input.length || input[0].role !== 'user' || input[input.length - 1].role !== 'user')) throw err('invalid_request', 'turns must start and end with a user turn');
+    if (cfg.sampleCode) { await new Promise(r => setTimeout(r, 30)); throw err(cfg.sampleCode, 'injected'); }
     if (typeof input === 'string') {
       call.head = input.slice(0, 40);
+      if (cfg.refuseTask) { await new Promise(r => setTimeout(r, 30)); throw err('refused', 'declined'); }
       if (JSON_PROMPTS.test(input)) {
         const v = answerJson(input);
         await new Promise(r => setTimeout(r, cfg.jsonDelay));
@@ -190,7 +207,7 @@ window.__kaikouTest = true;
   window.claude = { use: async name => {
     await new Promise(r => setTimeout(r, 30));
     if (cfg.failUse.includes(name)) throw err('unavailable', 'injected');
-    if ((name === 'db' && cfg.noDb) || (name === 'user' && cfg.noUser)) return null;
+    if ((name === 'db' && cfg.noDb) || (name === 'user' && cfg.noUser) || (name === 'sample' && cfg.noSample) || (name === 'downloads' && cfg.noDownloads)) return null;
     return ({ db, user, sample, downloads })[name] || null;
   } };
 })();

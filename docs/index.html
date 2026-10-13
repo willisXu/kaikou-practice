@@ -127,7 +127,7 @@ a{color:var(--accent)}
 .icon-btn[aria-pressed="true"]{color:var(--accent)}
 .icon-btn.danger{color:var(--pen);border-color:var(--pen)}
 .icon-btn.sm{width:34px;height:34px}
-.icon-btn[aria-disabled="true"]{opacity:.45;cursor:not-allowed}
+.icon-btn[aria-disabled="true"],.btn[aria-disabled="true"]{opacity:.45;cursor:not-allowed}
 .seg{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:11px;border:1px solid var(--line);background:var(--surface-2)}
 .seg button{min-height:34px;padding:5px 12px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:14px;font-weight:700;white-space:nowrap;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--accent)}
@@ -538,7 +538,8 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
       <span class="label">朗讀</span>
       <label class="switch"><input type="checkbox" id="set-auto"> 教練回覆時自動朗讀</label>
       <div class="row"><label for="set-accent">口音</label><select id="set-accent" class="input"><option value="en-US">美式英文</option><option value="en-GB">英式英文</option></select></div>
-      <div class="row"><label for="set-voice">聲音</label><select id="set-voice" class="input"></select></div>
+      <div class="row"><label for="set-voice">聲音</label><select id="set-voice" class="input" aria-describedby="set-voice-help"></select></div>
+      <p id="set-voice-help" class="help">自動選擇時先用這台裝置上的聲音（沒有這個口音的，就用裝置上其他的英文聲音）。標「線上」的聲音比較自然，但要唸的文字會送到 Microsoft 或 Google 的服務，在中國大陸可能連不上。</p>
       <div class="row"><label for="set-rate">語速</label><input type="range" id="set-rate" min="0.7" max="1.2" step="0.05"><output id="set-rate-out" class="mono" for="set-rate"></output><button type="button" id="set-test" class="btn small">試聽</button></div>
     </div>
     <p id="set-no-voice" class="help" hidden>這個瀏覽器不支援朗讀。</p>
@@ -550,7 +551,8 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
     <div class="field" id="set-api-field" hidden>
       <label class="label" for="set-api-key">Claude API 金鑰</label>
       <p class="help">填了之後，這個網頁也能用 AI 教練。金鑰只存在這個瀏覽器，只會送到 Anthropic 的 API；用量算在你的 Claude API 帳單。公用電腦不要存。</p>
-      <div class="row"><input id="set-api-key" class="input" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-api03-…" aria-describedby="set-api-state"><button type="button" id="set-api-save" class="btn small">儲存</button></div>
+      <p id="set-api-file" class="help" hidden>直接打開檔案時不能存 API 金鑰：這台電腦上其他的網頁檔案也讀得到它。要用 AI 教練，請改開 GitHub Pages 的網址，或從 Claude 的連結開啟。</p>
+      <div id="set-api-row" class="row"><input id="set-api-key" class="input" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-api03-…" aria-describedby="set-api-state"><button type="button" id="set-api-save" class="btn small">儲存</button></div>
       <p id="set-api-state" class="help"></p>
       <div><button type="button" id="set-api-clear" class="btn small" hidden>移除金鑰</button></div>
     </div>
@@ -769,7 +771,7 @@ const NO_RETRY_CODES = ['refused', 'prompt_too_large', 'empty_completion', 'inva
 const S = {
   ready: false, booted: false, tab: 'today', viewDate: todayKey(), lastToday: todayKey(), calMonth: todayKey().slice(0, 7),
   settings: Object.assign({}, DEFAULTS),
-  logs: {}, loaded: new Set(), editedDays: new Set(), editedMonthRec: new Set(),
+  logs: {}, loaded: new Set(), editedDays: new Set(), editedMonthRec: new Set(), planWait: {},
   sessions: {}, sessLoaded: new Set(), loadErrors: new Set(),
   phrases: [], inbox: [], chat: null, review: null, endedChats: new Set(), openSess: new Set(),
   setup: { mode: 'free', topic: 'weekend', scene: 'smalltalk', custom: '' },
@@ -823,7 +825,7 @@ function writeFailure(e, full) {
    a failed write stays queued and is retried with backoff. */
 const Store = {
   mode: 'loading', db: null, uid: null, isOwner: false, why: '',
-  pend: {}, timers: {}, chain: {}, failed: {}, edits: {}, inflight: {}, retries: {}, hooks: {},
+  pend: {}, timers: {}, chain: {}, failed: {}, edits: {}, inflight: {}, sending: {}, retries: {}, hooks: {}, heldAtStop: {},
   async init() {
     const c = window.claude;
     if (c && typeof c.use === 'function') {
@@ -861,7 +863,8 @@ const Store = {
     if (why === 'no_write' && !this.isOwner && this.uid) lsSet('kaikou:no-cloud', this.uid);
     for (const n of Object.keys(this.timers)) clearTimeout(this.timers[n]);
     // Changes that never reached the cloud are held (as patches), so a later cloud visit can send just those.
-    for (const [n, p] of Object.entries(this.pend)) if (p.patch && p.patch !== 'replace') recordHeld(n, p.patch);
+    this.heldAtStop = {};
+    for (const [n, p] of Object.entries(this.pend)) if (p.patch && p.patch !== 'replace') { recordHeld(n, p.patch); this.heldAtStop[n] = p.patch; }
     this.pend = {}; this.failed = {}; this.retries = {};
     S.loadErrors.clear();
     toast(why === 'no_write' ? '這個連結不能把進度存到雲端，改存在這個瀏覽器。' : '雲端同步已停止，之後的變更只存在這個瀏覽器。');
@@ -894,6 +897,9 @@ const Store = {
   patch(name, full, patch) { this.queue(name, full, patch); },
   queue(name, full, patch) {
     if (this.mode === 'loading') return;
+    // While the cloud cannot be used, each edit is also held for a later upload (one by one, so an edit undone in
+    // the meantime cancels out instead of becoming a deletion; see recordHeld).
+    if (this.mode !== 'db' && this.why && patch) recordHeld(name, patch);
     this.edits[name] = (this.edits[name] || 0) + 1;
     const p = this.pend[name] || {};
     p.full = full;
@@ -911,9 +917,12 @@ const Store = {
     return this.chain[name];
   },
   async write(name) {
-    const p = this.pend[name]; if (!p) return;
+    const sent = this.pend[name]; if (!sent) return;
+    let p = sent;
     delete this.pend[name];
     this.inflight[name] = (this.inflight[name] || 0) + 1;
+    this.sending[name] = sent;
+    const toCloud = this.mode === 'db';
     updateSync();
     try {
       await this.send(name, p);
@@ -924,6 +933,16 @@ const Store = {
         for (const f of hs) { try { f(); } catch (_) { /* hook errors stay local */ } }
       }
     } catch (e) {
+      // The cloud stopped (another document's write found out) while this change was on its way there: it was never
+      // held, so it is held now. Changes made after that were held as they were made, and leaveCloud holds what was
+      // still waiting.
+      // Only what later edits to the document do not set themselves is held (and written to this browser's copy):
+      // those waiting when the cloud stopped (held by leaveCloud) and those made since (held as they were made).
+      if (toCloud && this.mode !== 'db' && this.why && p.patch && p.patch !== 'replace' && !(this.pend[name] && this.pend[name].patch === 'replace')) {
+        const under = patchMinus(patchMinus(p.patch, this.heldAtStop[name]), this.pend[name] && this.pend[name].patch);
+        if (hasChange(under)) recordHeld(name, under);
+        p = Object.assign({}, p, { patch: under });
+      }
       const newer = this.pend[name];
       if (!newer) this.pend[name] = p;
       else if (newer.patch !== 'replace') newer.patch = p.patch === 'replace' ? 'replace' : deepMerge(p.patch || {}, newer.patch || {});
@@ -943,6 +962,7 @@ const Store = {
       }
     } finally {
       this.inflight[name] -= 1;
+      if (this.sending[name] === sent) delete this.sending[name];
       updateSync();
     }
   },
@@ -956,7 +976,6 @@ const Store = {
       }
       try { localStorage.setItem('kaikou:' + name, JSON.stringify(doc)); }
       catch (_) { throw { code: 'quota_exceeded', message: 'browser storage full' }; } // kept queued, sent again after a deletion
-      if (this.why && p.patch && p.patch !== 'replace') recordHeld(name, p.patch);
       return;
     }
     if (this.mode !== 'db') return;
@@ -996,7 +1015,7 @@ const Store = {
    these keys, a device that has not refreshed yet can never overwrite a choice made on another device. */
 const isPlan = p => p === '20' || p === '60';
 function resolvePlan(plans, lp) {
-  let best = '', w = -1;
+  let best = '', w = -2; // below BLIND_W
   for (const [k, p] of Object.entries(plans || {})) { const n = Number(k); if (isPlan(p) && isFinite(n) && n > w) { w = n; best = p; } }
   if (lp && w < 1) best = lp; // the single "plan" field written by the first version
   return best || '20';
@@ -1043,11 +1062,15 @@ function minutesOf(rec) {
   return DAILY.reduce((s, d) => s + (rec.items[d.key] ? d.min[plan] : 0), 0);
 }
 // Day patches carry only what changed; the device that creates a day adds its default plan (weight 0).
+// A day created while its month could not be read (an automatic tick: finishing a review, a round, a passage) may
+// already have a plan in the cloud: this device's default is written under a weight below 0, so it decides only when
+// no device has written a default (weight 0) or a choice for that day.
+const BLIND_W = '-1';
 function patchDay(k, rec, created, part) {
   const day = Object.assign({}, part);
-  if (created) day.plans = Object.assign({ 0: rec.plans[0] || S.settings.plan }, part.plans || {});
-  S.editedDays.add(k);
   const m = k.slice(0, 7);
+  if (created) day.plans = Object.assign({ [monthRead(m) ? '0' : BLIND_W]: rec.plans[0] || S.settings.plan }, part.plans || {});
+  S.editedDays.add(k);
   Store.patch('log-' + m, logDoc(m), { days: { [k]: day } });
 }
 function setItem(k, key, val) {
@@ -1065,6 +1088,14 @@ function rolledOver(k) {
   return false;
 }
 // auto: set by the app itself for a known day (a finished review), not a tap on a page drawn before midnight.
+// A tick by hand waits until the month has been read (finishing a review, round or passage still counts).
+function toggleItem(k, key, val) {
+  if (S.ready && !monthRead(k.slice(0, 7))) {
+    unreadNotice(k.slice(0, 7), () => { if (val && !((dayRec(k) || { items: {} }).items[key])) markItem(k, key, true); });
+    return;
+  }
+  markItem(k, key, val);
+}
 function markItem(k, key, val, auto) {
   if (!S.ready || (!auto && rolledOver(k))) return;
   const before = status(dayRec(k));
@@ -1242,6 +1273,7 @@ const MAX_PHRASES = 600;
 function addPhrase(p) {
   const en = phraseText(p.en);
   if (!en || !S.ready) return '';
+  if (phrasesUnread()) return 'unread';
   if (isSaved(en)) return 'exists';
   const id = phraseId(en);
   const item = { id, en, zh: String(p.zh || '').trim().slice(0, 200), note: String(p.note || '').trim().slice(0, 200), ex: String(p.example || p.ex || '').trim().slice(0, 300), src: p.src || '', at: Date.now() };
@@ -1253,17 +1285,46 @@ function addPhrase(p) {
   return 'added';
 }
 const FULL_MSG = '收藏已滿，先到「收藏」刪掉一些舊的句子再加。';
+// A list that could not be read is never edited as if it were empty (a phrase starred again would look new and lose
+// its review schedule, one removed again would be deleted): the edit waits, and the list is read again.
+const phrasesUnread = () => S.loadErrors.has('phrases');
+const monthRead = m => S.loaded.has(m) && !S.loadErrors.has('log-' + m);
+// then: finishes the tap that had to wait, once the list or month has been read (only taps that add or tick, which do
+// what was meant whatever the list turns out to hold; a removal is left to the learner, who now sees the real list).
+function unreadNotice(what, then) {
+  const phrases = what === 'phrases';
+  toast(phrases ? '還讀不到你的收藏，正在重新讀取…' : '還讀不到這個月的紀錄，正在重新讀取…');
+  const read = phrases ? reloadDocs(['phrases']) : S.loadErrors.has('log-' + what) ? reloadDocs(['log-' + what]) : loadMonth(what);
+  read.then(() => {
+    if (phrases) renderAfterRefresh(); else { renderToday(); renderLog(); refreshStreak(); }
+    if (phrases ? phrasesUnread() : !monthRead(what)) { toast(phrases ? '還是讀不到你的收藏，等一下再試。' : '還是讀不到這個月的紀錄，等一下再試。'); return; }
+    if (then) then();
+  });
+}
 function removePhrase(id) {
+  if (phrasesUnread()) { unreadNotice('phrases'); return false; }
   S.phrases = S.phrases.filter(p => p.id !== id);
   Store.patch('phrases', phrasesFull(), { map: { [id]: null } });
   // Always written, even when this device never saw the schedule (another device may have reviewed the phrase).
   delete S.srs[id]; Store.patch('srs', srsFull(), { map: { [id]: null } });
   Store.retryAfter('phrases');
   renderSavedList(); renderStarters(); renderDrill();
+  return true;
 }
 // Returns 'added', 'removed', 'full' or ''.
 function toggleSaved(p) {
   if (!S.ready) return '';
+  if (phrasesUnread()) {
+    // The phrase looks unsaved here: once the list is read, it is saved (or the learner hears it already was).
+    const add = !isSaved(p.en);
+    unreadNotice('phrases', () => {
+      if (!add) return;
+      const r = isSaved(p.en) ? 'exists' : addPhrase(p);
+      renderAll();
+      toast(r === 'full' ? FULL_MSG : r === 'added' ? '已加入收藏' : '這句已經在收藏裡了');
+    });
+    return '';
+  }
   if (isSaved(p.en)) { removePhrase(phraseId(p.en)); return 'removed'; }
   const r = addPhrase(p);
   renderSavedList(); renderDrill();
@@ -1375,6 +1436,7 @@ async function startDrill() {
   const q = drillQueue(tk);
   if (!q.length) { toast(S.phrases.length ? '今天要複習的句子都完成了' : '先收藏一些句子，才能開始複習'); return; }
   if (Mic.cur) micStop(true);
+  for (const k of Object.keys(S.say)) if (k.startsWith('dr:')) delete S.say[k]; // no result of an earlier round shows on a card
   S.pron = null;
   S.drill = { tk, q, i: 0, flip: false, n: 0, tally: [0, 0, 0], again: {}, done: false };
   if (S.tab !== 'saved') switchTab('saved'); else renderSaved();
@@ -1407,7 +1469,8 @@ function drillRate(g) {
 // A finished round, or ten reviews today, counts as today's 語塊複習.
 function finishDrill(early) {
   const d = S.drill; if (!d) return;
-  if (!d.n) { S.drill = null; renderSaved(); return; } // nothing was reviewed (or every phrase was deleted meanwhile)
+  for (const k of Object.keys(S.say)) if (k.startsWith('dr:')) delete S.say[k]; // a check of this round's card
+  if (!d.n) { S.drill = null; renderSaved(); focusHeading('#drill .card-title'); return; } // nothing was reviewed (or every phrase was deleted meanwhile)
   d.done = true;
   if (Mic.cur) micStop(true);
   const tk = todayKey();
@@ -1507,7 +1570,7 @@ function drillDone(d) {
   return el('section', { class: 'card' },
     el('div', { class: 'drill-top' },
       el('h2', { class: 'card-title', tabindex: '-1', text: d.n ? '這一輪完成了！' : '複習結束' }),
-      el('button', { type: 'button', class: 'btn ghost small', 'data-fk': 'drill-close', onclick: () => { S.drill = null; renderSaved(); } }, '關閉')),
+      el('button', { type: 'button', class: 'btn ghost small', 'data-fk': 'drill-close', onclick: () => { S.drill = null; renderSaved(); focusHeading('#drill .card-title'); } }, '關閉')),
     d.n ? el('p', { class: 'mt6', text: '複習了 ' + d.n + ' 次：記得 ' + d.tally[2] + '、有點卡 ' + d.tally[1] + '、忘了 ' + d.tally[0] + '。' }) : null,
     d.ticked ? el('p', { class: 'item-note', text: '今天的「語塊複習」已打勾。' }) : null,
     el('div', { class: 'start-row mt12' },
@@ -1740,20 +1803,27 @@ const TTS = {
     try { this.voices = speechSynthesis.getVoices().filter(v => /^en[-_]/i.test(v.lang)); } catch (_) { this.voices = []; }
     fillVoiceSelect();
   },
+  // 自動選擇 uses a voice on this device first, in the chosen accent if there is one and else in another: an online
+  // voice sends the text to Microsoft's or Google's service (and may not be reachable, for example from mainland
+  // China). One can still be chosen in 設定.
   pick() {
     const s = S.settings;
     let v = s.voiceURI ? this.voices.find(x => x.voiceURI === s.voiceURI) : null;
     if (!v) {
-      const acc = this.voices.filter(x => x.lang.replace('_', '-').toLowerCase().startsWith(s.accent.toLowerCase()));
-      v = acc.find(x => /natural|neural|premium|enhanced|online/i.test(x.name)) || acc.find(x => /google|samantha|daniel|aria|jenny|guy|libby|sonia/i.test(x.name)) || acc.find(x => x.default) || acc[0] || null;
+      const inAccent = x => x.lang.replace('_', '-').toLowerCase().startsWith(s.accent.toLowerCase());
+      const best = list => list.find(x => /natural|neural|premium|enhanced/i.test(x.name)) || list.find(x => /samantha|daniel|karen|moira|serena|aria|jenny|guy|libby|sonia|zira|david|google/i.test(x.name)) || list.find(x => x.default) || list[0] || null;
+      const local = this.voices.filter(x => x.localService !== false);
+      v = best(local.filter(inAccent)) || best(local) || best(this.voices.filter(inAccent)) || best(this.voices);
     }
     return v;
   },
 };
 function speak(text) {
   if (!TTS.ok || !text) return;
-  // Any other speech (a speaker button, a hint) takes over from the voice conversation, which waits for 繼續說.
-  if (Voice.on && ['speaking', 'listening', 'countdown'].includes(Voice.phase)) voicePause();
+  // Any other speech (a speaker button, a hint) takes over from the voice conversation, which waits for 繼續說 (also
+  // while the coach is still answering: the reply then waits instead of cutting this one off).
+  if (Voice.on && ['waiting', 'speaking', 'listening', 'countdown'].includes(Voice.phase)) voicePause();
+  if (Voice.owed && text === Voice.owed) Voice.owed = ''; // the reply that waited for 繼續說 has now been heard
   if (Mic.cur) micStop(true); // the coach's voice must not end up in the dictation
   try {
     speechSynthesis.cancel();
@@ -1837,7 +1907,8 @@ const Mic = { ok: !!SR && !window.claude && !(isIOS && isStandalone()), blocked:
 // moment to stop the send) or paused. tok changes whenever the phase moves on, so a late callback of an earlier
 // phase does nothing.
 const VOICE_SEND_MS = 2500;
-const Voice = { on: false, phase: 'off', tok: 0, timer: 0, miss: 0, msg: '', drop: null, stopAsked: false, typed: false };
+// owed: a reply that came while the loop was paused, spoken when 繼續說 is pressed (before the microphone listens).
+const Voice = { on: false, phase: 'off', tok: 0, timer: 0, miss: 0, msg: '', drop: null, stopAsked: false, typed: false, owed: '' };
 // A refused microphone is remembered for 30 days (設定 can switch it back on), so the buttons do not fail on every visit.
 const MIC_OFF_LS = 'kaikou:mic-off';
 try { const o = JSON.parse(lsGet(MIC_OFF_LS) || 'null'); if (o && Date.now() - Number(o.at) < 30 * 86400000) { Mic.blocked = true; Mic.why = String(o.why || ''); } } catch (_) { /* never refused */ }
@@ -1907,21 +1978,47 @@ function micErrMsg(err) {
 }
 
 /* ---- the read-aloud check: say a sentence, see which words were recognised ---- */
-const NUM_WORDS = { zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10', eleven: '11', twelve: '12', thirteen: '13', fourteen: '14', fifteen: '15', sixteen: '16', seventeen: '17', eighteen: '18', nineteen: '19', twenty: '20', thirty: '30', forty: '40', fifty: '50', hundred: '100' };
-// Words compared without case, punctuation or contractions ("I'm" = "I am"), numbers as digits.
-function sayTokens(s) {
+const NUM_WORDS = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+// Words compared without case, punctuation or contractions ("I'm" = "I am"), "okay" = "ok", numbers as digits.
+function sayWords(s) {
   const t = String(s || '').toLowerCase().replace(/[‘’`´]/g, "'")
     .replace(/\bcan't\b/g, 'can not').replace(/\bcannot\b/g, 'can not').replace(/\bwon't\b/g, 'will not').replace(/\bshan't\b/g, 'shall not')
     .replace(/\blet's\b/g, 'let us').replace(/\bain't\b/g, 'is not').replace(/n't\b/g, ' not')
     .replace(/'re\b/g, ' are').replace(/'m\b/g, ' am').replace(/'ll\b/g, ' will').replace(/'ve\b/g, ' have').replace(/'d\b/g, ' would')
     .replace(/\b(it|that|there|here|what|who|where|how|he|she)'s\b/g, '$1 is');
-  return t.replace(/'/g, '').replace(/[^a-z0-9\s]+/g, ' ').split(/\s+/).filter(Boolean).map(w => NUM_WORDS[w] || w);
+  return t.replace(/'/g, '').replace(/(\d),(?=\d{3}\b)/g, '$1').replace(/[^a-z0-9\s]+/g, ' ').split(/\s+/).filter(Boolean).map(w => (w === 'okay' ? 'ok' : w));
 }
-// Marks each word of the target as heard (true), missed (false) or punctuation only (null).
+// A number said in words becomes one token, as a recogniser writes it ("twenty-five" = "25", "two hundred" = "200",
+// "two thousand twenty six" = "2026"); "one two three" stays three numbers. Items are { w, o: [word indexes] }.
+function joinNumbers(list) {
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    let total = 0, cur = 0, last = '', j = i, o = [];
+    while (j < list.length) {
+      const w = list[j].w, next = j + 1 < list.length ? list[j + 1].w : '';
+      const v = w === 'a' && last === '' && (next === 'hundred' || next === 'thousand') ? 1 : NUM_WORDS[w]; // "a hundred" = 100
+      if (v !== undefined) {
+        const kind = v >= 20 ? 'tens' : v >= 10 ? 'teen' : 'unit';
+        if (!(last === '' || last === 'hundred' || last === 'thousand' || (last === 'tens' && kind === 'unit' && v > 0))) break;
+        cur += v; last = kind;
+      } else if (w === 'hundred' && (last === 'unit' || last === 'teen' || last === 'tens') && cur < 100) { cur *= 100; last = 'hundred'; }
+      else if (w === 'thousand' && last && last !== 'thousand') { total += cur * 1000; cur = 0; last = 'thousand'; }
+      else if (w === 'and' && (last === 'hundred' || last === 'thousand') && NUM_WORDS[next] !== undefined) { /* "two hundred and five" */ }
+      else break;
+      o = o.concat(list[j].o); j++;
+    }
+    if (j === i) { out.push(list[i]); continue; }
+    out.push({ w: String(total + cur), o }); i = j - 1;
+  }
+  return out;
+}
+function sayTokens(s) { return joinNumbers(sayWords(s).map(w => ({ w, o: [] }))).map(x => x.w); }
+// Marks each word of the target as heard (true), missed (false) or punctuation only (null); hit and total count words.
 function compareSaid(target, heard) {
   const words = String(target || '').split(/\s+/).filter(Boolean);
-  const tt = [], owner = [];
-  words.forEach((w, i) => { for (const x of sayTokens(w)) { tt.push(x); owner.push(i); } });
+  const base = [];
+  words.forEach((w, i) => { for (const x of sayWords(w)) base.push({ w: x, o: [i] }); });
+  const tok = joinNumbers(base), tt = tok.map(x => x.w);
   const hh = sayTokens(heard);
   const n = tt.length, m = hh.length;
   const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
@@ -1933,8 +2030,9 @@ function compareSaid(target, heard) {
     else j++;
   }
   const ok = words.map(() => null);
-  owner.forEach((o, k) => { ok[o] = (ok[o] === null ? true : ok[o]) && hit[k]; });
-  return { marks: words.map((w, i) => ({ w, ok: ok[i] })), hit: hit.filter(Boolean).length, total: n };
+  tok.forEach((x, k) => { for (const o of x.o) ok[o] = (ok[o] === null ? true : ok[o]) && hit[k]; });
+  const counted = ok.filter(v => v !== null);
+  return { marks: words.map((w, i) => ({ w, ok: ok[i] })), hit: counted.filter(Boolean).length, total: counted.length };
 }
 const sayKey = (ctx, text) => ctx + ':' + phraseId(text);
 // opt (pronunciation pairs): { other: the word it is often confused with, lesson }: the result says which word was heard.
@@ -1956,7 +2054,7 @@ function setSayBtn(b, key) {
 function sayBox(text, ctx) {
   if (!Mic.ok) return null;
   const key = sayKey(ctx, text);
-  const box = el('div', { class: 'say', 'data-say': key });
+  const box = el('div', { class: 'say', lang: 'zh-Hant-TW', 'data-say': key }); // its English parts say so themselves
   fillSay(box, key);
   return box;
 }
@@ -2210,7 +2308,10 @@ async function askJson(prompt, opts) {
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const API_MODELS = { quick: 'claude-haiku-5-5', default: 'claude-sonnet-5-5' };
 const API_KEY_LS = 'kaikou:api-key';
-const apiKey = () => String(lsGet(API_KEY_LS) || '').trim();
+// A page opened as a file shares its storage with every other HTML file opened from this computer (any of them could
+// read a key kept there), so a key is only kept and used on a web address (GitHub Pages).
+const KEY_HERE = /^https?:$/.test(location.protocol);
+const apiKey = () => (KEY_HERE ? String(lsGet(API_KEY_LS) || '').trim() : '');
 // The same turn rules as sample(); consecutive turns of one role are joined into one message.
 function apiMessages(input) {
   const out = [];
@@ -2304,14 +2405,19 @@ function keyChanged() {
   useApiKeyIfAny();
   if (S.note) { S.note = null; S.noteNoRetry = false; }
   if ($('#settings').hasAttribute('open')) fillSettings();
-  renderCoach(); renderInbox(); updateStartBtn();
+  renderCoach(); renderToday(); renderInbox(); updateStartBtn(); // an open shadowing or 4/3/2 tool offers the coach or not
 }
 function openKeySettings() {
   $('#btn-settings').click();
   setTimeout(() => { const k = $('#set-api-key'); if (k && !k.closest('[hidden]')) k.focus(); }, 50);
 }
 
-function sampleErrMsg(e) {
+// window.claude is there, but this view cannot use the coach (sample() is not offered: the page was opened by its
+// own address instead of inside Claude, the viewer is not signed in, or the app is too old).
+const noSampleMsg = what => '這個畫面拿不到 Claude 的 AI 回覆（可能不是在 Claude 裡打開、沒有登入，或 App 需要更新），所以教練' + (what ? '不能' + what : '不能用') + '。請登入 Claude，從 Claude 裡的連結重新開啟這個頁面再試。';
+// ctx: 'chat' (a sentence sent to the coach, the default), 'open' (the coach's opening line) or 'task' (a review,
+// hints, a translation, a passage, talking points): a refusal or an empty answer is described for what was asked.
+function sampleErrMsg(e, ctx) {
   const c = e && e.code;
   if (c === 'key_invalid') return 'Claude API 金鑰無效或已停用，請到設定重新輸入。';
   if (c === 'key_missing') return '還沒有輸入 Claude API 金鑰，請到設定輸入。';
@@ -2324,17 +2430,19 @@ function sampleErrMsg(e) {
   if (c === 'invalid_request' || c === 'transform_error') return '這次的請求格式有問題，重新整理頁面後再試。';
   if (c === 'rate_limited') return '使用量暫時到上限了，晚一點再試。';
   if (c === 'session_expired') return '登入已過期，請重新登入 Claude 後再試。';
-  if (c === 'refused') return '教練沒辦法回應這一句，已略過，換個說法再說一次。';
+  if (c === 'refused') return ctx === 'open' ? '教練沒辦法用這個話題或情境開始。按「放棄」回到選單，換一個再試。'
+    : ctx === 'task' ? '教練沒辦法處理這個要求，換個話題或說法再試一次。' : '教練沒辦法回應這一句，已略過，換個說法再說一次。';
   if (c === 'prompt_too_large') return '這段對話太長了，先按「結束並複習」，再開新的對話。';
-  if (c === 'empty_completion') return '教練這次沒有回應，換個說法再說一次。';
+  if (c === 'empty_completion') return ctx === 'open' || ctx === 'task' ? '教練這次沒有回應，再試一次。' : '教練這次沒有回應，換個說法再說一次。';
   if (c === 'invalid_json') return '教練這次的回覆格式不對，再試一次。';
   return '連線中斷了，再試一次。';
 }
-function onSampleError(e) {
+function onSampleError(e, ctx) {
   if (!e || e.code === 'cancelled') { renderCoachNote(); return; }
   if (BLOCK_CODES.includes(e.code)) { S.sampleState = 'blocked'; S.blockCode = e.code; }
-  S.note = sampleErrMsg(e);
-  S.noteNoRetry = NO_RETRY_CODES.includes(e.code) || BLOCK_CODES.includes(e.code);
+  S.note = sampleErrMsg(e, ctx);
+  // An empty answer to the opening can simply be asked for again (for a sentence, saying it differently helps more).
+  S.noteNoRetry = (NO_RETRY_CODES.includes(e.code) && !(e.code === 'empty_completion' && ctx === 'open')) || BLOCK_CODES.includes(e.code);
   announce(S.note);
   renderCoachNote();
   updateComposer();
@@ -2403,6 +2511,7 @@ async function startSession(setup, firstMessage, voice) {
     if (!confirmTwice('start:' + unsaved + ':' + unread, msg)) return false;
   }
   cancelInflight();
+  clearComposer();
   S.review = null; S.hints = null; S.hintSeq++; S.note = null; S.noteNoRetry = false; S.armed = null; S.micZh = null;
   const c = newChat(setup);
   S.chat = c;
@@ -2464,30 +2573,95 @@ function lsDel(k) { try { localStorage.removeItem(k); } catch (_) { /* nothing s
 function readLocal(n) {
   try { const v = JSON.parse(lsGet('kaikou:' + n) || 'null'); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; } catch (_) { return null; }
 }
-// kaikou:held = { uid, docs: { name: patch } }: only the edits made while the cloud could not be used.
-function heldInfo() {
+// kaikou:held = { uid, docs: { name: patch }, fresh, drop }: only the edits made while the cloud could not be used.
+// A document whose edits all cancelled out (an empty map or day) has nothing to upload.
+const hasChange = o => !!o && typeof o === 'object' && Object.keys(o).some(k => { const v = o[k]; return v === null || typeof v !== 'object' || Array.isArray(v) || hasChange(v); });
+// The parts of patch a that a newer patch b does not set (where b sets a field, b's value is the later one).
+function patchMinus(a, b) {
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return a;
+  const out = {};
+  for (const [k, v] of Object.entries(a)) {
+    if (!(k in b)) { out[k] = v; continue; }
+    const w = b[k];
+    if (v && typeof v === 'object' && !Array.isArray(v) && w && typeof w === 'object' && !Array.isArray(w)) {
+      const sub = patchMinus(v, w);
+      if (Object.keys(sub).length) out[k] = sub;
+    }
+  }
+  return out;
+}
+// The record of this account (or of an unknown one): { uid, docs, names } with only the documents that still have a
+// change (none when every edit was undone), or null when this browser has no such record.
+function heldRecord() {
   try {
     const h = JSON.parse(lsGet('kaikou:held') || 'null');
     if (!h || (h.uid !== Store.uid && h.uid !== '*') || !h.docs || typeof h.docs !== 'object') return null;
-    const names = Object.keys(h.docs).filter(n => DOC_NAME_RE.test(n));
-    return names.length ? { uid: h.uid, docs: h.docs, names } : null;
+    const names = Object.keys(h.docs).filter(n => DOC_NAME_RE.test(n) && hasChange(h.docs[n]));
+    return { uid: h.uid, docs: Object.fromEntries(names.map(n => [n, h.docs[n]])), names };
   } catch (_) { return null; }
 }
+function heldInfo() { const h = heldRecord(); return h && h.names.length ? h : null; }
 // Edits are added to what is already held, never in place of it: a record of this account, or one whose account is
 // not known ("*"), is extended (and takes this account's id); a visit that does not know its account adds to the
 // record it finds. Another account's record is left alone (this account's edits then stay in this browser only).
+// An edit undone while the cloud could not be used cancels out: an entry added and then deleted, or an item ticked
+// and then unticked, leaves nothing to upload (this browser's copy may not show what the cloud has, so such a
+// deletion could otherwise remove something the learner never saw). `fresh` remembers what was first added here.
+const FULL_ADD = { phrases: v => typeof v.en === 'string', inbox: v => typeof v.text === 'string', shadow: v => Array.isArray(v.sents) };
 function recordHeld(name, patch) {
   if (!Store.uid || !DOC_NAME_RE.test(name) || !patch || typeof patch !== 'object') return;
   let cur = null;
   try { const h = JSON.parse(lsGet('kaikou:held') || 'null'); if (h && typeof h.uid === 'string' && h.docs && typeof h.docs === 'object' && !Array.isArray(h.docs)) cur = h; } catch (_) { cur = null; }
-  let uid = Store.uid, docs = {};
+  let uid = Store.uid, docs = {}, fresh = {}, drop = {};
   if (cur) {
     if (cur.uid !== Store.uid && cur.uid !== '*' && Store.uid !== '*') return;
     docs = cur.docs;
+    if (cur.fresh && typeof cur.fresh === 'object') fresh = cur.fresh;
+    if (cur.drop && typeof cur.drop === 'object') drop = cur.drop;
     if (Store.uid === '*') uid = cur.uid;
   }
-  docs[name] = deepMerge(docs[name] || {}, patch);
-  lsSet('kaikou:held', JSON.stringify({ uid, docs }));
+  const before = docs[name] && typeof docs[name] === 'object' ? docs[name] : {};
+  const fr = fresh[name] = fresh[name] && typeof fresh[name] === 'object' ? fresh[name] : {};
+  const isNew = name.startsWith('sessions-') ? v => typeof v.date === 'string' : FULL_ADD[name];
+  const gone = [], unticked = [];
+  let p = patch, unmonth = false;
+  if (p.map && typeof p.map === 'object') {
+    const had = before.map && typeof before.map === 'object' ? before.map : {}, map = Object.assign({}, p.map);
+    for (const [id, v] of Object.entries(map)) {
+      if (v === null) {
+        if (name === 'srs' && drop[id]) { delete map[id]; delete drop[id]; } // the phrase itself was only added here
+        else if (fr[id]) { gone.push(id); delete fr[id]; if (name === 'phrases') drop[id] = 1; }
+      } else if (v && typeof v === 'object' && isNew && isNew(v) && !(id in had)) fr[id] = 1;
+    }
+    p = Object.assign({}, p, { map });
+  }
+  if (name.startsWith('log-')) {
+    const bd = before.days && typeof before.days === 'object' ? before.days : {};
+    for (const [k, d] of Object.entries(p.days && typeof p.days === 'object' ? p.days : {})) {
+      if (!d || !d.items || typeof d.items !== 'object') continue;
+      for (const [key, val] of Object.entries(d.items)) {
+        const f = k + '|' + key, had = !!(bd[k] && bd[k].items && key in bd[k].items);
+        if (val === true && !had) fr[f] = 1;
+        else if (val === false && fr[f]) { unticked.push([k, key]); delete fr[f]; }
+      }
+    }
+    if (p.monthRecord === true && !('monthRecord' in before)) fr.month = 1;
+    else if (p.monthRecord === false && fr.month) { unmonth = true; delete fr.month; }
+  }
+  const doc = docs[name] = deepMerge(before, p);
+  for (const id of gone) {
+    if (doc.map) delete doc.map[id];
+    if (name === 'phrases' && docs.srs && docs.srs.map) delete docs.srs.map[id]; // a rating of it made here goes too
+  }
+  for (const [k, key] of unticked) {
+    const day = doc.days && doc.days[k];
+    if (!day || !day.items) continue;
+    delete day.items[key];
+    // A day this browser only created for that tick (nothing else in it but its default plan) is not kept either.
+    if (!Object.keys(day.items).length && !(day.coach && Object.keys(day.coach).length) && (!day.plans || Object.keys(day.plans).every(w => w === '0' || w === BLIND_W))) delete doc.days[k];
+  }
+  if (unmonth) delete doc.monthRecord;
+  lsSet('kaikou:held', JSON.stringify({ uid, docs, fresh, drop }));
 }
 function localDocNames() {
   const names = [];
@@ -2529,18 +2703,19 @@ async function uploadPatches(docs) {
     try { cloud = normLog(await Store.get(n)).days; } catch (_) { return false; }
     const days = {};
     for (const [k, d] of Object.entries(docs[n].days)) {
-      if (cloud[k] && d && typeof d === 'object' && d.plans && typeof d.plans === 'object' && '0' in d.plans) {
-        const plans = Object.assign({}, d.plans);
-        delete plans['0'];
-        days[k] = Object.assign({}, d, { plans });
+      if (cloud[k] && d && typeof d === 'object') {
+        const day = Object.assign({}, d);
+        if (day.plans && typeof day.plans === 'object') { day.plans = Object.assign({}, day.plans); delete day.plans['0']; }
+        delete day.plan; delete day.coachMin; // fields of the first version, written for days new here (an import)
+        days[k] = day;
       } else days[k] = d;
     }
     docs = Object.assign({}, docs, { [n]: Object.assign({}, docs[n], { days }) });
   }
-  // A review schedule kept here is sent only when the cloud has not had a review of that phrase since the one this
-  // schedule was built on (this browser's copy may have been older than the cloud, or empty); otherwise the cloud's
-  // own schedule stays. An entry without pt (kept by an earlier version of the page) is sent when it continues the
-  // cloud's schedule (same first review) and is not older than it.
+  // A review schedule kept here is sent only when it continues the cloud's schedule (same first review) and the cloud
+  // has not had a review of that phrase since the one this schedule was built on (this browser's copy may have been
+  // older than the cloud, or empty); otherwise the cloud's own schedule stays. An entry without pt (kept by an earlier
+  // version of the page) is sent when it continues the cloud's schedule and is not older than it.
   if (names.includes('srs') && docs.srs.map && typeof docs.srs.map === 'object') {
     let cloud;
     try { cloud = normSrs(await Store.get('srs')); } catch (_) { return false; }
@@ -2549,7 +2724,7 @@ async function uploadPatches(docs) {
       if (e === null) { map[id] = null; continue; }
       if (!e || typeof e !== 'object') continue;
       const c = cloud[id];
-      if (!c || String(c.t || '') <= String(e.pt || '') || (!e.pt && e.f === c.f && String(e.t || '') >= String(c.t || ''))) map[id] = e;
+      if (!c || (e.f === c.f && (String(c.t || '') <= String(e.pt || '') || (!e.pt && String(e.t || '') >= String(c.t || ''))))) map[id] = e;
     }
     S.srs = cloud;
     docs = Object.assign({}, docs, { srs: { map } });
@@ -2586,8 +2761,9 @@ function dropHeld() {
 async function retryCloud() {
   if (Store.mode !== 'local' || Store.why !== 'no_write' || !Store.db || S.uploading) return;
   const names = localDocNames();
-  // Everything this viewer has is in this browser: send the held edits, or the whole documents if none are recorded.
-  const held = heldInfo();
+  // Everything this viewer has is in this browser: send the held edits (none when every edit was undone), or the
+  // whole documents when this browser has no record of them.
+  const held = heldRecord();
   const docs = held ? held.docs : Object.fromEntries(names.map(n => [n, readLocal(n)]));
   S.uploading = true; fillSettings();
   Store.mode = 'db'; Store.why = '';
@@ -2622,9 +2798,19 @@ function normChat(d) {
     activeMs, meCount: Number.isFinite(Number(d.meCount)) && d.meCount !== null && d.meCount !== undefined && d.meCount !== '' ? Number(d.meCount) : turns.filter(t => t.r === 'm' && !t.ex).length, turns,
   };
 }
+// A chat that ends (discarded or reviewed) or a new one: nothing typed or being said for the old chat is carried over
+// (in a voice conversation it would be sent by itself).
+function clearComposer() {
+  if (micOn('composer')) micStop(true);
+  const ta = $('#msg-input'); if (ta && ta.value) { ta.value = ''; autosize(ta); }
+  S.hintFill = '';
+  micMsg('');
+  viewSave();
+}
 function discardChat() {
   voiceOff();
   cancelInflight();
+  clearComposer();
   const c = S.chat;
   if (c) S.endedChats.add(c.id);
   S.chat = null; S.hints = null; S.hintSeq++; S.note = null; S.noteNoRetry = false; S.armed = null;
@@ -2684,7 +2870,7 @@ async function ask() {
       } else if (e && typeof e.text === 'string' && e.text.trim()) finishTurn(c, turn, e.text, true);
       else if (i >= 0) c.turns.splice(i, 1);
     }
-    onSampleError(e);
+    onSampleError(e, c.turns.some(t => t.r === 'm') ? 'chat' : 'open');
     if (Voice.phase === 'waiting') voicePause(); // stopped or failed: the note says why, 繼續說 goes on
   } finally {
     if (S.ctl === ctl) { S.ctl = null; S.busy = false; }
@@ -2707,7 +2893,8 @@ function finishTurn(c, turn, raw, cut) {
   if (Voice.on && Voice.phase === 'waiting') {
     if (cut || S.tab !== 'coach' || document.visibilityState !== 'visible') voicePause();
     else voiceSpeak(p.speakText);
-  } else if (S.settings.autoSpeak && !cut && S.tab === 'coach' && !Mic.cur) speak(p.speakText); // never over a 唸一次 or dictation in progress
+  } else if (Voice.on) { if (!cut) Voice.owed = p.speakText; } // paused (something else may be playing): said on 繼續說
+  else if (S.settings.autoSpeak && !cut && S.tab === 'coach' && !Mic.cur) speak(p.speakText); // never over a 唸一次 or dictation in progress
 }
 async function translateTurn(t) {
   if (t.zh) { t.zhOpen = !t.zhOpen; renderMessages(); return; }
@@ -2718,7 +2905,7 @@ async function translateTurn(t) {
     t.zh = r.text.trim(); t.zhOpen = true;
     if (S.note) { S.note = null; S.noteNoRetry = false; renderCoachNote(); }
     if (S.chat && S.chat.turns.includes(t)) saveChat();
-  } catch (e) { onSampleError(e); }
+  } catch (e) { onSampleError(e, 'task'); }
   finally { t.zhBusy = false; renderMessages(); }
 }
 async function getHints() {
@@ -2740,7 +2927,7 @@ async function getHints() {
       if (!list.length) { S.note = '教練這次沒想到提示，再按一次試試。'; S.noteNoRetry = true; renderCoachNote(); }
     }
   } catch (e) {
-    if (S.hintSeq === seq && S.chat === c) { S.hints = null; onSampleError(e); }
+    if (S.hintSeq === seq && S.chat === c) { S.hints = null; onSampleError(e, 'task'); }
   } finally {
     if (S.hintSeq === seq && S.hints === 'loading') S.hints = null;
   }
@@ -2784,6 +2971,7 @@ async function review() {
     const sess = Object.assign({ id: c.id, date: k, at: Date.now(), mode: c.mode, label: chatLabel(c), level: c.level, minutes, count }, rv);
     const m = k.slice(0, 7);
     S.review = sess; S.chat = null; S.endedChats.add(c.id);
+    clearComposer();
     S.unsavedReview = { id: c.id, m };
     addSession(sess);
     Store.flush('sessions-' + m);
@@ -2796,7 +2984,7 @@ async function review() {
       endStoredChat(c.id);
     });
     announce('複習完成');
-  } catch (e) { onSampleError(e); }
+  } catch (e) { onSampleError(e, 'task'); }
   finally {
     if (S.ctl === ctl) S.ctl = null;
     S.reviewing = false;
@@ -2887,6 +3075,21 @@ function focusHeading(sel) {
   h.tabIndex = -1;
   h.focus({ preventScroll: true });
 }
+// After a row is deleted: the next row's control (or the previous one's), or else a fallback, gets the focus.
+function neighbourId(list, id) {
+  const i = list.findIndex(x => x.id === id);
+  const n = i < 0 ? null : list[i + 1] || list[i - 1];
+  return n ? n.id : null;
+}
+// onTouch: used instead of a fallback that is a text field, on a touch screen (see coarse).
+function focusFk(fk, fallback, onTouch) {
+  const n = fk ? $('[data-fk="' + (window.CSS && CSS.escape ? CSS.escape(fk) : fk) + '"]') : null;
+  let t = n && n.offsetParent ? n : $(fallback);
+  if (t && /^(INPUT|TEXTAREA)$/.test(t.tagName) && coarse()) t = onTouch ? $(onTouch) : null;
+  if (!t) return;
+  if (/^H\d$/.test(t.tagName)) t.tabIndex = -1;
+  t.focus({ preventScroll: true });
+}
 function switchTab(t, keepScroll) {
   if (!['today', 'coach', 'log', 'saved'].includes(t)) t = 'today';
   if (t !== S.tab) { // the tab already shown (tapped again, or drawn at start) keeps what is going on
@@ -2966,7 +3169,8 @@ function renderToday() {
     el('div', { class: 'meter', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(done), 'aria-label': '這天的練習分鐘' }, meterFill),
     !S.ready ? el('p', { class: 'help', text: '正在載入你的進度…' }) : null,
     S.ready && Store.mode !== 'db' ? el('p', { class: 'notice', text: storeText() }) : null,
-    S.ready && Store.mode === 'db' && S.held ? heldNotice() : null);
+    S.ready && Store.mode === 'db' && S.held ? heldNotice() : null,
+    !KEY_HERE && !window.claude && lsGet(KEY_GONE_LS) ? keyGoneNotice() : null);
   S.justStamped = false;
 
   const daily = el('div', { class: 'list' }, DAILY.map(def => {
@@ -2985,7 +3189,7 @@ function renderToday() {
     const isCore = CORE[plan].includes(def.key);
     const coachMins = def.key === 'ai' ? coachTotal(rec) : 0;
     return el('div', { class: 'item', 'data-done': String(on) },
-      checkBtn(on, def.name, () => markItem(k, def.key, !on), 'ck-' + def.key),
+      checkBtn(on, def.name, () => toggleItem(k, def.key, !on), 'ck-' + def.key),
       el('div', null,
         el('div', { class: 'item-top' },
           el('span', { class: 'item-name', text: def.name }),
@@ -3001,7 +3205,7 @@ function renderToday() {
     const n = weekCount(k, def.key);
     const target = def.target[plan];
     return el('div', { class: 'item', 'data-done': String(on) },
-      checkBtn(on, def.name + (isToday ? '（今天）' : '（這天）'), () => markItem(k, def.key, !on), 'ck-' + def.key),
+      checkBtn(on, def.name + (isToday ? '（今天）' : '（這天）'), () => toggleItem(k, def.key, !on), 'ck-' + def.key),
       el('div', null,
         el('div', { class: 'item-top' },
           el('span', { class: 'item-name', text: def.name }),
@@ -3025,6 +3229,15 @@ function renderToday() {
     el('h2', { class: 'section-title', text: '每週' }), weekly,
     el('h2', { class: 'section-title', text: '每月' }), monthly);
 }
+// A key that an earlier version of this page kept while opened as a file is removed at start (any other HTML file
+// opened in this browser could read it there); this says so until the learner has read it.
+const KEY_GONE_LS = 'kaikou:key-removed';
+function keyGoneNotice() {
+  return el('div', { class: 'notice' },
+    el('p', { text: '這個瀏覽器在直接開檔時存過一把 Claude API 金鑰，已經移除：直接開檔時，這台電腦上其他的網頁檔案也讀得到它。請到 Claude Console 停用那把金鑰，再建一把新的（之後在 GitHub Pages 的網址上使用）。' }),
+    el('div', { class: 'row-acts mt6' },
+      el('button', { type: 'button', class: 'btn small', 'data-fk': 'key-gone-ok', onclick: () => { lsDel(KEY_GONE_LS); renderToday(); focusHeading('#today-dyn .date-big'); } }, '知道了')));
+}
 function heldNotice() {
   const armed = isArmed('held-drop');
   return el('div', { class: 'notice' },
@@ -3035,6 +3248,12 @@ function heldNotice() {
 }
 function setPlan(k, p) {
   if (!S.ready || rolledOver(k)) return;
+  if (!monthRead(k.slice(0, 7))) {
+    // A choice is finished once the month is read; when several taps waited, the last one is the choice.
+    S.planWait[k] = p;
+    unreadNotice(k.slice(0, 7), () => { const q = S.planWait[k]; delete S.planWait[k]; if (q) setPlan(k, q); });
+    return;
+  }
   if (k === todayKey()) { S.settings.plan = p; saveSettings('plan'); }
   const [rec, created] = ensureRec(k);
   const w = String(Math.max(Date.now(), ...Object.keys(rec.plans).map(Number).filter(isFinite).map(n => n + 1)));
@@ -3046,6 +3265,11 @@ function setPlan(k, p) {
 }
 function toggleMonthly(k, m) {
   if (!S.ready || rolledOver(k)) return;
+  if (!monthRead(m)) {
+    const want = !logDoc(m).monthRecord; // 錄 is finished once the month is read; 未錄 is left to the learner
+    unreadNotice(m, () => { if (want && !logDoc(m).monthRecord) toggleMonthly(k, m); });
+    return;
+  }
   const doc = logDoc(m);
   doc.monthRecord = !doc.monthRecord;
   S.editedMonthRec.add(m);
@@ -3062,7 +3286,7 @@ function renderInbox() {
       el('p', { text: it.text }),
       el('div', { class: 'row-acts' },
         el('button', { type: 'button', class: 'btn small', disabled: S.sampleState !== 'ok' || !S.ready, 'data-fk': 'ask-' + it.id, onclick: () => askCoachAbout(it) }, '問教練'),
-        iconBtn('trash', armed ? '再按一次刪除' : '刪除', () => arm('inb-' + it.id, () => { removeInbox(it.id); renderInbox(); }, renderInbox), 'sm' + (armed ? ' danger' : ''), 'del-' + it.id)));
+        iconBtn('trash', armed ? '再按一次刪除' : '刪除', () => arm('inb-' + it.id, () => { const next = neighbourId(S.inbox, it.id); removeInbox(it.id); renderInbox(); focusFk(next && 'del-' + next, '#inbox-input', '#inbox-title'); }, renderInbox), 'sm' + (armed ? ' danger' : ''), 'del-' + it.id)));
   }));
 }
 async function askCoachAbout(it) {
@@ -3104,16 +3328,32 @@ function renderCoach() {
     const n = root.querySelector('[data-fk="' + (window.CSS && CSS.escape ? CSS.escape(fk) : fk) + '"]');
     if (n && !n.disabled) n.focus({ preventScroll: true });
   }
+  // The control that had the focus is gone (重新回覆, 結束並複習, 回到練習選單, 確定放棄…): the focus goes to what comes next
+  // instead of falling to the page.
+  const ae2 = document.activeElement;
+  if (fk && (!ae2 || ae2 === document.body)) {
+    const ta = $('#msg-input'), typing = ta && !composer.hidden && !ta.disabled;
+    const t = S.review ? root.querySelector('h2')
+      : S.reviewing ? root.querySelector('[data-fk="stop-review"]')
+      : S.chat ? (fk === 'stop-review' || !typing ? root.querySelector('[data-fk="review"]') : coarse() ? null : ta)
+      : root.querySelector('h2');
+    if (t) { if (/^H\d$/.test(t.tagName)) t.tabIndex = -1; t.focus({ preventScroll: true }); }
+  }
   updateScrollPad();
 }
 function unavailableView() {
   const blocked = S.sampleState === 'blocked';
   if (blocked || window.claude) {
     return el('section', { class: 'card' },
-      el('h2', { class: 'card-title', text: blocked ? 'AI 教練目前無法使用' : 'AI 教練要在 Claude 裡開啟才能用' }),
+      el('h2', { class: 'card-title', text: 'AI 教練目前無法使用' }),
       el('p', { class: 'help mt6', text: blocked
         ? sampleErrMsg({ code: S.blockCode || 'not_granted' })
-        : '教練使用你的 Claude 帳號回覆，所以要從 Claude 的連結開啟這個頁面。今日菜單與打卡在這裡照樣可以用。' }));
+        : noSampleMsg('') + '今日菜單與打卡照樣可以用。' }));
+  }
+  if (!KEY_HERE) {
+    return el('section', { class: 'card' },
+      el('h2', { class: 'card-title', text: 'AI 教練需要 Claude' }),
+      el('p', { class: 'help mt6', text: '從 Claude 的連結開啟這個頁面，教練會用你的 Claude 帳號回覆；也可以改開 GitHub Pages 的網址，在設定輸入你自己的 Claude API 金鑰。直接打開檔案時不能存金鑰（這台電腦上其他的網頁檔案也讀得到）。今日菜單與打卡照樣可以用。' }));
   }
   return el('section', { class: 'card' },
     el('h2', { class: 'card-title', text: 'AI 教練需要 Claude' }),
@@ -3165,7 +3405,7 @@ function startView() {
     el('h3', { class: 'card-title', text: '怎麼「用說的」' }),
     mic ? el('ul', { class: 'tips' },
       el('li', null, el('b', { text: '直接說：' }), '按輸入框旁的麥克風說英文，停下來就會自動結束；文字不對可以改，確認後再送出。'),
-      el('li', null, el('b', { text: '語音對話：' }), '像講電話一樣，教練說完自動聽你說，說完自動送出（自由聊天和情境角色扮演可以用）。'),
+      TTS.ok ? el('li', null, el('b', { text: '語音對話：' }), '像講電話一樣，教練說完自動聽你說，說完自動送出（自由聊天和情境角色扮演可以用）。') : null,
       el('li', null, '說錯沒關係，照原樣送出，教練會幫你改。'))
       : el('ul', { class: 'tips' },
         el('li', null, el('b', { text: '手機：' }), '把鍵盤切到英文，點鍵盤上的麥克風，說完再按送出。'),
@@ -3242,7 +3482,7 @@ function fillZhReply(bubble, t, c, i) {
       bubble.append(el('div', { class: 'opt' },
         el('span', { class: 'opt-k', lang: 'zh-Hant-TW', text: OPT_LABEL[key] }),
         el('span', { class: 'opt-en', text: en }),
-        el('span', { class: 'opt-acts' }, speakBtn(en, 'sm', 'zh' + i), sayBtn(en, 'zh' + i), starBtn({ en, zh: zhSource, src: 'zh' }, 'sm', 'zh' + i))));
+        el('span', { class: 'opt-acts', lang: 'zh-Hant-TW' }, speakBtn(en, 'sm', 'zh' + i), sayBtn(en, 'zh' + i), starBtn({ en, zh: zhSource, src: 'zh' }, 'sm', 'zh' + i))));
       const sb = t.streaming ? null : sayBox(en, 'zh' + i);
       if (sb) bubble.append(sb);
     } else if (line.trim()) bubble.append(el('div', { class: 'bl', text: line.trim() }));
@@ -3259,7 +3499,7 @@ function meMsg(t, i) {
           f.you ? el('div', { class: 'fix-you', text: f.you }) : null,
           el('div', { class: 'fix-better', text: f.better }),
           f.why ? el('div', { class: 'fix-why', lang: 'zh-Hant-TW', text: f.why }) : null),
-        el('div', { class: 'fix-acts' }, speakBtn(f.better, 'sm', 'fx' + i), sayBtn(f.better, 'fx' + i), starBtn({ en: f.better, note: f.why, was: f.you, src: 'fix' }, 'sm', 'fx')),
+        el('div', { class: 'fix-acts', lang: 'zh-Hant-TW' }, speakBtn(f.better, 'sm', 'fx' + i), sayBtn(f.better, 'fx' + i), starBtn({ en: f.better, note: f.why, was: f.you, src: 'fix' }, 'sm', 'fx')),
         sayBox(f.better, 'fx' + i)))));
   } else if (t.ok) {
     node.append(el('span', { class: 'ok-badge' }, el('span', { class: 'ico', html: ICON.check }), '說得很自然'));
@@ -3308,13 +3548,13 @@ function renderCoachNote() {
   const c = S.chat;
   const need = !S.busy && !S.reviewing && S.sampleState === 'ok' ? chatNeeds(c) : null;
   const msg = S.note
-    || (S.sampleState === 'none' ? (window.claude ? '要從 Claude 的連結開啟這個頁面，教練才能回覆。' : '要從 Claude 的連結開啟，或到設定輸入 Claude API 金鑰，教練才能回覆。') : null)
+    || (S.sampleState === 'none' ? (window.claude ? noSampleMsg('回覆') : KEY_HERE ? '要從 Claude 的連結開啟，或到設定輸入 Claude API 金鑰，教練才能回覆。' : '直接打開檔案時教練不能回覆：請從 Claude 的連結開啟，或改開 GitHub Pages 的網址。') : null)
     || (S.sampleState === 'blocked' ? sampleErrMsg({ code: S.blockCode || 'not_granted' }) : null)
     || (need === 'open' ? '對話還沒開始。' : need === 'reply' ? '教練還沒回覆你的上一句。' : need === 'cut' ? '教練的回覆中斷了。' : null);
   if (!msg) { box.hidden = true; fill(box); return; }
   const showRetry = !!need && !(S.note && S.noteNoRetry);
   // Outside Claude, a missing or rejected API key is fixed in 設定.
-  const keyFix = !window.claude && (S.note ? ['key_invalid', 'key_missing'].some(k => S.note === sampleErrMsg({ code: k })) : S.sampleState === 'none');
+  const keyFix = !window.claude && KEY_HERE && (S.note ? ['key_invalid', 'key_missing'].some(k => S.note === sampleErrMsg({ code: k })) : S.sampleState === 'none');
   box.hidden = false;
   fill(box, el('span', { text: msg }),
     showRetry ? el('button', { type: 'button', class: 'btn small', 'data-fk': 'retry', onclick: () => { S.note = null; S.noteNoRetry = false; ask(); } }, need === 'open' ? '請教練開場' : '重新回覆') : null,
@@ -3410,7 +3650,8 @@ function composerMic(pressed) {
     if (ph === 'waiting' || Voice.phase === 'waiting') return; // the coach is answering
     if (ph === 'countdown') { if (Voice.phase === 'countdown') voiceMore(); } // already listening again: nothing to do
     else if (micOn('composer')) voiceDone();
-    else voiceListen(true); // 繼續說 / 換我說
+    else if (Voice.phase === 'paused') voiceResume(); // 繼續說
+    else voiceListen(true); // 換我說
     return;
   }
   if (micOn('composer')) { micStop(false); return; }
@@ -3461,7 +3702,9 @@ function renderVoice() {
     updateScrollPad();
     return;
   }
-  const btn = (fk, label, fn, primary) => el('button', { type: 'button', class: 'btn small' + (primary ? ' primary' : ''), 'data-fk': fk, onclick: fn }, label);
+  // The main button of each phase sits in the same place, so the second click of a double click (which would land on
+  // the next phase's button and undo the first) is ignored.
+  const btn = (fk, label, fn, primary) => el('button', { type: 'button', class: 'btn small' + (primary ? ' primary' : ''), 'data-fk': fk, onclick: e => { if (e && e.detail > 1) return; fn(); } }, label);
   let msg, acts = [], meter = null;
   if (ph === 'waiting') msg = [el('span', { class: 'vb-dot', 'aria-hidden': 'true' }), '教練正在回覆…'];
   else if (ph === 'speaking') { msg = [el('span', { class: 'ico', html: ICON.speaker }), '教練正在說…']; acts = [btn('vb-skip', '換我說', () => voiceListen(true), true)]; }
@@ -3470,7 +3713,7 @@ function renderVoice() {
     msg = ['即將送出。還沒說完就接著說。'];
     acts = [btn('vb-send', '現在送出', voiceSendNow, true), btn('vb-hold', '先不要送', () => voicePause(VOICE_EDIT_MSG))];
     meter = el('div', { class: 'vb-meter', 'aria-hidden': 'true' }, el('span', { style: 'animation-duration:' + VOICE_SEND_MS + 'ms' }));
-  } else { msg = [Voice.msg || '語音對話暫停了。']; acts = [btn('vb-go', '繼續說', () => voiceListen(true), true)]; }
+  } else { msg = [Voice.msg || '語音對話暫停了。']; acts = [btn('vb-go', '繼續說', voiceResume, true)]; }
   fill(bar,
     el('span', { class: 'vb-msg' }, msg),
     el('span', { class: 'vb-acts' }, acts, iconBtn('close', '結束語音對話', voiceOff, 'sm', 'vb-end')),
@@ -3512,7 +3755,7 @@ function voiceOn() {
 function voiceOff() {
   if (!Voice.on) return;
   const was = Voice.phase;
-  Voice.on = false; Voice.tok++; clearTimeout(Voice.timer);
+  Voice.on = false; Voice.tok++; clearTimeout(Voice.timer); Voice.owed = '';
   voiceDrop();
   if (micOn('composer')) micStop(true);
   if (was === 'speaking') { try { speechSynthesis.cancel(); } catch (_) { /* nothing playing */ } }
@@ -3535,8 +3778,15 @@ function voicePause(msg, keep) {
 // 繼續說 does not repeat half a sentence. Nothing changes when the text was edited meanwhile.
 function voiceDrop() { const d = Voice.drop; Voice.drop = null; if (d) d(); }
 // Called when a message goes to the coach (sent, retried or the opening).
+// 繼續說: a reply that came while the loop was paused is spoken first; then (or else) the microphone listens.
+function voiceResume() {
+  const t = Voice.owed; Voice.owed = '';
+  if (t && Voice.on && !S.busy && !S.reviewing && S.chat && S.tab === 'coach' && document.visibilityState === 'visible') { Voice.miss = 0; ttsUnlock(); voiceSpeak(t); return; }
+  voiceListen(true);
+}
 function voiceWait() {
   if (!Voice.on) return;
+  Voice.owed = ''; // a new reply is coming
   Voice.tok++; clearTimeout(Voice.timer);
   voiceDrop();
   if (micOn('composer')) micStop(true);
@@ -3576,6 +3826,7 @@ function voiceListen(gesture, more) {
   // Still waiting for the coach: a tap rejoins the loop, which goes on once the reply has been spoken.
   if (S.busy) { if (gesture) voiceWait(); else voicePause(); return; }
   if (S.reviewing || S.tab !== 'coach' || document.visibilityState !== 'visible') { voicePause(); return; }
+  Voice.owed = ''; // the learner talks now (換我說, or 繼續說 once the reply was said)
   const was = Voice.phase;
   const tok = ++Voice.tok;
   clearTimeout(Voice.timer);
@@ -3639,7 +3890,9 @@ function voiceSendNow() {
   if (Voice.phase !== 'waiting') voicePause();
 }
 function autosize(ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 170) + 'px'; }
-function focusInput() { const ta = $('#msg-input'); if (ta && !matchMedia('(pointer: coarse)').matches) ta.focus({ preventScroll: true }); }
+// On a touch screen, putting the focus in a text field opens the keyboard over the page: that is left to a tap.
+const coarse = () => matchMedia('(pointer: coarse)').matches;
+function focusInput() { const ta = $('#msg-input'); if (ta && !coarse()) ta.focus({ preventScroll: true }); }
 function reviewingView() {
   const secs = el('span', { class: 'mono', 'aria-hidden': 'true', text: '0' });
   const timer = setInterval(() => { if (!secs.isConnected) { clearInterval(timer); return; } secs.textContent = String(Math.round((Date.now() - S.reviewStart) / 1000)); }, 1000);
@@ -3671,8 +3924,9 @@ function reviewView(r) {
       el('div', { class: 'card-head' },
         el('h3', { class: 'card-title', text: '值得收藏的說法' }),
         el('div', { class: 'row-acts' },
-          el('button', { type: 'button', class: 'btn small', 'data-fk': 'save-all', onclick: () => {
+          el('button', { type: 'button', class: 'btn small', 'data-fk': 'save-all', onclick: function saveAll() {
             let n = 0, full = false;
+            if (phrasesUnread()) { unreadNotice('phrases', saveAll); return; }
             for (const p of r.phrases) { const res = addPhrase({ en: p.en, zh: p.zh, example: p.example, src: 'review' }); if (res === 'added') n++; else if (res === 'full') full = true; }
             renderCoach(); renderSavedList();
             toast(full ? (n ? '已收藏 ' + n + ' 句。' : '') + FULL_MSG : n ? '已收藏 ' + n + ' 句' : '這些都已經在收藏裡了');
@@ -3811,7 +4065,8 @@ function backBtn() {
 function aiUnavailable(what) {
   if (S.sampleState === 'loading') return [el('p', { class: 'help', text: '連線中…' })];
   if (S.sampleState === 'blocked') return [el('p', { class: 'help', text: sampleErrMsg({ code: S.blockCode || 'not_granted' }) })];
-  if (window.claude) return [el('p', { class: 'help', text: 'AI 教練目前不能用，' + what + '要從 Claude 的連結開啟這個頁面。' })];
+  if (window.claude) return [el('p', { class: 'help', text: noSampleMsg(what) })];
+  if (!KEY_HERE) return [el('p', { class: 'help', text: '直接打開檔案時不能用 AI 教練：請從 Claude 的連結開啟，或改開 GitHub Pages 的網址並在設定輸入 Claude API 金鑰，教練才能' + what + '。' })];
   return [el('p', { class: 'help', text: '在這個網頁上，要先到設定輸入 Claude API 金鑰，教練才能' + what + '。' }),
     el('div', { class: 'start-row' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'tool-key', onclick: openKeySettings }, '到設定輸入金鑰'))];
 }
@@ -3849,7 +4104,7 @@ async function genPassage() {
     announce('短文寫好了，共 ' + sents.length + ' 句');
   } catch (e) {
     if (e && BLOCK_CODES.includes(e.code)) { S.sampleState = 'blocked'; S.blockCode = e.code; }
-    g.err = !e || e.code === 'cancelled' ? '' : sampleErrMsg(e);
+    g.err = !e || e.code === 'cancelled' ? '' : sampleErrMsg(e, 'task');
     if (g.err) announce(g.err);
   } finally {
     g.busy = false; g.ctl = null;
@@ -3960,7 +4215,7 @@ function shadowSetupView() {
             el('div', { class: 'help', text: (p.src === 'own' ? '自己的稿' : '教練寫的') + (p.level ? '・' + p.level : '') + '・' + p.sents.length + ' 句・' + (n ? '練了 ' + n + ' 天' : '還沒練完一次') })),
           el('div', { class: 'row-acts' },
             el('button', { type: 'button', class: 'btn small' + (p.id === S.shadow.cur ? ' primary' : ''), 'data-fk': 'shopen-' + p.id, onclick: () => openPassage(p.id) }, '練這篇'),
-            iconBtn('trash', armed ? '再按一次刪除' : '刪除', () => arm('shdel-' + p.id, () => removePassage(p.id), renderTool), 'sm' + (armed ? ' danger' : ''), 'shdel-' + p.id)));
+            iconBtn('trash', armed ? '再按一次刪除' : '刪除', () => arm('shdel-' + p.id, () => { const next = neighbourId(S.shadow.list, p.id); removePassage(p.id); focusFk(next && 'shdel-' + next, '#today-dyn .card-title'); }, renderTool), 'sm' + (armed ? ' danger' : ''), 'shdel-' + p.id)));
       }))));
   }
   const gen = el('section', { class: 'card panel' }, el('h3', { class: 'card-title', text: '請教練寫一篇新的' }));
@@ -3977,7 +4232,7 @@ function shadowSetupView() {
         el('button', { type: 'button', 'aria-pressed': String(g.len === k), 'data-fk': 'shlen-' + k, onclick: () => { g.len = k; renderTool(); } }, t))))),
       el('p', { class: 'help', text: '程度和教練一樣：' + S.settings.level + ' ' + LEVELS[S.settings.level].zh + '（在設定可以改）。' }),
       el('div', { class: 'start-row' },
-        el('button', { type: 'button', class: 'btn primary', 'data-fk': 'sh-gen', disabled: g.busy, onclick: genPassage }, g.busy ? '教練正在寫…' : '產生短文'),
+        el('button', { type: 'button', class: 'btn primary', 'data-fk': 'sh-gen', 'aria-disabled': g.busy ? 'true' : null, onclick: genPassage }, g.busy ? '教練正在寫…' : '產生短文'),
         g.busy ? el('button', { type: 'button', class: 'btn', 'data-fk': 'sh-gen-stop', onclick: () => { if (g.ctl) g.ctl.abort(); } }, '取消') : null));
     if (g.err) gen.append(el('p', { class: 'coach-note', text: g.err }));
   } else gen.append(...aiUnavailable('寫短文'));
@@ -4079,12 +4334,17 @@ async function recStart() {
   Rec.mr = mr;
   mr.start(1000);
 }
+// Resolves once the recording is kept: on the recorder's stop event, at once when it already stopped by itself (the
+// microphone went away, and a second stop() fires no event), or after a few seconds whatever happens.
 function recStop(phase) {
   const mr = Rec.mr; if (!mr) return Promise.resolve();
   Rec.mr = null;
   const F = S.f432;
   return new Promise(res => {
-    mr.onstop = () => {
+    let over = false, guard = 0;
+    const keep = () => {
+      if (over) return;
+      over = true; clearTimeout(guard);
       const blob = new Blob(Rec.chunks, { type: mr.mimeType || 'audio/webm' });
       if (F && S.f432 === F && blob.size) {
         if (F.recs[phase]) URL.revokeObjectURL(F.recs[phase].url);
@@ -4092,7 +4352,10 @@ function recStop(phase) {
       }
       res();
     };
-    try { mr.stop(); } catch (_) { res(); }
+    if (mr.state === 'inactive') { keep(); return; }
+    mr.onstop = keep;
+    guard = setTimeout(keep, 4000);
+    try { mr.stop(); } catch (_) { keep(); }
   });
 }
 function recRelease() {
@@ -4118,6 +4381,13 @@ async function f432Go() {
       catch (e) { F.recOn = false; F.recErr = '沒辦法錄音（' + (e && e.name === 'NotAllowedError' ? '瀏覽器不允許使用麥克風' : '找不到麥克風') + '），計時照常進行。'; recRelease(); }
       finally { F.starting = false; }
       if (S.f432 !== F) { recRelease(); return; } // the tool was closed while the browser asked for the microphone
+      // The learner went elsewhere while the browser asked: the round waits, paused, until they come back.
+      if (S.tab !== 'today' || S.tool !== 'f432' || document.visibilityState !== 'visible') {
+        F.state = 'pause';
+        if (Rec.mr && Rec.mr.state === 'recording') try { Rec.mr.pause(); } catch (_) { /* keeps recording */ }
+        renderTool();
+        return;
+      }
     }
     F.endsAt = Date.now() + F.left * 1000;
   }
@@ -4163,6 +4433,7 @@ async function f432End() {
   F.state = 'saving';
   keepAwake(false);
   beep();
+  if (S.tool === 'f432') renderTool(); // the round's buttons go while the recording is kept
   await recStop(phase);
   if (S.f432 !== F) return;
   recRelease(); // the microphone is off between rounds; the next round asks for it again
@@ -4202,7 +4473,7 @@ async function f432Points() {
     if (mine()) { F.pointsReq = null; F.points = same() ? { points, phrases } : null; }
   } catch (e) {
     if (e && BLOCK_CODES.includes(e.code)) { S.sampleState = 'blocked'; S.blockCode = e.code; }
-    if (mine()) { F.pointsReq = null; F.points = same() ? { err: sampleErrMsg(e) } : null; }
+    if (mine()) { F.pointsReq = null; F.points = same() ? { err: sampleErrMsg(e, 'task') } : null; }
   }
   if (S.tool === 'f432') renderTool();
 }
@@ -4233,7 +4504,7 @@ function f432View() {
         el('label', { class: 'label', for: 'f432-custom', text: '自訂主題（中英文都可以）' }),
         el('input', { id: 'f432-custom', class: 'input', maxlength: '120', value: F.custom, 'data-fk': 'f432-custom', placeholder: '例如：我們團隊正在做的產品', oninput: e => { F.custom = e.target.value; } })));
     }
-    if (S.sampleState === 'ok') set.append(el('div', { class: 'start-row' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'f432-points', disabled: F.points === 'loading', onclick: f432Points }, F.points && F.points !== 'loading' ? '換一組重點' : '請教練給 3 個重點')));
+    if (S.sampleState === 'ok') set.append(el('div', { class: 'start-row' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'f432-points', 'aria-disabled': F.points === 'loading' ? 'true' : null, onclick: f432Points }, F.points && F.points !== 'loading' ? '換一組重點' : '請教練給 3 個重點')));
     const pb = pointsBox(F); if (pb) set.append(pb);
     if (canRecord()) set.append(el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: F.recOn, 'data-fk': 'f432-rec', onchange: e => { F.recOn = e.target.checked; } }), '每次都錄音（錄音只留在這個畫面，可以下載）'));
     else set.append(el('p', { class: 'help', text: '想比較三次的差別，可以用手機的錄音程式把三次都錄下來。' }));
@@ -4373,7 +4644,7 @@ function renderSavedList() {
   const q = String(($('#saved-search') || {}).value || '').trim().toLowerCase();
   $('#mine-count').textContent = String(S.phrases.length);
   if (!S.phrases.length) {
-    fill(box, el('p', { class: 'empty', text: S.ready ? '還沒有收藏。在教練的「更自然的說法」、複習或上面的救急包點星號，句子就會出現在這裡。' : '正在載入…' }));
+    fill(box, el('p', { class: 'empty', text: !S.ready ? '正在載入…' : phrasesUnread() ? '還讀不到你的收藏，稍後會自動再試。' : '還沒有收藏。在教練的「更自然的說法」、複習或上面的救急包點星號，句子就會出現在這裡。' }));
     return;
   }
   const items = S.phrases.filter(p => !q || p.en.toLowerCase().includes(q) || (p.zh || '').toLowerCase().includes(q) || (p.note || '').toLowerCase().includes(q));
@@ -4388,7 +4659,7 @@ function renderSavedList() {
       el('div', { class: 'phrase-acts' },
         speakBtn(p.en, 'sm'),
         sayBtn(p.en, 'sv'),
-        iconBtn('trash', armed ? '再按一次刪除' : '刪除', () => arm('del-' + p.id, () => removePhrase(p.id), renderSavedList), 'sm' + (armed ? ' danger' : ''), 'del-' + p.id)),
+        iconBtn('trash', armed ? '再按一次刪除' : '刪除', () => arm('del-' + p.id, () => { const next = neighbourId(items, p.id); if (removePhrase(p.id)) focusFk(next && 'del-' + next, '#saved-search', '#mine-title'); }, renderSavedList), 'sm' + (armed ? ' danger' : ''), 'del-' + p.id)),
       sayBox(p.en, 'sv'));
   }));
 }
@@ -4435,10 +4706,19 @@ async function collectDocs() {
   } else if (Store.mode === 'local') {
     for (const n of localDocNames()) { const v = readLocal(n); if (v) out[n] = v; }
   }
-  // What this device shows is the newest (it includes edits not saved yet), except a document it could not read;
-  // empty documents are left out.
+  // The stored copy is the latest (another device may have saved since this one read it): only the changes this
+  // device has not saved yet (on their way, waiting or failed) are laid over it. What this device shows is used for a
+  // document that could not be listed; one it could not read is left as stored, and empty documents are left out.
   const filled = (n, v) => n === 'settings' || (n.startsWith('log-') ? Object.keys(v.days || {}).length > 0 || !!v.monthRecord : Object.keys(v.map || {}).length > 0);
-  for (const [n, v] of Object.entries(allDocs())) if (BACKUP_RE.test(n) && !S.loadErrors.has(n) && (filled(n, v) || out[n])) out[n] = clone(v);
+  for (const [n, v] of Object.entries(allDocs())) {
+    if (!BACKUP_RE.test(n) || S.loadErrors.has(n)) continue;
+    if (out[n]) {
+      for (const p of [Store.sending[n], Store.pend[n]]) {
+        if (!p) continue;
+        out[n] = !p.patch || p.patch === 'replace' ? clone(p.full) : deepMerge(out[n], clone(p.patch));
+      }
+    } else if (filled(n, v)) out[n] = clone(v);
+  }
   return { docs: out, partial };
 }
 async function exportBackup() {
@@ -4465,11 +4745,13 @@ async function exportBackup() {
     }
   } finally { S.exporting = false; fillSettings(); }
 }
+// What the file holds, counted the way it will be merged (days filed under another month, impossible dates and
+// damaged reviews are not counted, since they are left out).
 function backupSummary(docs) {
   let days = 0, sess = 0;
   for (const [n, v] of Object.entries(docs)) {
-    if (n.startsWith('log-')) days += Object.values(normLog(v).days).filter(d => status(d) > 0).length;
-    if (n.startsWith('sessions-')) sess += normSessions(v).length;
+    if (n.startsWith('log-')) days += Object.entries(normLog(v).days).filter(([k, d]) => k.slice(0, 7) === n.slice(4) && importDay(k) && status(cleanDay(d)) > 0).length;
+    if (n.startsWith('sessions-')) sess += normSessions(v).filter(x => importSession(x)).length;
   }
   return { phrases: normPhrases(docs.phrases).length, inbox: normInbox(docs.inbox).length, days, sess, shadow: normShadow(docs.shadow).list.length };
 }
@@ -4481,7 +4763,11 @@ async function readBackup(file) {
     S.importing = { err: '這不是開口練習室的備份檔。請選「匯出備份檔」存下的 .json 檔。' };
   } else {
     const docs = {};
-    for (const [n, v] of Object.entries(o.docs)) if (BACKUP_RE.test(n) && v && typeof v === 'object' && !Array.isArray(v)) docs[n] = v;
+    for (const [n, v] of Object.entries(o.docs)) {
+      if (!BACKUP_RE.test(n) || !v || typeof v !== 'object' || Array.isArray(v)) continue;
+      if (/^(log|sessions)-/.test(n) && !importDay(n.replace(/^(log|sessions)-/, '') + '-01')) continue; // no such month
+      docs[n] = v;
+    }
     S.importing = { at: String(o.at || ''), docs, sum: backupSummary(docs) };
   }
   fillSettings();
@@ -4501,9 +4787,12 @@ function cleanDay(d) {
   return Object.assign({}, d, { items, coach, plans, plan: resolvePlan(plans, d.lp), coachMin: Math.min(600, Number(d.coachMin) || 0) });
 }
 const dayStore = d => Object.assign({ plans: d.plans, items: onlyTrue(d.items), coach: d.coach }, d.lp ? { plan: d.lp } : {}, d.coachMin ? { coachMin: d.coachMin } : {});
+// A day from a backup file must be a real date from 2020 on, and not later than tomorrow (a damaged or hand-made file
+// must not create documents for months that cannot exist).
+const importDay = k => DATE_RE.test(k) && dkey(parseD(k)) === k && k >= '2020-01-01' && k <= dkey(addDays(new Date(), 1));
 // A review from a backup file is checked like one made here, so a damaged file cannot break the 紀錄 tab.
 function importSession(s) {
-  if (!s || typeof s !== 'object' || !s.id || !DATE_RE.test(String(s.date))) return null;
+  if (!s || typeof s !== 'object' || !s.id || !importDay(String(s.date))) return null;
   const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
   return Object.assign({ id: String(s.id).slice(0, 40), date: s.date, at: Number(s.at) || parseD(s.date).getTime(), mode: ['free', 'role', 'zh'].includes(s.mode) ? s.mode : 'free',
     label: str(s.label, 80), level: LEVELS[s.level] ? s.level : 'B1', minutes: clamp(Math.round(Number(s.minutes) || 0), 0, 600), count: clamp(Math.round(Number(s.count) || 0), 0, 1000) }, normReview(s));
@@ -4581,6 +4870,7 @@ async function applyBackup() {
       if (!name.startsWith('log-')) continue;
       const m = name.slice(4), inc = normLog(v), doc = logDoc(m), patch = { days: {} };
       for (const [k, raw] of Object.entries(inc.days)) {
+        if (k.slice(0, 7) !== m || !importDay(k)) continue; // a day belongs to its own month
         const cur = doc.days[k], d = cleanDay(raw);
         if (docBytes(doc) > DOC_LIMIT * 0.8) { full = true; break; } // this month is as large as a month should get
         if (!cur) {
@@ -4678,13 +4968,18 @@ function fillVoiceSelect() {
   const acc = S.settings.accent.toLowerCase();
   const list = TTS.voices.filter(v => v.lang.replace('_', '-').toLowerCase().startsWith(acc));
   const use = list.length ? list : TTS.voices;
-  fill(sel, el('option', { value: '' }, '自動選擇'), use.map(v => el('option', { value: v.voiceURI }, v.name + '（' + v.lang + '）')));
+  fill(sel, el('option', { value: '' }, '自動選擇'), use.map(v => el('option', { value: v.voiceURI }, v.name + '（' + v.lang + (v.localService === false ? '，線上' : '') + '）')));
   sel.value = use.some(v => v.voiceURI === S.settings.voiceURI) ? S.settings.voiceURI : '';
 }
 // Fills the dialog from the current settings; handlers always write to S.settings, which a refresh may replace.
 function fillSettings() {
   const s = S.settings;
-  fill($('#set-level'), ['A2', 'B1', 'B2'].map(k => el('button', { type: 'button', 'aria-pressed': String(s.level === k), 'data-fk': 'slvl-' + k, onclick: () => { S.settings.level = k; saveSettings('level'); fillSettings(); if (S.tab === 'coach') renderCoach(); } }, k + ' ' + LEVELS[k].zh)));
+  fill($('#set-level'), ['A2', 'B1', 'B2'].map(k => el('button', { type: 'button', 'aria-pressed': String(s.level === k), 'data-fk': 'slvl-' + k, onclick: () => {
+    S.settings.level = k; saveSettings('level');
+    // A chat going on now follows the new level from the next reply on (its bar shows it).
+    if (S.chat && S.chat.level !== k) { S.chat.level = k; saveChat(); toast('這次對話接下來用 ' + k + ' ' + LEVELS[k].zh + '的程度回覆'); }
+    fillSettings(); if (S.tab === 'coach') renderCoach();
+  } }, k + ' ' + LEVELS[k].zh)));
   const about = $('#set-about');
   if (document.activeElement !== about) about.value = s.about;
   $('#set-auto').checked = !!s.autoSpeak;
@@ -4697,10 +4992,13 @@ function fillSettings() {
   $('#set-store').textContent = storeText();
   $('#set-api-field').hidden = !!window.claude;
   if (!window.claude) {
-    const k = apiKey();
-    $('#set-api-state').textContent = k ? '已儲存一把金鑰（結尾 ' + k.slice(-4) + '），AI 教練會用它回覆。' : '還沒有儲存金鑰。';
+    const k = apiKey(), stored = String(lsGet(API_KEY_LS) || '').trim();
+    $('#set-api-file').hidden = KEY_HERE;
+    $('#set-api-row').hidden = !KEY_HERE;
+    $('#set-api-state').textContent = k ? '已儲存一把金鑰（結尾 ' + k.slice(-4) + '），AI 教練會用它回覆。'
+      : stored ? '這個瀏覽器裡還留著一把之前存的金鑰（這裡不會用它），建議移除。' : KEY_HERE ? '還沒有儲存金鑰。' : '';
     const rm = $('#set-api-clear');
-    rm.hidden = !k;
+    rm.hidden = !stored;
     rm.textContent = isArmed('api-clear') ? '再按一次移除' : '移除金鑰';
     rm.classList.toggle('danger', isArmed('api-clear'));
   }
@@ -4733,7 +5031,7 @@ function clearLocalData() {
   Store.mode = 'memory'; // nothing may be written back while the page reloads
   try {
     const keys = [];
-    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('kaikou:') && k !== API_KEY_LS) keys.push(k); }
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('kaikou:') && k !== API_KEY_LS && k !== KEY_GONE_LS) keys.push(k); }
     for (const k of keys) localStorage.removeItem(k);
   } catch (_) { /* nothing stored */ }
   location.reload();
@@ -4781,7 +5079,8 @@ function bindStatic() {
   // a moment later, when the learner starts talking again during the countdown).
   let micDown = null;
   $('#mic-btn').addEventListener('pointerdown', () => { micDown = { phase: Voice.phase, at: Date.now() }; });
-  $('#mic-btn').addEventListener('click', () => { ttsUnlock(); const d = micDown; micDown = null; composerMic(d && Date.now() - d.at < 1500 ? d.phase : null); });
+  // The button changes its meaning in place (繼續說 → 說完了), so the second click of a double click is ignored.
+  $('#mic-btn').addEventListener('click', e => { const d = micDown; micDown = null; if (e.detail > 1) return; ttsUnlock(); composerMic(d && Date.now() - d.at < 1500 ? d.phase : null); });
   $('#mic-lang').addEventListener('click', () => {
     S.micZh = !/^zh/.test(micLang());
     if (micOn('composer')) micStop(true);
@@ -4800,7 +5099,7 @@ function bindStatic() {
     sendFromComposer();
   });
   $('#hint-btn').addEventListener('click', () => { voicePause('看完提示，按「繼續說」或直接送出。'); getHints(); });
-  $('#tip-close').addEventListener('click', () => { S.tipHidden = true; lsSet('kaikou:tip', 'hide'); $('#composer-tip').hidden = true; updateScrollPad(); });
+  $('#tip-close').addEventListener('click', () => { S.tipHidden = true; lsSet('kaikou:tip', 'hide'); $('#composer-tip').hidden = true; updateScrollPad(); focusInput(); });
   $('#saved-search').addEventListener('input', renderSavedList);
   $('#copy-anki').addEventListener('click', () => {
     if (!S.phrases.length) { toast('還沒有收藏可以複製'); return; }
@@ -4808,6 +5107,15 @@ function bindStatic() {
   });
   const dlg = $('#settings');
   const closeDlg = () => { try { dlg.close(); } catch (_) { dlg.removeAttribute('open'); } };
+  // The dialog gives the focus back to the control that opened it; when that control is gone (到設定輸入金鑰 is
+  // replaced once a key is saved), the focus goes to the text box of an open chat, or to the settings button.
+  dlg.addEventListener('close', () => setTimeout(() => {
+    const ae = document.activeElement;
+    if (ae && ae !== document.body) return;
+    const ta = $('#msg-input');
+    const t = S.tab === 'coach' && S.chat && !$('#composer').hidden && ta && !ta.disabled && !coarse() ? ta : $('#btn-settings');
+    if (t) t.focus({ preventScroll: true });
+  }, 0));
   $('#btn-settings').addEventListener('click', () => {
     if (!S.ready) { toast('還在載入，稍等一下'); return; }
     voicePause();
@@ -4823,6 +5131,7 @@ function bindStatic() {
   $('#set-mic-on').addEventListener('click', () => {
     lsDel(MIC_OFF_LS); Mic.blocked = false; Mic.why = '';
     renderAll(); updateComposer(); fillSettings();
+    focusHeading('#set-mic-state'); // the button is gone: the new state is read out instead
     toast('已重新啟用麥克風');
   });
   // Phrase review from the keyboard: space flips the card, 1 / 2 / 3 rate it.
@@ -4835,6 +5144,7 @@ function bindStatic() {
     else if (d.flip && ['1', '2', '3'].includes(e.key)) { e.preventDefault(); drillRate(Number(e.key) - 1); }
   });
   const saveKey = () => {
+    if (!KEY_HERE) return;
     const inp = $('#set-api-key');
     const v = inp.value.trim();
     if (!v) { toast('先貼上金鑰再按儲存'); return; }
@@ -4849,6 +5159,10 @@ function bindStatic() {
   $('#set-api-key').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); saveKey(); } });
   $('#set-api-clear').addEventListener('click', () => arm('api-clear', () => {
     lsDel(API_KEY_LS); keyChanged();
+    // The button is gone: on to the key field (or, in a page opened as a file, to the note on why there is none).
+    if (!KEY_HERE) focusHeading('#set-api-file');
+    else if (coarse()) focusHeading('#set-api-state');
+    else { const k = $('#set-api-key'); if (k) k.focus({ preventScroll: true }); }
     toast('已移除金鑰');
   }, fillSettings));
   $('#settings-form').addEventListener('submit', e => e.preventDefault());
@@ -5041,11 +5355,19 @@ async function boot(data) {
   const c = window.claude;
   if (c && typeof c.use === 'function') {
     c.use('sample').then(fn => { S.sample = fn || null; S.sampleState = fn ? 'ok' : 'none'; renderCoach(); renderInbox(); updateStartBtn(); }, () => { S.sampleState = 'none'; renderCoach(); });
-  } else if (c) { S.sampleState = 'none'; } else { useApiKeyIfAny(); }
+  } else if (c) { S.sampleState = 'none'; } else {
+    if (!KEY_HERE && lsGet(API_KEY_LS)) { lsDel(API_KEY_LS); lsSet(KEY_GONE_LS, '1'); } // see keyGoneNotice
+    useApiKeyIfAny();
+  }
   await Store.init();
   if (Store.why === 'offline') toast('這次連不上 Claude 的雲端，變更先存在這個瀏覽器。');
   await loadAll();
-  if (Store.mode === 'db') S.held = heldInfo();
+  if (Store.mode === 'db') {
+    const h = heldRecord();
+    // Every edit kept here while the cloud could not be used was undone: there is nothing to save, so the copies go.
+    if (h && !h.names.length) forgetLocalDocs(localDocNames());
+    S.held = h && h.names.length ? h : null;
+  }
   S.ready = true;
   updateSync();
   S.streak = await settleStreak();
@@ -5055,7 +5377,7 @@ async function boot(data) {
   if (data && typeof data.draft === 'string' && data.draft && S.chat) { const ta = $('#msg-input'); if (ta && !ta.value) { ta.value = data.draft; autosize(ta); } }
   if (S.tab === 'coach' && S.chat) scrollToEnd(true);
 }
-if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, PRON, PRON_ALTS, pronVerdict, pronStats };
+if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats };
 
 boot(viewSaved()).catch(err => { console.error(err); setSync('error'); });
 })();

@@ -1,5 +1,6 @@
 // 開口練習室（GitHub Pages 版）的 service worker：加到主畫面後，沒有網路也能打開頁面。
-// - 頁面本身（./ 與 ./index.html）：先向網路拿最新版並存一份；網路斷了，或 4 秒內沒有回應，就先用存下來的那份。
+// - 頁面本身（./ 與 ./index.html）：先向網路拿最新版並存一份；網路斷了、伺服器出錯（5xx），或 4 秒內沒有回應，
+//   就先用存下來的那份。網站搬家（轉址）或頁面不在了，照網路的回應走，不會一直停在舊的那份。
 // - manifest 與圖示：先用存下來的，同時在背景更新，下次打開就是新的。
 // - 其他檔案和其他網站（字型、Claude API）一律不經過這裡。
 // 練習資料存在瀏覽器的 localStorage，和這裡的快取無關。
@@ -40,7 +41,9 @@ async function page(e) {
   if (!saved) return network;
   e.waitUntil(network.catch(() => {}));
   const late = new Promise(r => setTimeout(() => r(saved), 4000));
-  return Promise.race([network.then(res => (res.ok ? res : saved), () => saved), late]);
+  // A redirect (a navigation sees it as "opaqueredirect") or any other real answer is followed; only a server error
+  // falls back to the stored page.
+  return Promise.race([network.then(res => (res.status >= 500 ? saved : res), () => saved), late]);
 }
 
 async function asset(e) {
