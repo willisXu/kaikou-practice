@@ -9,9 +9,14 @@
 //   refuse: 'text'          sample() rejects "refused" when the learner's last message contains this text
 //   slowMs: 600             each streamed chunk of a coach reply takes this long (to test Stop)
 //   persist: true           the cloud store survives a reload of the tab (kept in sessionStorage)
+//   noDb: true              use('db') resolves null (the cloud could not be loaded on this visit)
+//   noUser: true            use('user') resolves null (Claude does not say who is viewing)
+//   failUse: ['db']         use() rejects for these capabilities
+//   failList: n             the next n listings of the user's documents reject "unavailable"
+//   jsonDelay: 800          JSON answers (hints, review, passage, 4/3/2 points) take this long
 window.__kaikouTest = true;
 (function () {
-  const cfg = Object.assign({ owner: true, readOnly: false, failWrites: {}, failReads: {}, refuse: '', slowMs: 0, persist: false }, window.__mockCfg || {});
+  const cfg = Object.assign({ owner: true, readOnly: false, failWrites: {}, failReads: {}, refuse: '', slowMs: 0, persist: false, noDb: false, noUser: false, failUse: [], failList: 0, jsonDelay: 30 }, window.__mockCfg || {});
   window.__mockCfg = cfg; // tests may change it while the page runs
   const store = new Map();
   const pad = n => String(n).padStart(2, '0');
@@ -117,6 +122,7 @@ window.__kaikouTest = true;
         limit: () => q,
         get: async () => {
           await new Promise(r => setTimeout(r, 20));
+          if (cfg.failList > 0) { cfg.failList--; window.__dbCalls.push({ op: 'list', name: path, code: 'unavailable' }); throw err('unavailable', 'injected'); }
           window.__dbCalls.push({ op: 'list', name: path, code: '' });
           const docs = cfg.readOnly ? [] : [...store.keys()].filter(k => k.startsWith(path + '/') && k.split('/').length === 4).sort().map(snap);
           return { docs, size: docs.length, empty: !docs.length };
@@ -166,7 +172,7 @@ window.__kaikouTest = true;
       call.head = input.slice(0, 40);
       if (JSON_PROMPTS.test(input)) {
         const v = answerJson(input);
-        await new Promise(r => setTimeout(r, 30));
+        await new Promise(r => setTimeout(r, cfg.jsonDelay));
         // vary the wrapping so the page's JSON extraction gets exercised
         const text = Array.isArray(v) ? '```json\n' + JSON.stringify(v, null, 1) + '\n```' : 'Here is the review:\n' + JSON.stringify(v, null, 1) + '\nHope this helps!';
         return { text, truncated: false, modelTierApplied: (opts && opts.modelTier) || 'default' };
@@ -181,5 +187,10 @@ window.__kaikouTest = true;
     return stream('That sounds fun! What was the best part of the day?\n###\n{"you": "I eat a big lunch", "better": "I had a big lunch", "why": "吃飯常用 have，過去式 had"}\n{"you": "it make me happy", "better": "it made me happy", "why": "過去式"}', opts);
   };
   sample.limits = async () => ({ maxPromptBytes: 65536 });
-  window.claude = { use: async name => { await new Promise(r => setTimeout(r, 30)); return ({ db, user, sample, downloads })[name] || null; } };
+  window.claude = { use: async name => {
+    await new Promise(r => setTimeout(r, 30));
+    if (cfg.failUse.includes(name)) throw err('unavailable', 'injected');
+    if ((name === 'db' && cfg.noDb) || (name === 'user' && cfg.noUser)) return null;
+    return ({ db, user, sample, downloads })[name] || null;
+  } };
 })();
