@@ -134,7 +134,14 @@ npm test
 ## 更新與發布
 
 1. 修改 `docs/index.html`（VS Code、Claude Code 都可以）
-2. 點 `推送到GitHub.bat`：列出這次要發布的變更並詢問（按 Y 發布、N 取消），同步 GitHub 上的版本後推送；GitHub Pages 約 1 分鐘後更新。只會發布 `docs/`、`test/`、`tools/` 與 repo 裡原有的檔案，資料夾裡其他新檔案（`??` 開頭的）不會上傳。這台電腦上用別的方式（例如 VS Code）做過、還沒上 GitHub 的 commit，會先列出它們和改到的檔案，按 Y 才一起發布，按 N 就留在這台電腦；這次的變更如果 GitHub 上已經有了（同步時會略過），也不會把別的 commit 當成這次的直接推上去，一樣先列出來問你。和 GitHub 上的版本衝突時會停下來，不會發布，也不會動到你的檔案；如果有其他程式正在用 Git、沒辦法自動復原，會說明要怎麼做。
+2. 點 `推送到GitHub.bat`（Windows）或 `推送到GitHub.command`（Mac，會在「終端機」裡執行）：列出這次要發布的變更並詢問（按 Y 發布、N 取消），同步 GitHub 上的版本後推送；GitHub Pages 約 1 分鐘後更新。只會發布 `docs/`、`test/`、`tools/` 與 repo 裡原有的檔案，資料夾裡其他新檔案（`??` 開頭的）不會上傳。這台電腦上用別的方式（例如 VS Code）做過、還沒上 GitHub 的 commit，會先列出它們和改到的檔案，按 Y 才一起發布，按 N 就留在這台電腦；這次的變更如果 GitHub 上已經有了（同步時會略過），也不會把別的 commit 當成這次的直接推上去，一樣先列出來問你。和 GitHub 上的版本衝突時會停下來，不會發布，也不會動到你的檔案；如果有其他程式正在用 Git、沒辦法自動復原，會說明要怎麼做。
 3. 完整版：把改好的檔案交給 Claude，轉成頁面片段後重新發佈到同一個 Artifact 連結
+
+**第一次在 Mac 上發布**
+
+- 還沒有 Git 時，Mac 會跳出安裝「命令列開發者工具」的視窗，按「安裝」，裝好後再點一次。
+- Mac 說「無法打開，因為它來自未識別的開發者」時：在檔案上按右鍵 →「打開」→「打開」，之後點兩下就可以。終端機問能不能取用「桌面」的檔案時，按「好」。
+- 會問一次 commit 上顯示的名字和 email（公開在 GitHub 上，可以用 GitHub 的 noreply 地址），只存在這個資料夾的設定裡。
+- 推送時 GitHub 會問帳號和密碼：密碼要貼 GitHub 的 Personal access token，不是登入密碼（github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens，Repository access 選 `kaikou-practice`，Contents 選 Read and write）。Mac 會把它存進鑰匙圈，到期前不用再輸入；需要輸入時，腳本會先說明。
 
 需求：Git（推送用）；跑測試另需 Node.js 20 以上。
