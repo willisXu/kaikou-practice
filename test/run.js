@@ -123,7 +123,9 @@ function serve(root) {
     await page.addInitScript(c => { window.__kaikouTest = true; if (c) window.__mockCfg = c; }, init || null);
     if (extra) await page.addInitScript({ content: extra });
     await page.goto(/^https?:/.test(file) ? file : 'file://' + file);
-    await page.waitForFunction(() => window.__kaikouTest && window.__kaikouTest.S && window.__kaikouTest.S.ready, null, { timeout: 10000 });
+    // Opened completely: also past the look at changes earlier visits left unsent (a record a test stores after this
+    // is sent only when the test makes it so, not by the page still opening).
+    await page.waitForFunction(() => window.__kaikouTest && window.__kaikouTest.S && window.__kaikouTest.S.ready && window.__kaikouTest.S.started, null, { timeout: 10000 });
     return page;
   }
   const until = (page, fn, arg, timeout) => page.waitForFunction(fn, arg, { timeout: timeout || 8000 });
@@ -2106,22 +2108,46 @@ function serve(root) {
   }
   if (want('4')) {
     // i5. The settings (a 60-minute plan) cannot be read yet and the cloud has no record of today: today's first ticks
-    //     write a stand-in plan (this page does not know the learner's). Once the settings are read, the day takes the
-    //     learner's plan, so two ticks do not count as a finished 60-minute day.
-    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'plan-unread', { noToday: true, settings: { plan: '60' }, failReads: { settings: 2 } }, noFocusRefresh);
-    await page.click('[data-fk="ck-shadow"]');
-    await page.click('[data-fk="ck-ai"]');
-    const m = await page.evaluate(() => window.__mockToday.slice(0, 7));
-    await until(page, n => !window.__kaikouTest.Store.busyDoc(n), 'log-' + m, 6000);
-    const blind = await page.evaluate(n => window.__store.get('data/users/u_test/' + n).days[window.__mockToday].plans, 'log-' + m);
-    await ff(page, 181000); // the settings are read now
-    await until(page, n => window.__kaikouTest.S.settingsRead && !window.__kaikouTest.Store.busyDoc(n) && !!window.__store.get('data/users/u_test/' + n).days[window.__mockToday].plans['0'], 'log-' + m, 6000).catch(() => {});
-    const r = await page.evaluate(n => { const X = window.__kaikouTest, d = X.S.logs[n.slice(4)].days[window.__mockToday]; return { cloud: window.__store.get('data/users/u_test/' + n).days[window.__mockToday].plans, plan: d.plan, status: X.status(d) }; }, 'log-' + m);
-    check('設定還讀不到時打勾新的一天：先寫替代的計畫，讀到設定後換成你的計畫（不會把 20 分鐘當成你的計畫算完成）', () => {
-      eq(blind, { '-1': '20' });
-      eq(r, { cloud: { '-1': '20', 0: '60' }, plan: '60', status: 1 });
+    //     write a stand-in plan (this page does not know the learner's). Once the settings are read (here: opening 設定
+    //     reads them again), the day takes the learner's plan, so two ticks do not count as a finished 60-minute day.
+    //     When the month could not be read either (a review round ticks 語塊複習 by itself), the plan is set once the
+    //     month is read too.
+    const m = dayKey(0).slice(0, 7), n = 'log-' + m;
+    const plansOf = (page, x) => page.evaluate(x => (((window.__store.get('data/users/u_test/' + x) || {}).days || {})[window.__mockToday] || {}).plans, x);
+    let r1, blind1, r2, blind2, early2;
+    {
+      const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'plan-unread', { noToday: true, settings: { plan: '60' }, failReads: { settings: 2 } }, noFocusRefresh);
+      await page.click('[data-fk="ck-shadow"]');
+      await page.click('[data-fk="ck-ai"]');
+      await until(page, x => !window.__kaikouTest.Store.busyDoc(x), n, 6000);
+      blind1 = await plansOf(page, n);
+      await page.click('#btn-settings');
+      await until(page, x => window.__kaikouTest.S.settingsRead && !window.__kaikouTest.Store.busyDoc(x) && !!(window.__store.get('data/users/u_test/' + x).days[window.__mockToday].plans || {})['0'], n, 6000).catch(() => {});
+      r1 = await page.evaluate(x => { const X = window.__kaikouTest, d = X.S.logs[x.slice(4)].days[window.__mockToday]; return { cloud: window.__store.get('data/users/u_test/' + x).days[window.__mockToday].plans, plan: d.plan, status: X.status(d) }; }, n);
+      await ctx.close();
+    }
+    {
+      const { ctx, page } = await open(ARTIFACT + '#saved', { viewport: { width: 1000, height: 800 } }, 'plan-unread-month', { noToday: true, settings: { plan: '60' }, failReads: { settings: 2, [n]: 99 } }, noFocusRefresh);
+      await page.click('[data-fk="drill-start"]');
+      for (let i = 0; i < 3; i++) { await page.click('[data-fk="flip"]'); await page.click('[data-fk="rate-2"]'); }
+      await until(page, x => !!window.__kaikouTest.S.drill && window.__kaikouTest.S.drill.done && !window.__kaikouTest.Store.busyDoc(x) && !!window.__store.get('data/users/u_test/' + x).days[window.__mockToday], n, 6000);
+      blind2 = await plansOf(page, n);
+      await page.click('#btn-settings'); // the settings are read, the month still is not
+      await until(page, () => window.__kaikouTest.S.settingsRead, null, 6000);
+      await page.waitForTimeout(400);
+      early2 = await plansOf(page, n);
+      await page.click('#set-done');
+      await page.evaluate(x => { window.__mockCfg.failReads[x] = 0; }, n);
+      await ff(page, 181000); // the month is read now
+      await until(page, x => !window.__kaikouTest.Store.busyDoc(x) && !!(window.__store.get('data/users/u_test/' + x).days[window.__mockToday].plans || {})['0'], n, 6000).catch(() => {});
+      r2 = await plansOf(page, n);
+      await ctx.close();
+    }
+    check('設定還讀不到時打勾新的一天：先寫替代的計畫，讀到設定後換成你的計畫（不會把 20 分鐘當成你的計畫算完成）；那個月也讀不到時，等月份也讀到再換', () => {
+      eq(blind1, { '-1': '20' });
+      eq(r1, { cloud: { '-1': '20', 0: '60' }, plan: '60', status: 1 });
+      eq([blind2, early2, r2], [{ '-1': '20' }, { '-1': '20' }, { '-1': '20', 0: '60' }]);
     });
-    await ctx.close();
   }
   if (want('4')) {
     // i6. Another device created today with a stand-in plan (it could not read the settings): the next tick here, where

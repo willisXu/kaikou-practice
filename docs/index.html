@@ -774,7 +774,7 @@ const ACCOUNT_CODES = ['key_invalid', 'key_missing', 'no_credit', 'model_missing
 
 /* ================= state ================= */
 const S = {
-  ready: false, booted: false, tab: 'today', viewDate: todayKey(), lastToday: todayKey(), calMonth: todayKey().slice(0, 7),
+  ready: false, booted: false, started: false, tab: 'today', viewDate: todayKey(), lastToday: todayKey(), calMonth: todayKey().slice(0, 7),
   settings: Object.assign({}, DEFAULTS),
   logs: {}, loaded: new Set(), editedDays: new Set(), editedMonthRec: new Set(), planWait: {}, planBlind: new Set(),
   sessions: {}, sessLoaded: new Set(), loadErrors: new Set(), readOnce: new Set(),
@@ -5923,7 +5923,8 @@ async function boot(data) {
   S.streak = await settleStreak();
   renderAll();
   const note = takeNote(); if (note && Store.mode === 'db') toast(note); // said only when the cloud is really used
-  resendUnsent();
+  // Changes an earlier visit left unsent are sent now; once that is over, the page has finished opening (S.started).
+  resendUnsent().finally(() => { S.started = true; });
   scheduleMidnight();
   setInterval(() => {
     Store.saveUnsent(); // a record of changes still waiting is renewed, so other tabs see this one still looks after it
