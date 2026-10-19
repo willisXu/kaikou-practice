@@ -1713,7 +1713,7 @@ function serve(root) {
     await page.click('[data-fk="slvl-B2"]');
     await page.click('#set-done');
     await until(page, () => window.__store.get('data/users/u_test/settings').level === 'B2' && !window.__kaikouTest.Store.busyDoc('settings'), null, 6000);
-    const sendNext = async () => { await ff(page, 181000); await until(page, () => !Object.keys(localStorage).some(k => k.startsWith('kaikou:unsent:u_test:') && /closed|later|newest|mixed/.test(k)), null, 8000).catch(() => {}); await until(page, () => !window.__kaikouTest.Store.busyDoc('settings') && !window.__kaikouTest.Store.busyDoc('inbox'), null, 6000); };
+    const sendNext = async () => { await ff(page, 181000); await until(page, () => !Object.keys(localStorage).some(k => k.startsWith('kaikou:unsent:u_test:') && /closed|later|newest|mixed|older-field|newer-field/.test(k)), null, 8000).catch(() => {}); await until(page, () => !window.__kaikouTest.Store.busyDoc('settings') && !window.__kaikouTest.Store.busyDoc('inbox'), null, 6000); };
     await sendNext();
     const a = await level();
     const note = await page.evaluate(() => window.__kaikouTest.normInbox(window.__store.get('data/users/u_test/inbox')).some(x => x.id === 'uL'));
@@ -1730,8 +1730,13 @@ function serve(root) {
     await sendNext();
     const d = await level();
     const noteM = await page.evaluate(() => window.__kaikouTest.normInbox(window.__store.get('data/users/u_test/inbox')).some(x => x.id === 'uM'));
+    // Two records at once: the one saved last changed the level earlier than the other one did.
+    await plant('kaikou:unsent:u_test:older-field', 'A2', 60000, { inbox: { map: { uO: { id: 'uO', text: '一分鐘前記的句子', at: 6 } } } }, 240000);
+    await plant('kaikou:unsent:u_test:newer-field', 'B2', 120000, null, 120000);
+    await sendNext();
+    const e = await level();
     check('同一個欄位以比較晚的變更為準（每個欄位比自己的時間）：別的頁面留下的變更晚一點才補存時，這裡在那之後改的設定不會被蓋回去；另一個同時開著的分頁改得比較晚，就用它的', () =>
-      eq([kept, a, note, b, c, d, noteM], [true, ['B2', 'B2'], true, ['A2', 'A2'], ['B1', 'B1'], ['B1', 'B1'], true]));
+      eq([kept, a, note, b, c, d, noteM, e], [true, ['B2', 'B2'], true, ['A2', 'A2'], ['B1', 'B1'], ['B1', 'B1'], true, ['B2', 'B2']]));
     await ctx.close();
   }
   if (want('4')) {
