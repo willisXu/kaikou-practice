@@ -27,12 +27,14 @@
 //   settings: { plan: '60' }  fields that replace the seeded settings
 //   noToday: true           the cloud has no record of today yet
 //   writeDelay: { name: ms }  writes to that document take this long before they land or fail
+//   writeLandsFirst: true   a write is stored at once and only its answer takes writeDelay (the host carries it out
+//                           even if the page closes before the answer comes)
 //   readDelay: { name: ms | [ms, ms…] }  reads of that document take this long (a list: the first read, the second…,
 //                           then the usual 20 ms); window.__readStarts[name] counts the reads started
 window.__kaikouTest = true;
 (function () {
   const cfg = Object.assign({ owner: true, readOnly: false, readOnlyWrites: false, failWrites: {}, failReads: {}, refuse: '', slowMs: 0, persist: false, noDb: false, noUser: false, failUse: [], failList: 0, jsonDelay: 30,
-    sampleCode: '', refuseTask: false, noSample: false, noDownloads: false, saveFail: '', settings: null, noToday: false, writeDelay: {}, readDelay: {} }, window.__mockCfg || {});
+    sampleCode: '', refuseTask: false, noSample: false, noDownloads: false, saveFail: '', settings: null, noToday: false, writeDelay: {}, readDelay: {}, writeLandsFirst: false }, window.__mockCfg || {});
   window.__mockCfg = cfg; // tests may change it while the page runs
   const store = new Map();
   const pad = n => String(n).padStart(2, '0');
@@ -122,15 +124,20 @@ window.__kaikouTest = true;
           window.__dbCalls.push({ op: 'get', name, code: '' });
           return snap(path);
         },
-        set: async d => { await new Promise(r => setTimeout(r, cfg.writeDelay[path.split('/').pop()] || 10)); write('set', path, () => { if (bytes(d) > 262144) throw err('invalid_argument', 'too large'); store.set(path, clone(d)); }); },
+        set: async d => {
+          const wait = () => new Promise(r => setTimeout(r, cfg.writeDelay[path.split('/').pop()] || 10));
+          const run = () => write('set', path, () => { if (bytes(d) > 262144) throw err('invalid_argument', 'too large'); store.set(path, clone(d)); });
+          if (cfg.writeLandsFirst) { run(); await wait(); } else { await wait(); run(); }
+        },
         update: async d => {
-          await new Promise(r => setTimeout(r, cfg.writeDelay[path.split('/').pop()] || 10));
-          write('update', path, () => {
+          const wait = () => new Promise(r => setTimeout(r, cfg.writeDelay[path.split('/').pop()] || 10));
+          const run = () => write('update', path, () => {
             if (!store.has(path)) throw err('invalid_argument', 'missing');
             const next = merge(store.get(path), d);
             if (bytes(next) > 262144) throw err('invalid_argument', 'too large');
             store.set(path, next);
           });
+          if (cfg.writeLandsFirst) { run(); await wait(); } else { await wait(); run(); }
         },
         delete: async () => { store.delete(path); },
       };
