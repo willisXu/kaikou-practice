@@ -831,7 +831,7 @@ function writeFailure(e, full) {
 const Store = {
   mode: 'loading', db: null, uid: null, isOwner: false, why: '', unsentKey: '', unsentTimer: 0, unsentOk: true,
   pend: {}, timers: {}, chain: {}, failed: {}, edits: {}, inflight: {}, sending: {}, retries: {}, hooks: {}, heldAtStop: {},
-  carry: {}, changed: {}, mine: {},
+  carry: {}, known: {}, dels: {},
   async init() {
     const c = window.claude;
     if (c && typeof c.use === 'function') {
@@ -912,15 +912,24 @@ const Store = {
     return null;
   },
   put(name, full) { this.queue(name, full, null); },
-  patch(name, full, patch) { this.queue(name, full, patch); },
-  queue(name, full, patch) {
+  patch(name, full, patch, carried) { this.queue(name, full, patch, carried); },
+  // carried: { times, del } for changes sent again from a record a closed page left (see resendNow).
+  queue(name, full, patch, carried) {
     if (this.mode === 'loading') return;
     // While the cloud cannot be used, each edit is also held for a later upload (one by one, so an edit undone in
     // the meantime cancels out instead of becoming a deletion; see recordHeld).
     if (this.mode !== 'db' && this.why && patch) recordHeld(name, patch);
     this.edits[name] = (this.edits[name] || 0) + 1;
-    this.changed[name] = Date.now();
-    if (this.mode === 'db' && patch) this.mine[name] = keyShape(this.mine[name], patch);
+    // When each field was set (see timeAt): this tab's own changes now, changes sent again from a record a closed page
+    // left at the time they were made there; and which entries this tab deleted itself.
+    if (this.mode === 'db' && patch) {
+      const del = this.dels[name] = this.dels[name] || new Set();
+      if (carried) { this.known[name] = mergeTimes(this.known[name], patch, carried.times); for (const id of carried.del || []) del.add(id); }
+      else {
+        this.known[name] = stampTimes(this.known[name], patch, Date.now());
+        if (patch.map && typeof patch.map === 'object') for (const [id, v] of Object.entries(patch.map)) if (v === null) del.add(id);
+      }
+    }
     delete lastSeen[name]; // a later read that matches the one before this edit is news again (another device undid it)
     const p = this.pend[name] || {};
     p.full = full;
@@ -933,7 +942,8 @@ const Store = {
     updateSync();
   },
   // A cloud visit keeps the changes of a document whose write failed (waiting for a retry, or for room) in this browser
-  // too, in one record per tab ({ at: time of the latest change, beat: last renewal, docs }), so a page closed before
+  // too, in one record per tab ({ at: time of the latest change, beat: last renewal, docs, times: when each field was
+  // set, del: entries among them this tab had deleted itself before }), so a page closed before
   // the retry lands does not lose them: a later visit sends them (resendUnsent). Changes on their way for the first
   // time are not kept (the write usually lands even when the page closes, and a kept copy would later be sent again
   // over newer changes), except those sent again from such a record or from this browser's held changes (carry). The
@@ -947,17 +957,22 @@ const Store = {
   saveUnsent() {
     clearTimeout(this.unsentTimer); this.unsentTimer = 0;
     if (!this.unsentKey || this.mode !== 'db') return (this.unsentOk = true);
-    const docs = {};
+    const docs = {}, times = {}, del = {};
     let at = 0;
     for (const n of new Set(Object.keys(this.sending).concat(Object.keys(this.pend)))) {
       if (!DOC_NAME_RE.test(n) || !(this.failed[n] || this.carry[n])) continue;
       let p = null;
       for (const q of [this.sending[n], this.pend[n]]) if (q && q.patch && q.patch !== 'replace') p = deepMerge(p || {}, q.patch);
-      if (p && hasChange(p)) { docs[n] = p; at = Math.max(at, this.changed[n] || 0); }
+      if (!p || !hasChange(p)) continue;
+      docs[n] = p;
+      const t = times[n] = {};
+      leaves(p, path => { const x = timeAt(this.known[n], path); if (x) { setTime(t, path, x); at = Math.max(at, x); } });
+      const d = this.dels[n] && p.map && typeof p.map === 'object' ? Object.keys(p.map).filter(id => p.map[id] !== null && this.dels[n].has(id)) : [];
+      if (d.length) del[n] = d;
     }
     if (!Object.keys(docs).length) { lsDel(this.unsentKey); return (this.unsentOk = true); }
     // A record that could not be brought up to date must not be sent again later as it was.
-    try { localStorage.setItem(this.unsentKey, JSON.stringify({ at: at || Date.now(), beat: Date.now(), docs })); return (this.unsentOk = true); }
+    try { localStorage.setItem(this.unsentKey, JSON.stringify({ at: at || Date.now(), beat: Date.now(), docs, times, del })); return (this.unsentOk = true); }
     catch (_) { lsDel(this.unsentKey); return (this.unsentOk = false); }
   },
   flush(name) {
@@ -1016,7 +1031,8 @@ const Store = {
     } finally {
       this.inflight[name] -= 1;
       if (this.sending[name] === sent) delete this.sending[name];
-      this.markUnsent();
+      // A hidden page may be frozen or closed any moment now (a phone): its record is brought up to date at once.
+      if (document.visibilityState === 'hidden') this.saveUnsent(); else this.markUnsent();
       updateSync();
     }
   },
@@ -1051,7 +1067,7 @@ const Store = {
         }
         return;
       } catch (e) {
-        if (i === 0 && e && (e.code === 'unavailable' || e.code === 'resource_exhausted')) {
+        if (i === 0 && e && (e.code === 'unavailable' || e.code === 'resource_exhausted') && document.visibilityState !== 'hidden') {
           await sleep(700 + Math.random() * 900);
           if (this.mode !== 'db') throw e; // the cloud was left meanwhile: the change is held instead (see write)
           continue;
@@ -2698,15 +2714,50 @@ function readLocal(n) {
 // kaikou:held = { uid, docs: { name: patch }, fresh, drop }: only the edits made while the cloud could not be used.
 // A document whose edits all cancelled out (an empty map or day) has nothing to upload.
 const hasChange = o => !!o && typeof o === 'object' && Object.keys(o).some(k => { const v = o[k]; return v === null || typeof v !== 'object' || Array.isArray(v) || hasChange(v); });
-// Which fields a set of patches sets (a field set as a whole is true), for patchMinus.
-function keyShape(shape, patch) {
-  const out = shape && typeof shape === 'object' ? shape : {};
+/* When each field of a document was set (for records of unsent changes): a time shape mirrors a patch, each leaf holding
+   the time (ms) the value there was set; '' under an object holds the time of a value set there as a whole (a deletion)
+   before keys under it were set again. */
+function leaves(patch, fn, path) {
+  const at = path || [];
   for (const [k, v] of Object.entries(patch || {})) {
-    if (out[k] === true) continue; // set as a whole already
-    out[k] = v && typeof v === 'object' && !Array.isArray(v) ? keyShape(out[k], v) : true;
+    if (v && typeof v === 'object' && !Array.isArray(v)) { if (Object.keys(v).length) leaves(v, fn, at.concat(k)); }
+    else fn(at.concat(k), v);
   }
-  return out;
 }
+function maxTime(s) { let m = 0; for (const v of Object.values(s)) m = Math.max(m, typeof v === 'number' ? v : v && typeof v === 'object' ? maxTime(v) : 0); return m; }
+// The time a field was last set: anything under a value set as a whole shares its time; 0 when never.
+function timeAt(shape, path) {
+  let s = shape, t = 0;
+  for (const k of path) {
+    if (typeof s === 'number') return s;
+    if (!s || typeof s !== 'object') return t;
+    if (typeof s[''] === 'number') t = s[''];
+    s = s[k];
+  }
+  return typeof s === 'number' ? s : s && typeof s === 'object' ? Math.max(t, maxTime(s)) : t;
+}
+function setTime(shape, path, t) {
+  let o = shape;
+  for (let i = 0; i < path.length - 1; i++) {
+    const k = path[i];
+    if (typeof o[k] === 'number') o[k] = { '': o[k] };
+    else if (!o[k] || typeof o[k] !== 'object') o[k] = {};
+    o = o[k];
+  }
+  o[path[path.length - 1]] = t;
+}
+function setLeaf(obj, path, v) {
+  let o = obj;
+  for (let i = 0; i < path.length - 1; i++) {
+    const k = path[i];
+    if (!o[k] || typeof o[k] !== 'object' || Array.isArray(o[k])) o[k] = {};
+    o = o[k];
+  }
+  o[path[path.length - 1]] = v;
+}
+const stampTimes = (shape, patch, t) => { const s = shape || {}; leaves(patch, path => setTime(s, path, t)); return s; };
+// A patch sent again keeps the times it had (a later time already known here stays).
+const mergeTimes = (shape, patch, times) => { const s = shape || {}; leaves(patch, path => { const t = timeAt(times, path); if (t >= timeAt(s, path)) setTime(s, path, t); }); return s; };
 // The parts of patch a that a newer patch b does not set (where b sets a field, b's value is the later one).
 function patchMinus(a, b) {
   if (!b || typeof b !== 'object' || Array.isArray(b)) return a;
@@ -2814,9 +2865,10 @@ function fullDocFor(n) {
 // landed, false if the cloud refused or the upload is still retrying, and 'unread' when a document could not be read
 // first or 'stopped' when the cloud stopped while they were read (in both cases nothing was sent). fromCloud: the
 // edits were made on a cloud visit (see heldOver). onQueued runs once the edits are queued and kept in this tab's record
-// of unsent changes (the record they came from can go then).
-async function uploadPatches(docs, fromCloud, onQueued) {
-  const names = Object.keys(docs).filter(n => DOC_NAME_RE.test(n) && docs[n] && typeof docs[n] === 'object' && !Array.isArray(docs[n]));
+// of unsent changes (the record they came from can go then). resend: { times, del, filter } for edits from records a
+// closed page left (filter drops what was changed here later, also while the documents were read).
+async function uploadPatches(docs, fromCloud, onQueued, resend) {
+  let names = Object.keys(docs).filter(n => DOC_NAME_RE.test(n) && docs[n] && typeof docs[n] === 'object' && !Array.isArray(docs[n]));
   // Each document is read again first, and the edits are laid over what the cloud has now: a document this visit
   // could not read before is not mistaken for one that holds only these edits. A document changed here while it was
   // being read (an edit, or an earlier change that landed meanwhile) is read again, so what is shown keeps the change.
@@ -2831,14 +2883,15 @@ async function uploadPatches(docs, fromCloud, onQueued) {
     }
     todo = names.filter(moved);
   }
-  docs = heldOver(cloud, Object.fromEntries(names.map(n => [n, docs[n]])), fromCloud);
+  if (resend) { docs = resend.filter(docs); names = names.filter(n => docs[n]); if (!names.length) return true; }
+  docs = heldOver(cloud, Object.fromEntries(names.map(n => [n, docs[n]])), fromCloud, resend && resend.del);
   for (const n of names) {
     // What the document will hold: the cloud's version, these edits, then edits of this visit not saved yet.
     let doc = deepMerge(cloud[n] || {}, docs[n]);
     for (const q of [Store.sending[n], Store.pend[n]]) if (q && q.patch && q.patch !== 'replace') doc = deepMerge(doc, q.patch);
     applyDoc(n, doc, false);
     S.loadErrors.delete(n);
-    Store.patch(n, fullDocFor(n), docs[n]);
+    Store.patch(n, fullDocFor(n), docs[n], resend ? { times: resend.times[n], del: [...(resend.del[n] || [])] } : null);
     Store.carry[n] = true; // kept in this tab's record until they land
   }
   if (Store.saveUnsent() && onQueued) onQueued(); // recorded at once
@@ -2850,21 +2903,24 @@ async function uploadPatches(docs, fromCloud, onQueued) {
   }
   return false;
 }
-// The held edits as they apply over these cloud documents (cloud[name], missing when the cloud has none).
-function heldOver(cloud, docs, fromCloud) {
+// The held edits as they apply over these cloud documents (cloud[name], missing when the cloud has none). del: per
+// document, the entries the tab that made the edits had deleted itself (see resendNow).
+function heldOver(cloud, docs, fromCloud, del) {
   const names = Object.keys(docs);
+  // A phrase or a review schedule the cloud has deleted (null) stays deleted, unless the tab that made the edit had
+  // deleted it itself before saving it again (the deletion was then that tab's own, and older).
+  const gone = n => { const m = fromCloud && cloud[n] && cloud[n].map, own = (del && del[n]) || new Set(); return id => !!(m && typeof m === 'object' && m[id] === null && !own.has(id)); };
   // The edits were made on this browser's copy, which may have been older than the cloud or empty (a visit that could
   // not reach the cloud shows defaults): a phrase the cloud already has keeps its own entry (and with it its review
   // schedule), and a day the cloud already has keeps its own default plan (weight 0; a plan chosen here still counts).
   if (names.includes('phrases') && docs.phrases.map && typeof docs.phrases.map === 'object') {
-    const have = new Set(normPhrases(cloud.phrases).map(p => p.id));
+    const have = new Set(normPhrases(cloud.phrases).map(p => p.id)), deleted = gone('phrases');
     const map = {};
-    for (const [id, p] of Object.entries(docs.phrases.map)) if (p === null || !have.has(id)) map[id] = p;
+    for (const [id, p] of Object.entries(docs.phrases.map)) if (p === null || (!have.has(id) && !deleted(id))) map[id] = p;
     docs = Object.assign({}, docs, { phrases: Object.assign({}, docs.phrases, { map }) });
   }
   // Edits a cloud visit could not save (fromCloud) were made on the cloud's own copy. A note, a passage or a review
-  // has an id of its own, so one the cloud has deleted (null) was deleted after this edit: it stays deleted. (A phrase's
-  // id comes from its words: one saved again after an earlier deletion is sent.)
+  // has an id of its own, so one the cloud has deleted (null) was deleted after this edit: it stays deleted.
   if (fromCloud) {
     for (const n of names) {
       if (n !== 'inbox' && n !== 'shadow' && !n.startsWith('sessions-')) continue;
@@ -2897,10 +2953,10 @@ function heldOver(cloud, docs, fromCloud) {
   // visit could not save was built on the cloud's own: it is sent unless the cloud has a later review (another rating
   // the same day counts as later here, so a phrase rated twice today keeps its second rating).
   if (names.includes('srs') && docs.srs.map && typeof docs.srs.map === 'object') {
-    const have = normSrs(cloud.srs), map = {};
+    const have = normSrs(cloud.srs), deleted = gone('srs'), map = {};
     for (const [id, e] of Object.entries(docs.srs.map)) {
       if (e === null) { map[id] = null; continue; }
-      if (!e || typeof e !== 'object') continue;
+      if (!e || typeof e !== 'object' || deleted(id)) continue;
       const c = have[id], ct = String((c && c.t) || '');
       if (!c || (e.f === c.f && (fromCloud ? ct <= String(e.t || '') : ct <= String(e.pt || '') || (!e.pt && String(e.t || '') >= ct)))) map[id] = e;
     }
@@ -2963,6 +3019,10 @@ async function resendClaimed() {
   try { c = JSON.parse(lsGet(key) || 'null'); } catch (_) { c = null; }
   if (c && c.k !== mine && Number(c.until) > Date.now()) return;
   lsSet(key, JSON.stringify({ k: mine, until: Date.now() + 60000 }));
+  // Another tab may have claimed it at the same moment: whoever's claim is there a moment later goes on.
+  await sleep(150);
+  try { c = JSON.parse(lsGet(key) || 'null'); } catch (_) { c = null; }
+  if (!c || c.k !== mine) return;
   try { await resendNow(); }
   finally { try { const d = JSON.parse(lsGet(key) || 'null'); if (d && d.k === mine) lsDel(key); } catch (_) { lsDel(key); } }
 }
@@ -2978,23 +3038,41 @@ async function resendNow() {
     try { r = JSON.parse(lsGet(k) || 'null'); } catch (_) { r = null; }
     const at = (r && Number(r.at)) || 0, beat = (r && Number(r.beat)) || at;
     if (!live && Math.abs(Date.now() - beat) < UNSENT_IDLE) continue;
-    recs.push({ k, at, docs: r && r.docs && typeof r.docs === 'object' && !Array.isArray(r.docs) ? r.docs : {} });
+    const obj = v => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+    recs.push({ k, at, docs: obj(r && r.docs), times: obj(r && r.times), del: obj(r && r.del) });
   }
   if (!recs.length) return;
-  recs.sort((a, b) => a.at - b.at); // the later change wins
-  const docs = {};
+  // Field by field, the later change wins: between the records, and against what this tab has set itself or sent again.
+  recs.sort((a, b) => a.at - b.at);
+  const docs = {}, times = {}, del = {};
   for (const r of recs) {
-    for (const [n, p] of Object.entries(r.docs)) if (DOC_NAME_RE.test(n) && p && typeof p === 'object' && !Array.isArray(p)) docs[n] = deepMerge(docs[n] || {}, p);
+    for (const [n, p] of Object.entries(r.docs)) {
+      if (!DOC_NAME_RE.test(n) || !p || typeof p !== 'object' || Array.isArray(p)) continue;
+      const rt = r.times[n];
+      leaves(p, (path, v) => {
+        const t = timeAt(rt, path) || r.at;
+        if (t >= timeAt(times[n], path)) { setLeaf(docs[n] = docs[n] || {}, path, v); setTime(times[n] = times[n] || {}, path, t); }
+      });
+      for (const id of (Array.isArray(r.del[n]) ? r.del[n] : [])) (del[n] = del[n] || new Set()).add(id);
+    }
   }
-  // This tab's own changes are newer than anything a closed page left: where they set something, theirs stays.
-  for (const n of Object.keys(docs)) { docs[n] = patchMinus(docs[n], Store.mine[n]); if (!hasChange(docs[n])) delete docs[n]; }
-  if (!Object.keys(docs).length) { if (Store.unsentOk) recs.forEach(r => lsDel(r.k)); return; }
-  const ok = await uploadPatches(docs, true);
+  const later = ds => {
+    const out = {};
+    for (const [n, p] of Object.entries(ds)) {
+      const kept = {};
+      leaves(p, (path, v) => { if (timeAt(times[n], path) > timeAt(Store.known[n], path)) setLeaf(kept, path, v); });
+      if (hasChange(kept)) out[n] = kept;
+    }
+    return out;
+  };
+  const send = later(docs);
+  if (!Object.keys(send).length) { recs.forEach(r => lsDel(r.k)); return; } // all changed here since
+  const ok = await uploadPatches(send, true, null, { times, del, filter: later });
   if (ok === 'unread' || ok === 'stopped') return; // nothing was sent: the records stay for a later visit or refresh
   if (ok !== true && !Store.unsentOk) return; // still on their way and this tab could not keep them: the records stay
   recs.forEach(r => lsDel(r.k));
   // A review among them belongs to a chat that may still show as open (its end was never written): it is finished.
-  for (const [n, p] of Object.entries(docs)) {
+  for (const [n, p] of Object.entries(send)) {
     if (!n.startsWith('sessions-') || !p.map || typeof p.map !== 'object') continue;
     const id = S.chat && S.chat.id;
     if (id && p.map[id] && !S.busy && !S.reviewing) { voiceOff(); S.endedChats.add(id); S.chat = null; clearComposer(); endStoredChat(id); }
@@ -3032,7 +3110,7 @@ async function retryCloud() {
   const held = heldRecord();
   const docs = held ? held.docs : Object.fromEntries(names.map(n => [n, readLocal(n)]));
   S.uploading = true; fillSettings();
-  Store.mode = 'db'; Store.why = '';
+  Store.mode = 'db'; Store.why = ''; S.settingsLost = false;
   Store.unsentKey = UNSENT_LS + Store.uid + ':' + newId(); holdTabLock(Store.unsentKey);
   // Once queued and kept in this tab's record, this browser's copies go and later visits use the cloud (a page closed
   // now sends them next time; should the cloud refuse them, they are held here again).
@@ -5725,7 +5803,7 @@ async function boot(data) {
   if (data && typeof data.draft === 'string' && data.draft && S.chat) { const ta = $('#msg-input'); if (ta && !ta.value) { ta.value = data.draft; autosize(ta); } }
   if (S.tab === 'coach' && S.chat) scrollToEnd(true);
 }
-if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats };
+if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats, leaves, timeAt, stampTimes, mergeTimes, heldOver };
 
 boot(viewSaved()).catch(err => { console.error(err); setSync('error'); });
 })();

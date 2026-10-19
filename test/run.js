@@ -1456,6 +1456,31 @@ function serve(root) {
     await ctx.close();
   }
   if (want('4')) {
+    // n1. The times kept for each field (records of unsent changes), and the rules for what a record may bring back.
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'unsent-times');
+    const r = await page.evaluate(() => {
+      const X = window.__kaikouTest, paths = [];
+      X.leaves({ a: { b: 1, c: {} }, d: null, e: [1], f: { g: { h: 'x' } } }, p => paths.push(p.join('.')));
+      const s1 = X.stampTimes({}, { map: { X: { en: 'a', zh: 'b' } } }, 5);
+      const s2 = X.stampTimes(X.stampTimes({}, { map: { X: null } }, 3), { map: { X: { zh: 'y' } } }, 7);
+      const s3 = X.stampTimes({}, { level: 'B2' }, 10);
+      X.mergeTimes(s3, { level: 'A2' }, { level: 5 });
+      const kept = X.timeAt(s3, ['level']);
+      X.mergeTimes(s3, { level: 'A1' }, { level: 20 });
+      const cloud = { phrases: { map: { pOwn: null, pElse: null } }, srs: { map: { pOwn: null, pElse: null } }, inbox: { map: { n1: null } } };
+      const docs = { phrases: { map: { pOwn: { en: 'Own.' }, pElse: { en: 'Else.' } } }, srs: { map: { pOwn: { d: '2030-01-01', f: '2030-01-01', t: '2030-01-01' }, pElse: { d: '2030-01-01', f: '2030-01-01', t: '2030-01-01' } } }, inbox: { map: { n1: { text: 'x' }, n2: { text: 'y' } } } };
+      const own = { phrases: new Set(['pOwn']), srs: new Set(['pOwn']) };
+      const fromCloud = X.heldOver(cloud, docs, true, own), held = X.heldOver(cloud, docs, false);
+      return { paths, s1: [X.timeAt(s1, ['map', 'X', 'en']), X.timeAt(s1, ['map', 'X']), X.timeAt(s1, ['map', 'Y'])],
+        s2: [X.timeAt(s2, ['map', 'X', 'zh']), X.timeAt(s2, ['map', 'X', 'en']), X.timeAt(s2, ['map', 'X'])], merged: [kept, X.timeAt(s3, ['level'])],
+        fromCloud: [Object.keys(fromCloud.phrases.map), Object.keys(fromCloud.srs.map), Object.keys(fromCloud.inbox.map)], held: [Object.keys(held.phrases.map).sort(), Object.keys(held.inbox.map).sort()] };
+    });
+    check('補存的時間與規則：每個欄位記下改的時間（刪掉後又設的欄位、整個刪掉的時間都算得出來），較晚的時間留著；自己刪過又存回的才會救回，別台刪掉的不會', () => eq(r, {
+      paths: ['a.b', 'd', 'e', 'f.g.h'], s1: [5, 5, 0], s2: [7, 3, 7], merged: [10, 20],
+      fromCloud: [['pOwn'], ['pOwn'], ['n2']], held: [['pElse', 'pOwn'], ['n1', 'n2']] }));
+    await ctx.close();
+  }
+  if (want('4')) {
     // n2. Records left by other tabs of this browser: one whose tab is still open (it holds the lock named after its
     //     record) is left to that tab; the others are sent oldest first, so the later change wins. Once that tab is
     //     closed (its lock goes), its record is sent too.
@@ -1571,12 +1596,13 @@ function serve(root) {
   }
   if (want('4')) {
     // u. A record left behind holds changes made on the cloud's own documents: a phrase rated twice today keeps its
-    //    second rating; a phrase saved again after it had been removed comes back (its id comes from its words), but a
-    //    note, a passage or a review deleted in the meantime (their ids are their own) stays deleted.
+    //    second rating; a phrase that tab had deleted itself and then saved again comes back, but a phrase, a note or a
+    //    passage deleted on another device in the meantime stays deleted. (Records are put in place while the page runs
+    //    and sent at the next refresh: a page loaded right after another wrote to the storage may not see the write.)
     const seed = `window.__mockSeed = (store, P, dk) => {
       const t = dk(new Date());
-      store.set(P('srs'), { map: { p1: { d: t, i: 0, r: 0, l: 1, f: '2026-09-01', t: t, pt: '2026-09-20' }, pBack: null } });
-      const ph = store.get(P('phrases')); ph.map = { pBack: null }; store.set(P('phrases'), ph);
+      store.set(P('srs'), { map: { p1: { d: t, i: 0, r: 0, l: 1, f: '2026-09-01', t: t, pt: '2026-09-20' }, pBack: null, pGone: null } });
+      const ph = store.get(P('phrases')); ph.map = { pBack: null, pGone: null }; store.set(P('phrases'), ph);
       const ib = store.get(P('inbox')); ib.map = { nGone: null }; store.set(P('inbox'), ib);
       store.set(P('shadow'), { cur: '', map: { sGone: null } });
     };`;
@@ -1584,55 +1610,65 @@ function serve(root) {
     await page.evaluate(() => {
       const t = window.__mockToday, d2 = new Date(t + 'T12:00:00'); d2.setDate(d2.getDate() + 2);
       const due = d2.getFullYear() + '-' + String(d2.getMonth() + 1).padStart(2, '0') + '-' + String(d2.getDate()).padStart(2, '0');
-      const ago = Date.now() - 600000;
+      const ago = Date.now() - 600000, phrase = (id, en) => ({ id, en, zh: '', note: '', ex: '', src: 'fix', at: Date.now() - 700000 });
       localStorage.setItem('kaikou:unsent:u_test:closed', JSON.stringify({ at: ago, beat: ago, docs: {
-        srs: { map: { p1: { d: due, i: 2, r: 1, l: 1, f: '2026-09-01', t, pt: '2026-09-20' }, pBack: { d: due, i: 2, r: 1, l: 0, f: t, t } } },
-        phrases: { map: { pBack: { id: 'pBack', en: 'A phrase saved again after it was removed.', zh: '', note: '', ex: '', src: 'fix', at: Date.now() - 700000 } } },
+        srs: { map: { p1: { d: due, i: 2, r: 1, l: 1, f: '2026-09-01', t, pt: '2026-09-20' }, pBack: { d: due, i: 2, r: 1, l: 0, f: t, t }, pGone: { d: due, i: 2, r: 1, l: 0, f: t, t } } },
+        phrases: { map: { pBack: phrase('pBack', 'A phrase saved again after it was removed.'), pGone: phrase('pGone', 'A phrase removed on another device.') } },
         inbox: { map: { nGone: { id: 'nGone', text: '別台裝置刪掉的隨手記', at: 3 }, nNew: { id: 'nNew', text: '還沒存到的隨手記', at: 4 } } },
-        shadow: { cur: 'sGone', map: { sGone: { days: { [t]: 1 } } } } } }));
+        shadow: { cur: 'sGone', map: { sGone: { days: { [t]: 1 } } } } }, del: { phrases: ['pBack'], srs: ['pBack'] } }));
     });
-    await reloadAfterWrites(page);
+    await ff(page, 181000); // the page reads everything again every three minutes, then sends what closed pages left
     await until(page, () => !localStorage.getItem('kaikou:unsent:u_test:closed'), null, 8000).catch(() => {});
     await until(page, () => ['srs', 'phrases', 'inbox', 'shadow'].every(n => !window.__kaikouTest.Store.busyDoc(n)), null, 6000);
     const r = await page.evaluate(() => {
       const get = n => window.__store.get('data/users/u_test/' + n) || {};
-      const srs = get('srs').map, ph = get('phrases').map, ib = get('inbox').map, sh = get('shadow');
-      return { p1: [srs.p1.i, srs.p1.r], back: [!!(ph.pBack && ph.pBack.en), !!srs.pBack, window.__kaikouTest.S.phrases.some(p => p.id === 'pBack')],
+      const srs = get('srs').map, ph = get('phrases').map, ib = get('inbox').map, sh = get('shadow'), shown = id => window.__kaikouTest.S.phrases.some(p => p.id === id);
+      return { p1: [srs.p1.i, srs.p1.r], back: [!!(ph.pBack && ph.pBack.en), !!srs.pBack, shown('pBack')], gone: [ph.pGone, srs.pGone, shown('pGone')],
         notes: [ib.nGone, !!ib.nNew], shadow: [sh.map.sGone, sh.cur], left: !!localStorage.getItem('kaikou:unsent:u_test:closed') };
     });
-    check('補存上次沒存到的變更：同一天又評了一次的句子用後來的評分；刪掉後又收藏的句子會回來，別台裝置刪掉的隨手記、跟讀短文不會被救回', () =>
-      eq(r, { p1: [2, 1], back: [true, true, true], notes: [null, true], shadow: [null, ''], left: false }));
+    check('補存上次沒存到的變更：同一天又評了一次的句子用後來的評分；自己刪掉後又收藏的句子會回來，別台裝置刪掉的句子、隨手記、跟讀短文不會被救回', () =>
+      eq(r, { p1: [2, 1], back: [true, true, true], gone: [null, null, false], notes: [null, true], shadow: [null, ''], left: false }));
     await ctx.close();
   }
   if (want('4')) {
     // v. Sending a record left behind reads the documents first; a change made here meanwhile (saved before that read
-    //    is over) stays on screen.
+    //    is over) stays on screen, and the same setting changed here meanwhile is not set back.
     const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'unsent-edit', null, noFocusRefresh);
-    await page.evaluate(() => localStorage.setItem('kaikou:unsent:u_test:closed', JSON.stringify({ at: Date.now() - 600000, docs: {
-      inbox: { map: { uY: { id: 'uY', text: '紀錄裡的句子', at: 2 } } },
-      phrases: { map: { pY: { id: 'pY', en: 'A phrase from the record.', zh: '', note: '', ex: '', src: 'fix', at: 9 } } } } })));
-    await page.addInitScript(() => { window.__mockCfg = Object.assign(window.__mockCfg || {}, { readDelay: { phrases: [20, 1500] } }); });
-    await reloadAfterWrites(page);
-    await until(page, () => (window.__readStarts || {}).phrases >= 2, null, 6000);
+    await page.evaluate(() => {
+      localStorage.setItem('kaikou:unsent:u_test:closed', JSON.stringify({ at: Date.now() - 600000, beat: Date.now() - 600000, docs: {
+        inbox: { map: { uY: { id: 'uY', text: '紀錄裡的句子', at: 2 } } },
+        phrases: { map: { pY: { id: 'pY', en: 'A phrase from the record.', zh: '', note: '', ex: '', src: 'fix', at: 9 } } },
+        settings: { level: 'A2' } } }));
+      window.__mockCfg.readDelay = { phrases: [20, 20, 1500] }; // read 1: at the start, 2: the refresh, 3: before sending
+    });
+    await ff(page, 181000);
+    await until(page, () => (window.__readStarts || {}).phrases >= 3, null, 6000);
     await page.fill('#inbox-input', '補存時剛記的句子');
     await page.click('#inbox-form .btn');
-    await until(page, () => window.__kaikouTest.normInbox(window.__store.get('data/users/u_test/inbox')).some(x => x.text === '補存時剛記的句子'), null, 4000);
+    await page.click('#btn-settings');
+    await page.click('[data-fk="slvl-B2"]');
+    await page.click('#set-done');
+    await until(page, () => window.__kaikouTest.normInbox(window.__store.get('data/users/u_test/inbox')).some(x => x.text === '補存時剛記的句子') && window.__store.get('data/users/u_test/settings').level === 'B2', null, 4000);
     await until(page, () => !localStorage.getItem('kaikou:unsent:u_test:closed'), null, 8000).catch(() => {});
-    await page.waitForTimeout(300);
-    const r = await page.evaluate(() => ({ shown: window.__kaikouTest.S.inbox.map(x => x.text).filter(t => /句子/.test(t)).sort(), list: document.querySelector('#inbox-list').textContent.includes('補存時剛記的句子'), phrase: window.__kaikouTest.S.phrases.some(p => p.id === 'pY') }));
-    check('補存上次沒存到的變更時，同時新記下的句子不會從畫面上消失', () => eq(r, { shown: ['紀錄裡的句子', '補存時剛記的句子'].sort(), list: true, phrase: true }));
+    await until(page, () => ['inbox', 'phrases', 'settings'].every(n => !window.__kaikouTest.Store.busyDoc(n)), null, 6000);
+    const r = await page.evaluate(() => ({ shown: window.__kaikouTest.S.inbox.map(x => x.text).filter(t => /句子/.test(t)).sort(), list: document.querySelector('#inbox-list').textContent.includes('補存時剛記的句子'), phrase: window.__kaikouTest.S.phrases.some(p => p.id === 'pY'),
+      level: [window.__store.get('data/users/u_test/settings').level, window.__kaikouTest.S.settings.level] }));
+    check('補存上次沒存到的變更時，同時新記下的句子不會從畫面上消失，同時改的設定也不會被改回去', () => eq(r, { shown: ['紀錄裡的句子', '補存時剛記的句子'].sort(), list: true, phrase: true, level: ['B2', 'B2'] }));
     await ctx.close();
   }
   if (want('4')) {
     // w. The cloud stops (access withdrawn) while a record left behind is being read against: nothing of it was sent,
     //    so it stays, and the next visit that can use the cloud sends it.
     const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'unsent-stop', { persist: true }, noFocusRefresh);
-    await page.evaluate(() => localStorage.setItem('kaikou:unsent:u_test:closed', JSON.stringify({ at: Date.now() - 600000, docs: {
-      inbox: { map: { uX: { id: 'uX', text: '雲端停止前要補存的句子', at: 1 } } },
-      phrases: { map: { pX: { id: 'pX', en: 'Another phrase from the record.', zh: '', note: '', ex: '', src: 'fix', at: 9 } } } } })));
-    await page.addInitScript(() => { window.__mockCfg = Object.assign(window.__mockCfg || {}, { readDelay: { phrases: [20, 1500] }, failWrites: { settings: { n: 1, code: 'revoked' } } }); });
-    await reloadAfterWrites(page);
-    await until(page, () => (window.__readStarts || {}).phrases >= 2, null, 6000);
+    await page.evaluate(() => {
+      localStorage.setItem('kaikou:unsent:u_test:closed', JSON.stringify({ at: Date.now() - 600000, beat: Date.now() - 600000, docs: {
+        inbox: { map: { uX: { id: 'uX', text: '雲端停止前要補存的句子', at: 1 } } },
+        phrases: { map: { pX: { id: 'pX', en: 'Another phrase from the record.', zh: '', note: '', ex: '', src: 'fix', at: 9 } } } } }));
+      window.__mockCfg.readDelay = { phrases: [20, 20, 1500] };
+      window.__mockCfg.failWrites = { settings: { n: 1, code: 'revoked' } };
+    });
+    await ff(page, 181000);
+    await until(page, () => (window.__readStarts || {}).phrases >= 3, null, 6000);
     await page.click('#btn-settings');
     await page.click('[data-fk="slvl-B2"]');
     await page.click('#set-done');
@@ -1658,24 +1694,44 @@ function serve(root) {
     await ctx.close();
   }
   if (want('4')) {
-    // x. A record left behind cannot be sent at first (a read fails); meanwhile the same setting is changed here. When
-    //    the record is sent later, the change made here stays (it is newer than anything a closed page left).
+    // x. Field by field, the later change wins. A record left behind cannot be sent at first (a read fails); meanwhile
+    //    the same setting is changed here, later than in the record: that change stays. A record whose change is later
+    //    than the one made here wins, also over one sent again here earlier from an older record.
     const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'unsent-later', null, noFocusRefresh);
-    await page.evaluate(() => localStorage.setItem('kaikou:unsent:u_test:closed', JSON.stringify({ at: Date.now() - 600000, beat: Date.now() - 600000, docs: { settings: { level: 'A2' }, inbox: { map: { uL: { id: 'uL', text: '關掉的頁面晚一點才補存的句子', at: 3 } } } } })));
-    await page.addInitScript(() => { window.__mockCfg = Object.assign(window.__mockCfg || {}, { failReads: { settings: 4 } }); });
-    await reloadAfterWrites(page);
-    await until(page, () => window.__mockCfg.failReads.settings === 0, null, 6000);
-    await page.waitForTimeout(300);
+    const plant = (key, level, msAgo, extra, levelAgo) => page.evaluate(([k, l, ago, x, lAgo]) => {
+      const at = Date.now() - ago;
+      localStorage.setItem(k, JSON.stringify({ at, beat: at, docs: Object.assign({ settings: { level: l } }, x || {}), times: { settings: { level: lAgo ? Date.now() - lAgo : at } } }));
+    }, [key, level, msAgo, extra, levelAgo]);
+    const level = () => page.evaluate(() => [window.__store.get('data/users/u_test/settings').level, window.__kaikouTest.S.settings.level]);
+    await plant('kaikou:unsent:u_test:closed', 'A2', 600000, { inbox: { map: { uL: { id: 'uL', text: '關掉的頁面晚一點才補存的句子', at: 3 } } } });
+    await page.evaluate(() => { window.__mockCfg.failReads = { settings: 4 }; });
+    await ff(page, 181000);
+    await until(page, () => window.__mockCfg.failReads.settings === 0, null, 8000);
+    await page.waitForTimeout(500);
     const kept = await page.evaluate(() => !!localStorage.getItem('kaikou:unsent:u_test:closed'));
     await page.click('#btn-settings');
     await page.click('[data-fk="slvl-B2"]');
     await page.click('#set-done');
     await until(page, () => window.__store.get('data/users/u_test/settings').level === 'B2' && !window.__kaikouTest.Store.busyDoc('settings'), null, 6000);
-    await ff(page, 181000);
-    await until(page, () => !localStorage.getItem('kaikou:unsent:u_test:closed'), null, 8000).catch(() => {});
-    await until(page, () => !window.__kaikouTest.Store.busyDoc('inbox') && !window.__kaikouTest.Store.busyDoc('settings'), null, 6000);
-    const r = await page.evaluate(() => ({ cloud: window.__store.get('data/users/u_test/settings').level, shown: window.__kaikouTest.S.settings.level, note: window.__kaikouTest.normInbox(window.__store.get('data/users/u_test/inbox')).some(x => x.id === 'uL'), left: !!localStorage.getItem('kaikou:unsent:u_test:closed') }));
-    check('別的頁面留下的變更晚一點才補存時，這裡在那之後改的設定不會被蓋回去', () => eq([kept, r], [true, { cloud: 'B2', shown: 'B2', note: true, left: false }]));
+    const sendNext = async () => { await ff(page, 181000); await until(page, () => !Object.keys(localStorage).some(k => k.startsWith('kaikou:unsent:u_test:') && /closed|later|newest|mixed/.test(k)), null, 8000).catch(() => {}); await until(page, () => !window.__kaikouTest.Store.busyDoc('settings') && !window.__kaikouTest.Store.busyDoc('inbox'), null, 6000); };
+    await sendNext();
+    const a = await level();
+    const note = await page.evaluate(() => window.__kaikouTest.normInbox(window.__store.get('data/users/u_test/inbox')).some(x => x.id === 'uL'));
+    // Another tab (open at the same time, closed since) changed the level a minute ago, later than here: its change wins.
+    await plant('kaikou:unsent:u_test:later', 'A2', 60000);
+    await sendNext();
+    const b = await level();
+    // One more, changed half a minute ago: later than the one this page just sent again (which keeps its own time).
+    await plant('kaikou:unsent:u_test:newest', 'B1', 30000);
+    await sendNext();
+    const c = await level();
+    // A record changed something else a moment ago, but its level long ago: each field keeps its own time.
+    await plant('kaikou:unsent:u_test:mixed', 'A2', 10000, { inbox: { map: { uM: { id: 'uM', text: '剛剛記的句子', at: 5 } } } }, 1200000);
+    await sendNext();
+    const d = await level();
+    const noteM = await page.evaluate(() => window.__kaikouTest.normInbox(window.__store.get('data/users/u_test/inbox')).some(x => x.id === 'uM'));
+    check('同一個欄位以比較晚的變更為準（每個欄位比自己的時間）：別的頁面留下的變更晚一點才補存時，這裡在那之後改的設定不會被蓋回去；另一個同時開著的分頁改得比較晚，就用它的', () =>
+      eq([kept, a, note, b, c, d, noteM], [true, ['B2', 'B2'], true, ['A2', 'A2'], ['B1', 'B1'], ['B1', 'B1'], true]));
     await ctx.close();
   }
   if (want('4')) {
@@ -1713,6 +1769,35 @@ function serve(root) {
     await page.waitForTimeout(800);
     const r = await page.evaluate(() => { const t = document.querySelector('#set-about'); const h = JSON.parse(localStorage.getItem('kaikou:held') || '{}'); return { ro: t.readOnly, value: t.value, hint: /讀不到你的設定/.test(t.placeholder), held: !!((h.docs || {}).settings || {}).about, copy: localStorage.getItem('kaikou:settings') }; });
     check('設定讀不到時雲端又停止：這次「關於我」都不能改，不會把預設值當成你的設定存下來', () => eq(r, { ro: true, value: '', hint: true, held: false, copy: null }));
+    await ctx.close();
+  }
+  if (want('4')) {
+    // z2. The same, for a viewer whose link could not write: once 再試一次存到雲端 works, the settings are read from
+    //     the cloud and 關於我 can be changed again.
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'settings-lost-retry', { owner: false, readOnlyWrites: true, failReads: { settings: 2 } }, noFocusRefresh);
+    await page.fill('#inbox-input', '檢視者記的句子');
+    await page.click('#inbox-form .btn');
+    await until(page, () => window.__kaikouTest.Store.mode === 'local', null, 6000);
+    await page.evaluate(() => { window.__mockCfg.readOnlyWrites = false; });
+    await page.click('#btn-settings');
+    const before = await page.evaluate(() => document.querySelector('#set-about').readOnly);
+    await page.click('#set-cloud');
+    await until(page, () => window.__kaikouTest.Store.mode === 'db' && !window.__kaikouTest.S.uploading, null, 10000);
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => { const t = document.querySelector('#set-about'); return { ro: t.readOnly, value: t.value }; });
+    check('讀不到設定時雲端又停止、之後再試一次存到雲端成功：設定重新讀到，「關於我」又可以改', () => eq([before, r], [true, { ro: false, value: 'I live in Taipei and work in marketing.' }]));
+    await ctx.close();
+  }
+  if (want('4')) {
+    // z3. A page that is being hidden (a phone switching apps, which may freeze or close it at any moment): a change
+    //     whose first write fails then is kept as unsent at once, without the usual short wait.
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'unsent-hidden', { failWrites: { inbox: { n: 99, code: 'unavailable' } } }, noFocusRefresh);
+    await page.fill('#inbox-input', '切到別的 App 前記的句子');
+    await page.click('#inbox-form .btn');
+    await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
+    await page.waitForTimeout(250);
+    const kept = await page.evaluate(() => Object.keys(localStorage).some(k => k.startsWith('kaikou:unsent:u_test:') && /切到別的 App 前記的句子/.test(localStorage.getItem(k))));
+    check('頁面被切到背景時第一次寫入就失敗：馬上記成還沒存到雲端的變更（手機可能隨時把頁面凍結或關掉）', () => eq(kept, true));
     await ctx.close();
   }
   if (want('4')) {
