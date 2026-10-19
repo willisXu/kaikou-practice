@@ -1538,6 +1538,49 @@ function serve(root) {
     await ctx.close();
   }
   if (want('4')) {
+    // n5. The record of changes kept in this browser (kaikou:held). Another account's record is left alone. A change
+    //     saved to the cloud here replaces what is held for the same fields (with the marks of its items). Of a
+    //     snapshot taken before, only what is still held is sent. Once sent, it goes with its marks (a field changed
+    //     since stays). With nothing left, the record and this browser's copies go.
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'held-take');
+    const r = await page.evaluate(() => {
+      const X = window.__kaikouTest, K = 'kaikou:held', get = () => JSON.parse(localStorage.getItem(K) || 'null'), put = v => localStorage.setItem(K, JSON.stringify(v));
+      const m = 'log-2030-01', day = '2030-01-02';
+      const docs = () => ({ inbox: { map: { a: { id: 'a', text: '甲', at: 1 }, b: { id: 'b', text: '乙', at: 2 } } }, [m]: { days: { [day]: { items: { ai: true, listen: true } } } }, settings: { level: 'B2', about: 'x' } });
+      const out = {};
+      put({ uid: 'u_other', docs: docs(), fresh: { inbox: { a: 1 } }, drop: {} });
+      X.takeHeld(docs()); X.heldSuperseded('inbox', { map: { a: null } });
+      out.other = get();
+      put({ uid: X.Store.uid, docs: docs(), fresh: { inbox: { a: 1, b: 1 }, [m]: { [day + '|ai']: 1, [day + '|listen']: 1 } }, drop: {} });
+      X.heldSuperseded('inbox', { map: { a: { id: 'a', text: '甲', at: 1 } } }); // the same note saved to the cloud
+      X.heldSuperseded(m, { days: { [day]: { items: { ai: false } } } }); // unticked there
+      X.heldSuperseded('settings', { level: 'A2' });
+      X.heldSuperseded('phrases', { map: { z: null } }); // nothing held for it
+      out.superseded = get();
+      out.still = X.stillHeld(docs());
+      put({ uid: X.Store.uid, docs: docs(), fresh: { inbox: { a: 1, b: 1 } }, drop: { inbox: { z: 1 } } });
+      X.takeHeld(Object.assign(docs(), { settings: { level: 'A2', about: 'x' }, inbox: { map: { a: docs().inbox.map.a } } }));
+      out.taken = get();
+      X.takeHeld({ inbox: { map: { b: docs().inbox.map.b } }, settings: { level: 'B2' } });
+      out.gone = [get()];
+      put({ uid: X.Store.uid, docs: { inbox: { map: { b: docs().inbox.map.b } }, settings: { level: 'B2' } }, fresh: { inbox: { b: 1 } }, drop: {} });
+      localStorage.setItem('kaikou:inbox', JSON.stringify({ map: {} }));
+      X.heldSuperseded('inbox', { map: { b: null } }); // deleted there
+      X.heldSuperseded('settings', { level: 'A2' });
+      out.gone.push(get(), localStorage.getItem('kaikou:inbox'));
+      return out;
+    });
+    const m = 'log-2030-01', day = '2030-01-02', A = { id: 'a', text: '甲', at: 1 }, B = { id: 'b', text: '乙', at: 2 };
+    check('瀏覽器裡留著的變更：另一個帳號的不動；這裡存到雲端的同一個欄位取代留著的（連同項目的記號）；先前的快照只送還留著的；送出後拿掉送出的部分和記號，之後又改的欄位留著；什麼都不剩就清掉', () => {
+      eq(r.other, { uid: 'u_other', docs: { inbox: { map: { a: A, b: B } }, [m]: { days: { [day]: { items: { ai: true, listen: true } } } }, settings: { level: 'B2', about: 'x' } }, fresh: { inbox: { a: 1 } }, drop: {} });
+      eq(r.superseded, { uid: 'u_test', docs: { inbox: { map: { b: B } }, [m]: { days: { [day]: { items: { listen: true } } } }, settings: { about: 'x' } }, fresh: { inbox: { b: 1 }, [m]: { [day + '|listen']: 1 } }, drop: {} });
+      eq(r.still, { inbox: { map: { b: B } }, [m]: { days: { [day]: { items: { listen: true } } } }, settings: { about: 'x' } });
+      eq(r.taken, { uid: 'u_test', docs: { inbox: { map: { b: B } }, settings: { level: 'B2' } }, fresh: { inbox: { b: 1 } }, drop: { inbox: { z: 1 } } });
+      eq(r.gone, [null, null, null]);
+    });
+    await ctx.close();
+  }
+  if (want('4')) {
     // n2. Records left by other tabs of this browser: one whose tab is still open (it holds the lock named after its
     //     record) is left to that tab; the others are sent oldest first, so the later change wins. Once that tab is
     //     closed (its lock goes), its record is sent too.
@@ -1853,6 +1896,27 @@ function serve(root) {
     await ctx.close();
   }
   if (want('4')) {
+    // z5. 再試一次存到雲端 while another tab of this browser (still unable to save) keeps a new note: once the upload is
+    //     done, that note is offered (存到雲端); what was uploaded is not offered again.
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'retry-more', { owner: false, readOnlyWrites: true }, noFocusRefresh);
+    await page.fill('#inbox-input', '檢視者記的句子');
+    await page.click('#inbox-form .btn');
+    await until(page, () => window.__kaikouTest.Store.mode === 'local', null, 6000);
+    await until(page, () => /檢視者記的句子/.test(localStorage.getItem('kaikou:held') || ''), null, 4000);
+    await page.evaluate(() => { const c = window.__mockCfg; c.readOnlyWrites = false; c.readDelay = { inbox: 800 }; });
+    await page.click('#btn-settings');
+    await page.click('#set-cloud');
+    await page.waitForTimeout(250); // the cloud is being read
+    await page.evaluate(() => { const h = JSON.parse(localStorage.getItem('kaikou:held')); h.docs.inbox.map.other1 = { id: 'other1', text: '另一個分頁剛記的句子', at: Date.now() }; (h.fresh.inbox = h.fresh.inbox || {}).other1 = 1; localStorage.setItem('kaikou:held', JSON.stringify(h)); });
+    await until(page, () => /已改用雲端儲存/.test(document.querySelector('#toast').textContent), null, 10000);
+    await page.click('#set-done');
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => ({ offer: !!document.querySelector('[data-fk="held-up"]'), held: Object.values(((JSON.parse(localStorage.getItem('kaikou:held') || '{}').docs || {}).inbox || { map: {} }).map).map(x => x && x.text),
+      cloud: window.__kaikouTest.normInbox(window.__store.get('data/users/u_test/inbox')).map(x => x.text).filter(t => t === '檢視者記的句子' || t === '另一個分頁剛記的句子') }));
+    check('再試一次存到雲端時另一個分頁又記了一句：上傳完之後提醒裡出現那一句（可以存到雲端），已經上傳的不會再提', () => eq(r, { offer: true, held: ['另一個分頁剛記的句子'], cloud: ['檢視者記的句子'] }));
+    await ctx.close();
+  }
+  if (want('4')) {
     // z3. A page that is being hidden (a phone switching apps, which may freeze or close it at any moment): a change
     //     whose first write fails then is kept as unsent at once, without the usual short wait.
     const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'unsent-hidden', { failWrites: { inbox: { n: 99, code: 'unavailable' } } }, noFocusRefresh);
@@ -2045,9 +2109,9 @@ function serve(root) {
   }
   if (want('4')) {
     // y2. Two tabs of one browser: tab A cannot reach the cloud (its changes are held here), tab B can and offers to save
-    //     them. What A holds when 存到雲端 is pressed is saved (also what it noted after B opened); what A notes (or sets
-    //     again) while B's upload reads the cloud stays held, and B offers it again. A keeps showing all of it, also
-    //     once B is done and this browser's copies are gone.
+    //     them. What A holds when 存到雲端 is pressed is saved (also what it noted after B opened), except a field A sets
+    //     again while B's upload reads the cloud: that later value stays held, with what A notes meanwhile, and B offers
+    //     it again. A keeps showing all of it, also once B is done and this browser's copies are gone.
     const ctx = await browser.newContext({ viewport: { width: 1000, height: 800 } });
     await ctx.clock.install({ time: NOON });
     const A = await addPage(ctx, ARTIFACT, 'held-tabs-A', { noDb: true }, noFocusRefresh);
@@ -2075,12 +2139,83 @@ function serve(root) {
     await ff(A, 181000); // A reads this browser's storage again: its copy is gone
     await A.waitForTimeout(400);
     const shownA = await A.evaluate(() => window.__kaikouTest.S.inbox.map(x => x.text).filter(t => /A 分頁/.test(t)).sort());
-    check('另一個分頁連不上雲端還在記東西時按「存到雲端」：按下時記著的都上傳（包括頁面打開後才記的），上傳途中記的留著、再提醒一次；那個分頁的畫面不會變空', () => {
-      eq(first, { cloud: ['A 分頁記的第一句', 'A 分頁記的第二句'], level: 'B2', held: { notes: ['A 分頁記的第三句'], settings: { level: 'A2' } }, offer: true, toast: '已把這台裝置上的變更存到雲端。之後又留下了新的變更，可以再按一次存到雲端。' });
+    check('另一個分頁連不上雲端還在記東西時按「存到雲端」：按下時記著的都上傳（包括頁面打開後才記的；上傳途中又改的欄位只留後來的），上傳途中記的留著、再提醒一次；那個分頁的畫面不會變空', () => {
+      eq(first, { cloud: ['A 分頁記的第一句', 'A 分頁記的第二句'], level: 'B1', held: { notes: ['A 分頁記的第三句'], settings: { level: 'A2' } }, offer: true, toast: '已把這台裝置上的變更存到雲端。之後又留下了新的變更，可以再按一次存到雲端。' });
       const all = ['A 分頁記的第一句', 'A 分頁記的第二句', 'A 分頁記的第三句'].sort();
       eq(second, { cloud: all, level: 'A2', held: null, copy: null });
       eq(shownA, all);
     });
+    await ctx.close();
+  }
+  if (want('4')) {
+    // y3. Tab A cannot reach the cloud: it notes two sentences and ticks AI 對話 (held here). Tab B reaches the cloud and
+    //     presses 存到雲端; while B reads the cloud, A deletes the first sentence and unticks the item: those are not
+    //     uploaded (B sends what is still held, not what it had when pressed). The second sentence, saved there, is
+    //     deleted in A afterwards: that is kept as a deletion (for the next 存到雲端).
+    const ctx = await browser.newContext({ viewport: { width: 1000, height: 800 } });
+    await ctx.clock.install({ time: NOON });
+    const A = await addPage(ctx, ARTIFACT, 'held-race-A', { noDb: true }, noFocusRefresh);
+    const m = await A.evaluate(() => window.__mockToday.slice(0, 7));
+    const note = async t => { await A.fill('#inbox-input', t); await A.click('#inbox-form .btn'); await until(A, x => (localStorage.getItem('kaikou:held') || '').includes(x), t, 4000); };
+    await note('上傳時被刪掉的句子');
+    await note('上傳之後才刪掉的句子');
+    await A.click('[data-fk="ck-ai"]');
+    await until(A, () => /"ai":true/.test(localStorage.getItem('kaikou:held') || ''), null, 4000);
+    await settle(A);
+    const B = await addPage(ctx, ARTIFACT, 'held-race-B', { readDelay: { inbox: [20, 2500] } }, noFocusRefresh);
+    await seeWrites(B, () => /上傳之後才刪掉的句子/.test(localStorage.getItem('kaikou:held') || '') && /"ai":true/.test(localStorage.getItem('kaikou:held') || ''));
+    await until(B, () => !!document.querySelector('[data-fk="held-up"]'), null, 6000);
+    const del = async t => { const id = await A.evaluate(x => window.__kaikouTest.S.inbox.find(y => y.text === x).id, t); await pressTwice(A, '[data-fk="del-' + id + '"]'); return id; };
+    await B.click('[data-fk="held-up"]');
+    await B.waitForTimeout(200); // B reads the cloud (slowly) before it sends anything
+    await del('上傳時被刪掉的句子');
+    await A.click('[data-fk="ck-ai"]');
+    await until(B, () => !window.__kaikouTest.S.uploading, null, 10000);
+    await until(B, () => !window.__kaikouTest.Store.busyDoc('inbox'), null, 6000);
+    const a = await B.evaluate(m => { const X = window.__kaikouTest, d = (window.__store.get('data/users/u_test/log-' + m).days || {})[window.__mockToday] || { items: {} };
+      return { notes: X.normInbox(window.__store.get('data/users/u_test/inbox')).map(x => x.text).filter(t => /上傳/.test(t)), ai: !!d.items.ai, offer: !!document.querySelector('[data-fk="held-up"]') }; }, m);
+    const later = await del('上傳之後才刪掉的句子');
+    await until(A, x => { const h = JSON.parse(localStorage.getItem('kaikou:held') || 'null'); return !!h && (h.docs.inbox || { map: {} }).map[x] === null; }, later, 4000).catch(() => {});
+    const c = await A.evaluate(x => { const h = JSON.parse(localStorage.getItem('kaikou:held') || 'null'); return h && (h.docs.inbox || { map: {} }).map[x]; }, later);
+    check('上傳途中另一個分頁刪掉或取消打勾的不會上傳；已經上傳的句子之後再刪，記成刪除', () => eq([a, c], [{ notes: ['上傳之後才刪掉的句子'], ai: false, offer: false }, null]));
+    await ctx.close();
+  }
+  if (want('4')) {
+    // y4. 不要了 drops what the notice showed: what another tab (still unable to reach the cloud) held after the notice
+    //     was drawn stays, and is offered.
+    const ctx = await browser.newContext({ viewport: { width: 1000, height: 800 } });
+    await ctx.clock.install({ time: NOON });
+    const A = await addPage(ctx, ARTIFACT, 'held-drop-A', { noDb: true }, noFocusRefresh);
+    const note = async t => { await A.fill('#inbox-input', t); await A.click('#inbox-form .btn'); await until(A, x => (localStorage.getItem('kaikou:held') || '').includes(x), t, 4000); };
+    await note('提醒裡要捨棄的句子');
+    await settle(A);
+    const B = await addPage(ctx, ARTIFACT, 'held-drop-B', null, noFocusRefresh);
+    await seeWrites(B, () => /提醒裡要捨棄的句子/.test(localStorage.getItem('kaikou:held') || ''));
+    await until(B, () => !!document.querySelector('[data-fk="held-drop"]'), null, 6000);
+    await note('提醒之後才記的句子');
+    await until(B, () => /提醒之後才記的句子/.test(localStorage.getItem('kaikou:held') || ''), null, 4000);
+    await pressTwice(B, '[data-fk="held-drop"]');
+    await B.waitForTimeout(200);
+    const r = await B.evaluate(() => ({ held: Object.values(((JSON.parse(localStorage.getItem('kaikou:held') || '{}').docs || {}).inbox || { map: {} }).map).map(x => x && x.text), offer: !!document.querySelector('[data-fk="held-up"]') }));
+    check('「不要了」只捨棄提醒裡的變更：另一個分頁之後才留下的照樣留著，提醒也還在', () => eq(r, { held: ['提醒之後才記的句子'], offer: true }));
+    await ctx.close();
+  }
+  if (want('4')) {
+    // y5. 存到雲端 while this browser cannot keep the record of changes on their way (its storage is full) and the cloud
+    //     does not take them yet: the changes stay held here and offered (a page closed now would lose them otherwise).
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'held-nokeep', { noDb: true }, noFocusRefresh);
+    await page.fill('#inbox-input', '存不進紀錄時的句子');
+    await page.click('#inbox-form .btn');
+    await until(page, () => /存不進紀錄時的句子/.test(localStorage.getItem('kaikou:held') || ''), null, 4000);
+    await page.addInitScript(() => { window.__mockCfg = Object.assign(window.__mockCfg || {}, { noDb: false, failWrites: { inbox: { n: 99, code: 'unavailable' } } }); });
+    await reloadAfterWrites(page);
+    await until(page, () => !!document.querySelector('[data-fk="held-up"]'), null, 6000);
+    await page.evaluate(() => { const real = Storage.prototype.setItem; Storage.prototype.setItem = function (k, v) { if (String(k).startsWith('kaikou:unsent:')) { const e = new Error('full'); e.name = 'QuotaExceededError'; throw e; } return real.call(this, k, v); }; });
+    await page.click('[data-fk="held-up"]');
+    await until(page, () => window.__dbCalls.some(c => c.name === 'inbox' && c.code === 'unavailable'), null, 6000); // queued, and refused for now
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => ({ waiting: window.__kaikouTest.S.uploading, held: /存不進紀錄時的句子/.test(localStorage.getItem('kaikou:held') || '') }));
+    check('存到雲端時這個瀏覽器記不住送出中的變更、雲端又還沒收下：變更照樣留在這裡（頁面這時關掉也不會不見）', () => eq(r, { waiting: true, held: true }));
     await ctx.close();
   }
   if (want('4')) {
@@ -2164,15 +2299,108 @@ function serve(root) {
   }
   if (want('4')) {
     // f2. A visit that cannot reach the cloud and finds no copy of the settings in this browser does not know them:
-    //     關於我 stays closed, and a day created now gets the stand-in plan.
-    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'offline-no-settings', { noDb: true }, noFocusRefresh);
-    await page.click('[data-fk="ck-shadow"]');
+    //     關於我 stays closed, and a day created now gets the stand-in plan. Changing the coach level there does not make
+    //     the next such visit take the defaults for the learner's settings (關於我 stays closed then too). The visit
+    //     after that reaches the cloud (the learner's plan is 60 minutes) and saves the changes: the day gets that plan.
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'offline-no-settings', { noDb: true, persist: true, noToday: true, settings: { plan: '60' } }, noFocusRefresh);
     const m = await page.evaluate(() => window.__mockToday.slice(0, 7));
+    await page.click('[data-fk="ck-shadow"]');
+    await page.click('[data-fk="ck-ai"]');
     await until(page, n => !window.__kaikouTest.Store.busyDoc(n), 'log-' + m, 6000);
     const plans = await page.evaluate(n => (JSON.parse(localStorage.getItem('kaikou:held') || '{}').docs[n].days[window.__mockToday] || {}).plans, 'log-' + m);
     await page.click('#btn-settings');
-    const box = await page.evaluate(() => { const t = document.querySelector('#set-about'); return { ro: t.readOnly, hint: /讀不到你的設定/.test(t.placeholder) }; });
-    check('連不上雲端、瀏覽器裡也沒有設定的副本：這次當作讀不到設定，「關於我」先不能改，新的一天先用替代的計畫', () => eq([box, plans], [{ ro: true, hint: true }, { '-1': '20' }]));
+    const aboutBox = () => page.evaluate(() => { const t = document.querySelector('#set-about'); return { ro: t.readOnly, hint: /讀不到你的設定/.test(t.placeholder) }; });
+    const box = await aboutBox();
+    await page.click('[data-fk="slvl-B2"]');
+    await page.click('#set-done');
+    await until(page, () => !window.__kaikouTest.Store.busyDoc('settings'), null, 4000);
+    await reloadAfterWrites(page); // the next visit cannot reach the cloud either
+    await page.click('#btn-settings');
+    const box2 = await aboutBox();
+    const level2 = await page.evaluate(() => window.__kaikouTest.S.settings.level);
+    await page.click('#set-done');
+    await page.addInitScript(() => { window.__mockCfg = Object.assign(window.__mockCfg || {}, { noDb: false }); });
+    await reloadAfterWrites(page); // this one reaches the cloud
+    await until(page, () => !!document.querySelector('[data-fk="held-up"]'), null, 6000);
+    await page.click('[data-fk="held-up"]');
+    await until(page, n => !window.__kaikouTest.S.uploading && !window.__kaikouTest.Store.busyDoc(n), 'log-' + m, 10000);
+    const up = await page.evaluate(n => { const X = window.__kaikouTest, d = X.S.logs[n.slice(4)].days[window.__mockToday]; return { cloud: window.__store.get('data/users/u_test/' + n).days[window.__mockToday].plans, plan: d.plan, status: X.status(d), about: window.__store.get('data/users/u_test/settings').about }; }, 'log-' + m);
+    check('連不上雲端、瀏覽器裡也沒有設定的副本：這次當作讀不到設定，「關於我」先不能改，新的一天先用替代的計畫；在那裡改了教練程度，下次連不上時也一樣；之後存到雲端時那天換成你的計畫', () => {
+      eq([box, plans], [{ ro: true, hint: true }, { '-1': '20' }]);
+      eq([box2, level2], [{ ro: true, hint: true }, 'B2']);
+      eq(up, { cloud: { '-1': '20', 0: '60' }, plan: '60', status: 1, about: 'I live in Taipei and work in marketing.' });
+    });
+    await ctx.close();
+  }
+  if (want('4')) {
+    // f3. Changes kept from a visit that could not reach the cloud, not saved there yet, then a visit that reaches it and
+    //     stops (access withdrawn): this browser's copies keep those changes, so the next visit that cannot reach the
+    //     cloud still shows them (they are saved with 存到雲端 later).
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'held-copies', { noDb: true, persist: true }, noFocusRefresh);
+    const m = await page.evaluate(() => window.__mockToday.slice(0, 7));
+    await page.fill('#inbox-input', '連不上雲端時記的句子');
+    await page.click('#inbox-form .btn');
+    await page.click('[data-fk="ck-ai"]');
+    await until(page, n => !window.__kaikouTest.Store.busyDoc('inbox') && !window.__kaikouTest.Store.busyDoc(n), 'log-' + m, 4000);
+    await page.addInitScript(() => { window.__mockCfg = Object.assign(window.__mockCfg || {}, { noDb: false, failWrites: { shadow: { n: 1, code: 'revoked' } } }); });
+    await reloadAfterWrites(page); // reaches the cloud, offers 存到雲端; then a write is refused
+    await until(page, () => !!document.querySelector('[data-fk="held-up"]'), null, 6000);
+    await page.evaluate(() => window.__kaikouTest.Store.patch('shadow', { cur: '', map: {} }, { cur: '' }));
+    await until(page, () => window.__kaikouTest.Store.mode === 'local', null, 6000);
+    await page.addInitScript(() => { window.__mockCfg = Object.assign(window.__mockCfg || {}, { noDb: true, failWrites: {} }); });
+    await reloadAfterWrites(page); // cannot reach the cloud again
+    const r = await page.evaluate(m => { const X = window.__kaikouTest, d = X.S.logs[m] && X.S.logs[m].days[window.__mockToday]; return { note: X.S.inbox.some(x => x.text === '連不上雲端時記的句子'), ai: !!(d && d.items.ai), held: /連不上雲端時記的句子/.test(localStorage.getItem('kaikou:held') || '') }; }, m);
+    check('連不上雲端時留下、還沒存到雲端的變更：之後一次連上又停止的造訪不會把它們從瀏覽器的副本裡拿掉，下次連不上時照樣顯示', () => eq(r, { note: true, ai: true, held: true }));
+    await ctx.close();
+  }
+  if (want('4')) {
+    // g2. Kept on a visit that could not reach the cloud: two ticks and the coach level (B2). On the next visit, which
+    //     reaches it, the learner ticks one of those items and takes it back, then presses 存到雲端 and, while the
+    //     cloud is read, sets the level to A2: those later choices stay (the upload does not bring the earlier tick or
+    //     level back); the other tick is uploaded.
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'held-later', { noDb: true, persist: true }, noFocusRefresh);
+    const m = await page.evaluate(() => window.__mockToday.slice(0, 7));
+    const level = async l => { await page.click('#btn-settings'); await page.click('[data-fk="slvl-' + l + '"]'); await page.click('#set-done'); };
+    const idle = () => until(page, n => !window.__kaikouTest.Store.busyDoc(n) && !window.__kaikouTest.Store.busyDoc('settings'), 'log-' + m, 6000);
+    await page.click('[data-fk="ck-ai"]');
+    await page.click('[data-fk="ck-listen"]');
+    await level('B2');
+    await idle();
+    await page.addInitScript(() => { window.__mockCfg = Object.assign(window.__mockCfg || {}, { noDb: false }); });
+    await reloadAfterWrites(page); // this visit reaches the cloud
+    await until(page, () => !!document.querySelector('[data-fk="held-up"]'), null, 6000);
+    await page.click('[data-fk="ck-ai"]');
+    await page.waitForTimeout(700);
+    await page.click('[data-fk="ck-ai"]');
+    await idle();
+    await page.evaluate(() => { window.__mockCfg.readDelay = { settings: 1500 }; });
+    await page.click('[data-fk="held-up"]');
+    await page.waitForTimeout(300); // the cloud is being read
+    await level('A2');
+    await until(page, () => !window.__kaikouTest.S.uploading, null, 15000);
+    await idle();
+    const r = await page.evaluate(m => { const d = window.__store.get('data/users/u_test/log-' + m).days[window.__mockToday]; return { level: window.__store.get('data/users/u_test/settings').level, shown: window.__kaikouTest.S.settings.level, ai: !!d.items.ai, listen: !!d.items.listen, held: localStorage.getItem('kaikou:held') }; }, m);
+    check('連不上雲端時留下的打勾和教練程度，下次連上雲端後又改了同一項（打勾又取消、上傳途中改程度）：存到雲端不會把之前的改回來，其他的照樣上傳', () => eq(r, { level: 'A2', shown: 'A2', ai: false, listen: true, held: null }));
+    await ctx.close();
+  }
+  if (want('4')) {
+    // g3. The coach level set to B2 on a visit that could not reach the cloud (kept for it), then to A2 on a visit that
+    //     reaches it and then stops (access withdrawn): this browser's copy has A2, the later choice, and so does the
+    //     next visit that cannot reach the cloud.
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'held-later-copy', { noDb: true, persist: true }, noFocusRefresh);
+    const level = async l => { await page.click('#btn-settings'); await page.click('[data-fk="slvl-' + l + '"]'); await page.click('#set-done'); await until(page, () => !window.__kaikouTest.Store.busyDoc('settings'), null, 6000); };
+    await level('B2');
+    await page.addInitScript(() => { window.__mockCfg = Object.assign(window.__mockCfg || {}, { noDb: false, failWrites: { shadow: { n: 1, code: 'revoked' } } }); });
+    await reloadAfterWrites(page);
+    await until(page, () => !!document.querySelector('[data-fk="held-up"]'), null, 6000);
+    await level('A2');
+    await page.evaluate(() => window.__kaikouTest.Store.patch('shadow', { cur: '', map: {} }, { cur: '' }));
+    await until(page, () => window.__kaikouTest.Store.mode === 'local', null, 6000);
+    const copy = await page.evaluate(() => JSON.parse(localStorage.getItem('kaikou:settings') || '{}').level);
+    await page.addInitScript(() => { window.__mockCfg = Object.assign(window.__mockCfg || {}, { noDb: true, failWrites: {} }); });
+    await reloadAfterWrites(page);
+    const next = await page.evaluate(() => window.__kaikouTest.S.settings.level);
+    check('連不上雲端時改的教練程度、連上雲端後又改了一次，之後雲端停止：瀏覽器裡的副本是後來改的，下次連不上時也一樣', () => eq([copy, next], ['A2', 'A2']));
     await ctx.close();
   }
   if (want('4')) {
@@ -2212,6 +2440,60 @@ function serve(root) {
     await discard();
     const ended = await page.evaluate(() => { const c = window.__store.get('data/users/u_test/chat'); return [c.active, c.endedId]; });
     check('別台裝置已經開了新的對話，這裡放棄舊的對話：不會把新的那個結束掉；放棄的是雲端上的那個對話時，照樣標記結束', () => eq([kept, ended], [[true, 'Y-on-phone'], [false, mine]]));
+    await ctx.close();
+  }
+  if (want('4')) {
+    // h3. The chat is discarded while it cannot be read (so its end cannot be written then): the next read that finds it
+    //     as it was writes the end, and it does not come back on a later visit. One continued on another device after
+    //     this page read it is left as it is: when discarded, and when found by that later read.
+    const { ctx, page } = await open(ARTIFACT + '#coach', { viewport: { width: 1000, height: 800 } }, 'discard-unread', { persist: true }, noFocusRefresh);
+    await until(page, () => !!document.querySelector('[data-fk="discard"]'), null, 6000);
+    const stored = () => page.evaluate(() => { const c = window.__store.get('data/users/u_test/chat'); return [c.active !== false, c.active === false ? c.endedId : c.id]; });
+    const failed = () => page.evaluate(() => window.__dbCalls.filter(c => c.op === 'get' && c.name === 'chat' && c.code).length);
+    // While reads fail, the discard waits for its read and the one retry of it to have failed.
+    const discard = async unread => {
+      const n = await failed();
+      await pressTwice(page, '[data-fk="discard"]');
+      if (unread) await until(page, x => window.__dbCalls.filter(c => c.op === 'get' && c.name === 'chat' && c.code).length >= x + 2, n, 6000);
+      await page.waitForTimeout(400);
+      await until(page, () => !window.__kaikouTest.Store.busyDoc('chat'), null, 6000);
+    };
+    const reads = n => page.evaluate(x => { window.__mockCfg.failReads.chat = x; }, n);
+    const continued = () => page.evaluate(() => { const c = JSON.parse(JSON.stringify(window.__store.get('data/users/u_test/chat'))); const now = Date.now() + 1000; c.turns.push({ r: 'm', t: 'I kept talking on my phone.', at: now }); c.updatedAt = now; c.lastAt = now; c.meCount = (c.meCount || 0) + 1; window.__store.set('data/users/u_test/chat', c); });
+    const start = async () => { await page.click('#start-btn'); await notBusy(page); await until(page, () => !!window.__kaikouTest.S.chat && !window.__kaikouTest.Store.busyDoc('chat'), null, 6000); return page.evaluate(() => window.__kaikouTest.S.chat.id); };
+    const id1 = await page.evaluate(() => window.__kaikouTest.S.chat.id);
+    await reads(99);
+    await discard(true);
+    const a = await stored();
+    await ff(page, 181000); // read again while it still cannot be read
+    await page.waitForTimeout(500);
+    const b = await stored();
+    await reads(0);
+    await ff(page, 181000);
+    await until(page, () => window.__store.get('data/users/u_test/chat').active === false, null, 6000).catch(() => {});
+    const c = await stored();
+    await page.reload();
+    await until(page, () => window.__kaikouTest.S.ready && window.__kaikouTest.S.started, null, 10000);
+    const back = await page.evaluate(() => !!window.__kaikouTest.S.chat);
+    // Continued on the phone after this page read it, then discarded here.
+    const id2 = await start();
+    await continued();
+    await discard(false);
+    const d = await stored();
+    // The same, discarded while it cannot be read: the read that finds it later leaves it as it is.
+    const id3 = await start();
+    await reads(99);
+    await discard(true);
+    await continued();
+    await reads(0);
+    await ff(page, 181000);
+    await page.waitForTimeout(800);
+    const e = await stored();
+    const pending = await page.evaluate(() => window.__kaikouTest.S.endPending);
+    check('讀不到對話時放棄它：之後讀到它還是原樣就標記結束，重新打開不會又出現；這裡讀過之後別台裝置接著聊過的，放棄時或之後讀到時都不動它', () => {
+      eq([a, b, c, back], [[true, id1], [true, id1], [false, id1], false]);
+      eq([d, e, pending], [[true, id2], [true, id3], null]);
+    });
     await ctx.close();
   }
   if (want('4')) {
@@ -2581,6 +2863,28 @@ function serve(root) {
       eq([dropped, done1], [{ same: true, value: '我們ㄊㄨㄢˊ' }, '我們團']);
       eq([waited, done2], [{ same: true, value: '我們團ㄊㄨㄢˊ' }, { custom: '我們團隊', loading: false }]);
     });
+
+    // 跟讀: the coach's passage arrives while the learner composes a word in the box for their own transcript: the box
+    // is not drawn again mid-word, and the passage opens once the word is done.
+    await page.click('[data-fk="tool-back"]');
+    await page.click('[data-fk="go-shadow"]');
+    await T(() => { window.__mockCfg.jsonDelay = 1500; });
+    const before = await T(() => window.__kaikouTest.S.shadow.list.length);
+    await page.click('[data-fk="sh-gen"]');
+    await page.click('#sh-own');
+    await cdp.send('Input.insertText', { text: 'We ' });
+    await cdp.send('Input.imeSetComposition', { text: 'ㄨ', selectionStart: 1, selectionEnd: 1 });
+    await T(() => { document.querySelector('#sh-own').__mine = true; });
+    await page.waitForTimeout(1800); // the passage arrives while the word is composed
+    const midWord = await T(n => { const t = document.querySelector('#sh-own'); return { same: !!(t && t.__mine), value: t && t.value, open: !!window.__kaikouTest.S.sh, added: window.__kaikouTest.S.shadow.list.length - n }; }, before);
+    await cdp.send('Input.insertText', { text: '我' });
+    await page.waitForTimeout(300);
+    const opened = await T(() => ({ open: !!window.__kaikouTest.S.sh && window.__kaikouTest.S.sh.id === window.__kaikouTest.S.shadow.cur && !!document.querySelector('[data-fk="sh-play"]'), own: window.__kaikouTest.S.shGen.own }));
+    await T(() => { window.__mockCfg.jsonDelay = 30; });
+    check('跟讀短文在用輸入法選字時才寫好：輸入框不會被換掉，字選好之後才打開短文', () => {
+      eq(midWord, { same: true, value: 'We ㄨ', open: false, added: 1 });
+      eq(opened, { open: true, own: 'We 我' });
+    });
     await ctx.close();
   }
 
@@ -2919,6 +3223,39 @@ function serve(root) {
     await ctx.close();
   }
 
+  if (want('6')) {
+    // A double click on a tick box, on 唸一次 and on 跟讀's 播放 acts once (it does not undo itself).
+    const { ctx, page } = await open(base + '#today', { viewport: { width: 1000, height: 800 }, serviceWorkers: 'block' }, 'double-taps', null, speech);
+    const T = (f, a) => page.evaluate(f, a);
+    await page.dblclick('[data-fk="ck-ai"]');
+    await page.waitForTimeout(200);
+    const ticked = await T(() => document.querySelector('[data-fk="ck-ai"]').getAttribute('aria-checked'));
+    await page.click('#t-saved');
+    const key = await T(() => 'st:' + window.__kaikouTest.phraseId('Sorry, could you say that again?'));
+    await T(() => window.__srScript.push({ text: 'sorry could you say that again', wait: 300, hold: 1200 }));
+    await page.dblclick('[data-say-btn="' + key + '"]');
+    await page.waitForTimeout(150);
+    const listening = await T(() => ({ mic: !!window.__kaikouTest.Mic.cur, starts: window.__srStarts.length }));
+    await until(page, () => !window.__kaikouTest.Mic.cur, null, 5000);
+    await page.waitForTimeout(150);
+    const said = await T(k => document.querySelector('[data-say="' + k + '"]').textContent, key);
+    await page.click('#t-today');
+    await page.click('[data-fk="go-shadow"]');
+    await page.fill('#sh-own', 'We went to the beach early in the morning and stayed there until the sun went down. It was a long and happy day for all of us. We want to go back next summer with our friends.');
+    await page.click('[data-fk="sh-own-go"]');
+    const from = await T(() => window.__speechLog.length);
+    await page.dblclick('[data-fk="sh-play"]');
+    await page.waitForTimeout(150);
+    const play = await T(n => ({ playing: !!window.__kaikouTest.S.sh.playing, log: window.__speechLog.slice(n) }), from);
+    check('勾選框、唸一次、跟讀的播放連點兩下只算一下：打勾不會又取消，唸一次照樣在聽、聽完就比對，播放不會馬上停', () => {
+      eq(ticked, 'true');
+      eq(listening, { mic: true, starts: 1 });
+      assert.ok(/每個字都聽出來了/.test(said), said);
+      eq(play.playing, true);
+      assert.ok(play.log.length >= 1 && /^say:/.test(play.log[0]) && !play.log.includes('cut'), play.log.join(' | '));
+    });
+    await ctx.close();
+  }
   if (want('6')) {
     // 4/3/2 with recording on a computer: 暫停 and 繼續 clicked twice by mistake still pause and go on (once each); a
     // recording that is playing keeps playing when the page redraws in the background (a refresh when the window gets
@@ -3283,7 +3620,9 @@ function serve(root) {
       const sent = [];
       await page.route('https://api.anthropic.com/v1/messages', route => {
         const msgs = (JSON.parse(route.request().postData() || '{}').messages) || [];
-        if (msgs.length > 1) sent.push(String((msgs[msgs.length - 1] || {}).content || ''));
+        const last = String((msgs[msgs.length - 1] || {}).content || '');
+        if (/^An English learner/.test(last)) return sseReply(route, '[{"en": "Sounds great to me", "zh": "聽起來很棒"}, {"en": "I had a lovely time", "zh": "我玩得很開心"}]');
+        if (msgs.length > 1) sent.push(last);
         return sseReply(route, msgs.length > 1 ? 'Great! Tell me more.\n###\n{"none": true}' : 'Hi! What did you do last weekend?\n###\n{"none": true}');
       });
       await page.evaluate(x => window.__srScript.push(...x), steps);
@@ -3309,11 +3648,34 @@ function serve(root) {
     await b.page.waitForTimeout(600);
     const tap = await b.page.evaluate(() => ({ phase: window.__kaikouTest.Voice.phase, mic: !!window.__kaikouTest.Mic.cur }));
     await b.ctx.close();
+    // A hint tapped during the countdown pauses first: what was said is not sent while the tap only asks whether to
+    // replace it; a second tap replaces it.
+    const c = await voicePage('voice-hint', []);
+    await c.page.click('#start-voice');
+    await until(c.page, () => /一直沒有聽到聲音/.test(document.querySelector('#voice-bar').textContent), null, 15000);
+    await c.page.click('#hint-btn');
+    await until(c.page, () => document.querySelectorAll('#hints .hint').length === 2, null, 8000);
+    await c.page.evaluate(() => window.__srScript.push({ text: 'I stayed at home all day' }));
+    await c.page.click('[data-fk="vb-go"]');
+    await until(c.page, () => window.__kaikouTest.Voice.phase === 'countdown', null, 8000);
+    await c.page.click('[data-fk="hint-0"]');
+    const asked = await c.page.evaluate(() => ({ phase: window.__kaikouTest.Voice.phase, box: document.querySelector('#msg-input').value, toast: document.querySelector('#toast').textContent }));
+    await c.page.waitForTimeout(3200); // longer than the countdown
+    const later = await c.page.evaluate(() => ({ phase: window.__kaikouTest.Voice.phase, box: document.querySelector('#msg-input').value }));
+    await c.page.click('[data-fk="hint-0"]');
+    const replaced = await c.page.evaluate(() => document.querySelector('#msg-input').value);
+    const hintSent = c.sent.slice();
+    await c.ctx.close();
     check('語音對話：倒數時一個雜音被猜成字又撤回，那句照樣送出（不會當成沒聲音而暫停）；教練說話時按下「換我說」、麥克風剛打開才放開，不會被當成「說完了」', () => {
       eq(a.sent.length === 1 && /^We went to the beach/.test(a.sent[0]), true);
       assert.ok(!phases.some(p => /一直沒有聽到聲音/.test(p)), phases.join(' → '));
       eq(label, '換我說');
       eq(tap, { phase: 'listening', mic: true });
+    });
+    check('語音對話：倒數時點提示會先暫停，說的那句不會自己送出；隔一下再點才換成提示', () => {
+      eq([asked.phase, asked.box], ['paused', 'I stayed at home all day']);
+      assert.ok(/再點一次/.test(asked.toast), asked.toast);
+      eq([later, replaced, hintSent], [{ phase: 'paused', box: 'I stayed at home all day' }, 'Sounds great to me', []]);
     });
   }
 

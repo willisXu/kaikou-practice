@@ -778,7 +778,7 @@ const S = {
   settings: Object.assign({}, DEFAULTS),
   logs: {}, loaded: new Set(), editedDays: new Set(), editedMonthRec: new Set(), planWait: {}, planBlind: new Set(),
   sessions: {}, sessLoaded: new Set(), loadErrors: new Set(), readOnce: new Set(),
-  phrases: [], inbox: [], chat: null, review: null, endedChats: new Set(), openSess: new Set(),
+  phrases: [], inbox: [], chat: null, review: null, endedChats: new Set(), endPending: null, openSess: new Set(),
   setup: { mode: 'free', topic: 'weekend', scene: 'smalltalk', custom: '' },
   sample: null, sampleState: 'loading',
   busy: false, ctl: null, askStartedAt: 0, reviewing: false, reviewStart: 0,
@@ -832,6 +832,9 @@ const Store = {
   mode: 'loading', db: null, uid: null, isOwner: false, why: '', unsentKey: '', unsentTimer: 0, unsentOk: true,
   pend: {}, timers: {}, chain: {}, failed: {}, edits: {}, inflight: {}, sending: {}, retries: {}, hooks: {}, heldAtStop: {},
   carry: {}, known: {}, dels: {},
+  // True while uploadPatches queues edits this browser held or another page left (they do not replace held edits:
+  // see heldSuperseded).
+  fromHeld: false,
   async init() {
     const c = window.claude;
     if (c && typeof c.use === 'function') {
@@ -884,13 +887,16 @@ const Store = {
     S.loadErrors.clear();
     if (!quiet) toast(why === 'no_write' ? '這個連結不能把進度存到雲端，改存在這個瀏覽器。' : '雲端同步已停止，之後的變更只存在這個瀏覽器。');
     // This browser keeps a working copy of each document for the rest of the visit, as this page has it: the cloud's
-    // version as last read (also when a later read failed), with this visit's changes. It replaces any copy left here
-    // before, which may still list what has been deleted since. A document never read on this visit is not written
-    // as it is shown (defaults, or only this visit's edits): a later read here would take it for the real one (until a
-    // copy of it turns up, the page keeps showing what it has: see reloadDocs).
+    // version as last read (also when a later read failed), with this visit's changes, and with the changes this browser
+    // still holds for the cloud (from earlier visits, or another tab). It replaces any copy left here before, which may
+    // still list what has been deleted since. A document never read on this visit is not written as it is shown
+    // (defaults, or only this visit's edits): a later read here would take it for the real one (until a copy of it turns
+    // up, the page keeps showing what it has: see reloadDocs).
+    const held = heldRecord();
     for (const [n, full] of Object.entries(allDocs())) {
       if (n === 'settings' ? !S.settingsRead : !S.readOnce.has(n)) continue;
-      lsSet('kaikou:' + n, JSON.stringify(full));
+      const h = held && held.docs[n];
+      lsSet('kaikou:' + n, JSON.stringify(h ? deepMerge(full, h) : full));
     }
     renderToday();
   },
@@ -928,6 +934,7 @@ const Store = {
       else {
         this.known[name] = stampTimes(this.known[name], patch, Date.now());
         if (patch.map && typeof patch.map === 'object') for (const [id, v] of Object.entries(patch.map)) if (v === null) del.add(id);
+        if (!this.fromHeld) heldSuperseded(name, patch);
       }
     }
     delete lastSeen[name]; // a later read that matches the one before this edit is news again (another device undid it)
@@ -1040,10 +1047,13 @@ const Store = {
     const full = clone(p.full);
     if (this.mode === 'local') {
       // Another tab may have written since this one loaded, so a patch is merged into what is stored now.
-      let doc = full;
+      let doc = full, base = null;
       if (p.patch && p.patch !== 'replace') {
-        try { const cur = JSON.parse(localStorage.getItem('kaikou:' + name) || 'null'); if (cur && typeof cur === 'object' && !Array.isArray(cur)) doc = deepMerge(cur, p.patch); } catch (_) { doc = full; }
+        try { const cur = JSON.parse(localStorage.getItem('kaikou:' + name) || 'null'); if (cur && typeof cur === 'object' && !Array.isArray(cur)) { base = cur; doc = deepMerge(cur, p.patch); } } catch (_) { doc = full; }
       }
+      // In Claude, settings this visit does not know (no copy of them here, or only such a copy) are the defaults with
+      // this visit's changes: the copy says so, so a later visit does not take them for the learner's (see applyDoc).
+      if (name === 'settings' && this.why && !S.settingsRead && (!base || base._part)) doc = Object.assign({}, doc, { _part: true });
       try { localStorage.setItem('kaikou:' + name, JSON.stringify(doc)); }
       catch (_) { throw { code: 'quota_exceeded', message: 'browser storage full' }; } // kept queued, sent again after a deletion
       return;
@@ -1151,14 +1161,15 @@ function minutesOf(rec) {
 // is known adds the learner's default (and this page adds it as soon as it reads the settings: see planKnown).
 const BLIND_W = '-1';
 const standIn = rec => { const ws = Object.keys(rec.plans || {}); return !rec.lp && ws.length > 0 && ws.every(w => Number(w) < 0); };
-function patchDay(k, rec, created, part) {
+// onlyPlan: write the day only if it gets the learner's default plan here.
+function patchDay(k, rec, created, part, onlyPlan) {
   const day = Object.assign({}, part);
   const m = k.slice(0, 7);
   if (created) day.plans = Object.assign({}, rec.plans, part.plans || {});
   else if (S.settingsRead && monthRead(m) && standIn(rec)) {
     rec.plans['0'] = S.settings.plan; rec.plan = resolvePlan(rec.plans, rec.lp);
     day.plans = Object.assign({ 0: S.settings.plan }, part.plans || {});
-  }
+  } else if (onlyPlan) return;
   S.editedDays.add(k);
   Store.patch('log-' + m, logDoc(m), { days: { [k]: day } });
 }
@@ -2879,26 +2890,75 @@ function localDocNames() {
   return names;
 }
 function forgetLocalDocs(names) { for (const n of names) lsDel('kaikou:' + n); lsDel('kaikou:held'); }
+const leafAt = (o, path) => path.reduce((x, k) => (x && typeof x === 'object' ? x[k] : undefined), o);
+// Whether a fresh marker's item (an id; 'day|item' or 'month' in a month) is set in patch p.
+const heldKey = (n, k, p) => !!p && (n.startsWith('log-') ? (k === 'month' ? 'monthRecord' in p : leafAt(p, ['days', k.split('|')[0], 'items', k.split('|')[1]]) !== undefined) : !!(p.map && typeof p.map === 'object' && k in p.map));
+function heldParse() {
+  let cur = null;
+  try { cur = JSON.parse(lsGet('kaikou:held') || 'null'); } catch (_) { cur = null; }
+  return cur && typeof cur.uid === 'string' && cur.docs && typeof cur.docs === 'object' && !Array.isArray(cur.docs) ? cur : null;
+}
+// A change this tab saves to the cloud is later than what this browser holds for the same field from a time the cloud
+// could not be used (held before the change): that edit must not come back with a later 存到雲端, nor show in this
+// browser's copies, so it goes, together with the mark that its item was only added here (the item is in the cloud
+// now). An edit held after the change (by another tab still unable to use the cloud) stays: it is the later one.
+function heldSuperseded(name, patch) {
+  const cur = heldParse();
+  if (!cur || (cur.uid !== Store.uid && cur.uid !== '*')) return;
+  const p = cur.docs[name];
+  // Whether the patch sets this field, a field holding it (also as a deletion), or something inside it.
+  const covered = path => {
+    let x = patch;
+    for (const k of path) {
+      if (!x || typeof x !== 'object' || Array.isArray(x)) return true;
+      if (!(k in x)) return false;
+      x = x[k];
+    }
+    let any = !x || typeof x !== 'object' || Array.isArray(x);
+    if (!any) leaves(x, () => { any = true; });
+    return any;
+  };
+  let changed = false;
+  const left = {};
+  if (p && typeof p === 'object') leaves(p, (path, v) => { if (covered(path)) changed = true; else setLeaf(left, path, v); });
+  const f = cur.fresh && typeof cur.fresh === 'object' ? cur.fresh[name] : null;
+  if (f && typeof f === 'object') for (const k of Object.keys(f)) if (heldKey(name, k, patch)) { delete f[k]; changed = true; }
+  if (!changed) return;
+  const docs = Object.assign({}, cur.docs);
+  if (hasChange(left)) docs[name] = left; else delete docs[name];
+  if (Object.keys(docs).some(n => DOC_NAME_RE.test(n) && hasChange(docs[n]))) lsSet('kaikou:held', JSON.stringify(Object.assign({}, cur, { docs })));
+  else forgetLocalDocs(localDocNames()); // nothing left to save: the record and this browser's copies go
+  if (S.held) S.held = heldInfo();
+}
+// The part of a snapshot of the held edits that is still held: a field changed since (on this visit, see heldSuperseded,
+// or again in another tab) is not sent from the older snapshot.
+function stillHeld(docs) {
+  const cur = heldRecord(), out = {};
+  for (const [n, p] of Object.entries(docs)) {
+    const h = cur && cur.docs[n], left = {};
+    if (!h) continue;
+    leaves(p, (path, v) => { if (JSON.stringify(leafAt(h, path)) === JSON.stringify(v)) setLeaf(left, path, v); });
+    if (hasChange(left)) out[n] = left;
+  }
+  return out;
+}
 // The held edits without those just taken to the cloud (sent): another tab still working from this browser may have
 // held more meanwhile, or changed a field again, and that stays held. What was taken is no longer only this browser's
 // (`fresh`: deleting it later must reach the cloud). Once nothing is left, the record and this browser's copies go.
-const leafAt = (o, path) => path.reduce((x, k) => (x && typeof x === 'object' ? x[k] : undefined), o);
 function takeHeld(sent) {
-  let cur = null;
-  try { cur = JSON.parse(lsGet('kaikou:held') || 'null'); } catch (_) { cur = null; }
-  const ok = cur && typeof cur.uid === 'string' && cur.docs && typeof cur.docs === 'object' && !Array.isArray(cur.docs);
-  if (ok && cur.uid !== Store.uid && cur.uid !== '*') return; // another account's record now: that account's to upload
+  const cur = heldParse();
+  if (cur && cur.uid !== Store.uid && cur.uid !== '*') return; // another account's record now: that account's to upload
   const docs = {}, fresh = {};
-  if (ok) {
+  if (cur) {
     for (const [n, p] of Object.entries(cur.docs)) {
       const s = sent[n], left = {};
       if (!p || typeof p !== 'object') continue;
       leaves(p, (path, v) => { if (JSON.stringify(leafAt(s, path)) !== JSON.stringify(v)) setLeaf(left, path, v); });
       if (hasChange(left)) docs[n] = left;
-      const f = cur.fresh && cur.fresh[n];
-      if (!f || typeof f !== 'object') continue;
-      const taken = k => !!s && (n.startsWith('log-') ? (k === 'month' ? 'monthRecord' in s : leafAt(s, ['days', k.split('|')[0], 'items', k.split('|')[1]]) !== undefined) : !!(s.map && typeof s.map === 'object' && k in s.map));
-      const keep = Object.keys(f).filter(k => !taken(k));
+    }
+    // Markers of items that were taken go (they are the cloud's now); those of other items stay.
+    for (const [n, f] of Object.entries(cur.fresh && typeof cur.fresh === 'object' ? cur.fresh : {})) {
+      const keep = f && typeof f === 'object' ? Object.keys(f).filter(k => !heldKey(n, k, sent[n])) : [];
       if (keep.length) fresh[n] = Object.fromEntries(keep.map(k => [k, 1]));
     }
   }
@@ -2920,8 +2980,9 @@ function fullDocFor(n) {
 // first or 'stopped' when the cloud stopped while they were read (in both cases nothing was sent). fromCloud: the
 // edits were made on a cloud visit (see heldOver). onQueued runs once the edits are queued and kept in this tab's record
 // of unsent changes (the record they came from can go then). resend: { times, del, filter } for edits from records a
-// closed page left (filter drops what was changed here later, also while the documents were read).
-async function uploadPatches(docs, fromCloud, onQueued, resend) {
+// closed page left (filter drops what was changed here later, also while the documents were read). held: docs are a
+// snapshot of this browser's held edits, of which only what is still held is sent (see stillHeld).
+async function uploadPatches(docs, fromCloud, onQueued, resend, held) {
   let names = Object.keys(docs).filter(n => DOC_NAME_RE.test(n) && docs[n] && typeof docs[n] === 'object' && !Array.isArray(docs[n]));
   // Each document is read again first, and the edits are laid over what the cloud has now: a document this visit
   // could not read before is not mistaken for one that holds only these edits. A document changed here while it was
@@ -2938,16 +2999,24 @@ async function uploadPatches(docs, fromCloud, onQueued, resend) {
     todo = names.filter(moved);
   }
   if (resend) { docs = resend.filter(docs); names = names.filter(n => docs[n]); if (!names.length) return true; }
+  if (held) { docs = stillHeld(docs); names = names.filter(n => docs[n]); if (!names.length) return true; }
   docs = heldOver(cloud, Object.fromEntries(names.map(n => [n, docs[n]])), fromCloud, resend && resend.del, resend && resend.times);
-  for (const n of names) {
-    // What the document will hold: the cloud's version, these edits, then edits of this visit not saved yet.
-    let doc = deepMerge(cloud[n] || {}, docs[n]);
-    for (const q of [Store.sending[n], Store.pend[n]]) if (q && q.patch && q.patch !== 'replace') doc = deepMerge(doc, q.patch);
-    applyDoc(n, doc, false);
-    S.loadErrors.delete(n);
-    Store.patch(n, fullDocFor(n), docs[n], resend ? { times: resend.times[n], del: [...(resend.del[n] || [])] } : null);
-    Store.carry[n] = true; // kept in this tab's record until they land
-  }
+  Store.fromHeld = true; // not this tab's own changes (see heldSuperseded)
+  try {
+    for (const n of names) {
+      // What the document will hold: the cloud's version, these edits, then edits of this visit not saved yet.
+      let doc = deepMerge(cloud[n] || {}, docs[n]);
+      for (const q of [Store.sending[n], Store.pend[n]]) if (q && q.patch && q.patch !== 'replace') doc = deepMerge(doc, q.patch);
+      applyDoc(n, doc, false);
+      S.loadErrors.delete(n);
+      Store.patch(n, fullDocFor(n), docs[n], resend ? { times: resend.times[n], del: [...(resend.del[n] || [])] } : null);
+      Store.carry[n] = true; // kept in this tab's record until they land
+      // A day these edits bring with only a stand-in plan (made where the learner's plan was not known) gets it now.
+      if (n.startsWith('log-') && docs[n].days && typeof docs[n].days === 'object') {
+        for (const k of Object.keys(docs[n].days)) { const rec = dayRec(k); if (rec) patchDay(k, rec, false, {}, true); }
+      }
+    }
+  } finally { Store.fromHeld = false; }
   if (Store.saveUnsent() && onQueued) onQueued(); // recorded at once
   Store.flushAll();
   for (let i = 0; i < 100; i++) {
@@ -3033,7 +3102,7 @@ async function uploadHeld() {
   S.uploading = true; renderToday();
   let taken = false;
   const take = () => { if (taken) return; taken = true; takeHeld(h.docs); S.held = heldInfo(); };
-  const ok = await uploadPatches(h.docs, false, take);
+  const ok = await uploadPatches(h.docs, false, take, null, true);
   S.uploading = false;
   if (ok === true) { take(); toast(S.held ? '已把這台裝置上的變更存到雲端。之後又留下了新的變更，可以再按一次存到雲端。' : '已把這台裝置上的變更存到雲端'); }
   else if (ok === 'unread') toast('還讀不到雲端的資料，稍後再按一次。');
@@ -3146,8 +3215,9 @@ async function resendNow() {
 }
 function dropHeld() {
   if (!S.held) return;
-  forgetLocalDocs(localDocNames()); S.held = null;
-  toast('已捨棄這台裝置上留下的變更');
+  // What the notice showed goes; what another tab working from this browser held after that stays (and is offered).
+  takeHeld(S.held.docs); S.held = heldInfo();
+  toast(S.held ? '已捨棄提醒裡的變更；之後又留下了新的變更，還在提醒裡。' : '已捨棄這台裝置上留下的變更');
   renderToday();
 }
 // A viewer whose link could not save to the cloud can try again later (for example after being given edit access).
@@ -3180,8 +3250,8 @@ async function retryCloud() {
   // browser's copies) and later visits use the cloud (a page closed now sends them next time; should the cloud refuse
   // them, they are held here again).
   let taken = false;
-  const take = () => { if (taken) return; taken = true; lsDel('kaikou:no-cloud'); takeHeld(docs); };
-  const ok = await uploadPatches(docs, false, take);
+  const take = () => { if (taken) return; taken = true; lsDel('kaikou:no-cloud'); takeHeld(docs); S.held = heldInfo(); };
+  const ok = await uploadPatches(docs, false, take, null, !!held);
   S.uploading = false;
   if (ok === true) {
     take();
@@ -3236,8 +3306,13 @@ function discardChat() {
   clearComposer();
   const c = S.chat;
   S.chat = null; S.hints = null; S.hintSeq++; S.note = null; S.noteNoRetry = false; S.armed = null;
-  // Its end is written only while the stored chat is still this one (another device may have started a newer one).
-  if (c) { S.endedChats.add(c.id); endStoredChat(c.id, 3); }
+  // Its end is written only while the stored chat is still this one (another device may have started a newer one); if
+  // that cannot be read now, the next read that finds it unchanged writes it (see applyChat).
+  if (c) {
+    S.endedChats.add(c.id); S.endPending = { id: c.id, upd: Number(c.updatedAt) || 0 };
+    delete lastSeen.chat; // the next read is applied even when the chat has not changed
+    endStoredChat(c.id, S.endPending.upd);
+  }
   renderCoach(); renderToday();
 }
 function send(text) {
@@ -3359,16 +3434,17 @@ async function getHints() {
 }
 // Write the "ended" marker only while the stored chat is still the reviewed (or discarded) one: a newer chat, started
 // here or on another device, must never be replaced by it. (A reviewed chat that keeps its marker unwritten is
-// still recognised as finished, because its review is stored.) tries: how many more times to read it when the read
-// fails (a discarded chat has no stored review to show that it ended).
-async function endStoredChat(id, tries) {
+// still recognised as finished, because its review is stored.) upd, for a discarded chat: when it was last changed
+// here; one continued on another device since then is left as it is (see applyChat).
+async function endStoredChat(id, upd) {
   if (S.chat && S.chat.id !== id) return;
-  const mark = () => Store.put('chat', { active: false, endedId: id, at: Date.now() });
+  const done = () => { if (S.endPending && S.endPending.id === id) S.endPending = null; };
+  const mark = () => { done(); Store.put('chat', { active: false, endedId: id, at: Date.now() }); };
   if (Store.busyDoc('chat')) { mark(); return; } // this device's own write of the reviewed chat is still on its way
   let d;
-  try { d = await Store.get('chat'); } catch (_) { if (tries > 0) setTimeout(() => endStoredChat(id, tries - 1), 5000); return; }
-  if (S.chat && S.chat.id !== id) return;
-  if (!d || d.active === false || String(d.id) !== id) return;
+  try { d = await Store.get('chat'); } catch (_) { return; } // a discarded chat: a later read writes its end (see applyChat)
+  if (S.chat && S.chat.id !== id) { done(); return; }
+  if (!d || d.active === false || String(d.id) !== id || (upd !== undefined && (Number(d.updatedAt) || 0) > upd)) { done(); return; }
   mark();
 }
 async function review() {
@@ -3959,12 +4035,12 @@ function renderHints() {
     // On a phone the focus does not go into the text box by itself (the keyboard would cover the hints and the chat).
     el('div', { class: 'hints-head' }, el('span', { text: '可以這樣回：點一下放進輸入框，先唸出來再送出' }), el('button', { type: 'button', class: 'btn ghost small', 'data-fk': 'hints-close', onclick: () => { S.hints = null; renderHints(); if (coarse()) focusFk(null, '#hint-btn'); else focusInput(); } }, '收起')),
     S.hints.map((h, i) => el('button', { type: 'button', class: 'hint', lang: 'en', 'data-fk': 'hint-' + i, onclick: () => {
-      // What the learner wrote (or said) themselves is replaced only on a second tap; an earlier hint is replaced at once.
-      const cur = $('#msg-input').value.trim();
-      if (cur && cur !== String(S.hintFill || '').trim() && !confirmTwice('hint-' + i, '輸入框裡有你寫的句子。再點一次這個說法，就換成它。')) return;
       voicePause(); // nothing is sent or heard on its own while you look at a hint
       if (micOn('composer')) { micStop(true); updateMicBtn(); } // a late dictation result must not replace the hint
-      const ta = $('#msg-input'); ta.value = h.en; autosize(ta); focusInput();
+      // What the learner wrote (or said) themselves is replaced only on a second tap; an earlier hint is replaced at once.
+      const ta = $('#msg-input'), cur = ta.value.trim();
+      if (cur && cur !== String(S.hintFill || '').trim() && !confirmTwice('hint-' + i, '輸入框裡有你寫的句子。再點一次這個說法，就換成它。')) return;
+      ta.value = h.en; autosize(ta); focusInput();
       S.hintFill = h.en; // saying it (dictation or 繼續說) replaces it instead of adding to it
       if (S.settings.autoSpeak) speak(h.en);
     } }, el('span', { class: 'hint-en', text: h.en }), h.zh ? el('small', { lang: 'zh-Hant-TW', text: h.zh }) : null)));
@@ -4553,8 +4629,9 @@ async function genPassage() {
     const p = { id: newId(), title: String(v.title || '').trim().slice(0, 80) || (t.k === 'custom' ? custom : t.zh), level: S.settings.level, at: Date.now(), src: 'ai', sents, days: {} };
     addPassage(p);
     g.busy = false;
-    openPassage(p.id);
     announce('短文寫好了，共 ' + sents.length + ' 句');
+    // Opened at once, or once the learner has finished a word they are composing in a box here.
+    whenComposed(() => { if (S.shGen === g && S.tool === 'shadow' && !curPassage() && S.shadow.list.some(x => x.id === p.id)) openPassage(p.id); });
   } catch (e) {
     if (e && BLOCK_CODES.includes(e.code)) { S.sampleState = 'blocked'; S.blockCode = e.code; }
     g.err = !e || e.code === 'cancelled' ? '' : sampleErrMsg(e, 'task');
@@ -5731,6 +5808,8 @@ function bindStatic() {
   document.addEventListener('compositionstart', () => { composing = true; }, true);
   document.addEventListener('compositionend', () => {
     composing = false;
+    const later = afterComposing; afterComposing = [];
+    if (later.length) setTimeout(() => { for (const f of later) f(); }, 0);
     if (renderAfterComposing) { renderAfterComposing = false; setTimeout(renderAfterRefresh, 0); }
   }, true);
   // In this-browser mode, a change saved by another tab of the app shows up here right away.
@@ -5758,6 +5837,14 @@ function isReviewed(id) {
   return false;
 }
 function applyChat(d) {
+  // A chat discarded here whose end could not be written then (its read failed): a later read that finds it as it was
+  // writes the end now. One continued elsewhere since (or replaced by another chat) is left as it is.
+  const pend = S.endPending;
+  if (pend) {
+    const same = d && d.active !== false && String(d.id) === pend.id && (Number(d.updatedAt) || 0) <= pend.upd;
+    if (!same || (S.chat && S.chat.id !== pend.id)) S.endPending = null;
+    else if (!Store.busyDoc('chat')) { S.endPending = null; Store.put('chat', { active: false, endedId: pend.id, at: Date.now() }); return; }
+  }
   if (S.busy || S.reviewing) return;
   if (d && d.active === false) {
     if (d.endedId) { S.endedChats.add(String(d.endedId)); if (S.chat && S.chat.id === d.endedId) S.chat = null; }
@@ -5770,8 +5857,9 @@ function applyChat(d) {
 function applyDoc(name, d, raced) {
   S.readOnce.add(name);
   if (name === 'settings') {
-    // In Claude, a visit that works from this browser and finds no copy of the settings here does not know the learner's.
-    if (d === null && Store.mode !== 'db' && Store.why) S.settingsLost = true;
+    // In Claude, a visit that works from this browser and finds no copy of the settings here (or one written while they
+    // were not known: see Store.send) does not know the learner's.
+    if ((d === null || (d && d._part)) && Store.mode !== 'db' && Store.why) S.settingsLost = true;
     S.settings = pickSettings(d); S.settingsRead = !S.settingsLost;
     if (S.settingsRead && S.planBlind.size) setTimeout(planKnown, 0); // once the other documents of this read are in
   }
@@ -5840,10 +5928,11 @@ async function reloadDocs(names) {
   return changed;
 }
 // Redraws after a refresh wait while the person is composing text with an input method (Zhuyin, Pinyin…).
-let composing = false, renderAfterComposing = false;
+let composing = false, renderAfterComposing = false, afterComposing = [];
 // So does any other redraw the learner did not ask for (an answer that arrives, a confirmation that runs out): drawing
-// the box again would break the word being composed.
+// the box again would break the word being composed. whenComposed runs a step that changes the view then.
 function redrawLater(fn) { if (composing) { renderAfterComposing = true; return; } fn(); }
+function whenComposed(fn) { if (composing) afterComposing.push(fn); else fn(); }
 function renderAfterRefresh() {
   if (composing) { renderAfterComposing = true; return; }
   if (S.tab === 'coach' && (S.busy || S.reviewing)) { renderToday(); renderLog(); return; }
@@ -5933,7 +6022,7 @@ async function boot(data) {
   if (data && typeof data.draft === 'string' && data.draft && S.chat) { const ta = $('#msg-input'); if (ta && !ta.value) { ta.value = data.draft; autosize(ta); } }
   if (S.tab === 'coach' && S.chat) scrollToEnd(true);
 }
-if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats, leaves, timeAt, stampTimes, mergeTimes, heldOver };
+if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats, leaves, timeAt, stampTimes, mergeTimes, heldOver, takeHeld, recordHeld, heldSuperseded, stillHeld };
 
 boot(viewSaved()).catch(err => { console.error(err); setSync('error'); });
 })();
