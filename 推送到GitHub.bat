@@ -14,16 +14,23 @@ if errorlevel 1 (
     goto failed
 )
 
-rem An earlier attempt to combine with GitHub (or a merge started in another program) is not finished:
-rem committing on top of it could lose conflict fixes made by hand, so nothing is done until it is finished.
+rem An earlier attempt to combine with GitHub (or a merge, cherry-pick or revert started in another program) is not
+rem finished: committing on top of it could lose conflict fixes made by hand, so nothing is done until it is finished.
 if exist ".git\rebase-merge" goto unfinished
 if exist ".git\rebase-apply" goto unfinished
 if exist ".git\MERGE_HEAD" goto unfinished
+if exist ".git\CHERRY_PICK_HEAD" goto unfinished
+if exist ".git\REVERT_HEAD" goto unfinished
+rem A file whose conflict is not solved yet (for example after changes set aside were taken back, as VS Code does when
+rem it pulls): staging it would mark the conflict solved and publish its conflict markers, which break the page.
+for /f %%u in ('git ls-files -u') do goto conflicted
 
 echo == [1/3] Changes to publish
 for %%d in (docs test tools) do if exist "%%d\" git add -A -- "%%d"
 git add -u
 if errorlevel 1 goto failed
+git diff --cached --check | findstr /c:"conflict marker"
+if not errorlevel 1 goto stagedmarkers
 git diff --cached --quiet
 if errorlevel 1 goto review
 echo No new changes in this folder.
@@ -92,6 +99,8 @@ choice /c YN /m "Publish all of these to the public GitHub repo"
 if errorlevel 2 goto keptlocal
 
 :push
+git diff --check origin/main HEAD | findstr /c:"conflict marker"
+if not errorlevel 1 goto commitmarkers
 echo.
 echo == [3/3] Push to GitHub
 git push origin HEAD:main
@@ -121,8 +130,30 @@ echo.
 echo An earlier attempt to combine your changes with GitHub is not finished, so nothing was done.
 echo If you fixed the conflicts by hand, ask for help to finish it. Otherwise close other programs that
 echo use Git (such as VS Code), run this in this folder, then run this script again:  git rebase --abort
-echo (if a merge was started instead, the command is:  git merge --abort)
+echo (if a merge was started instead, the command is:  git merge --abort
+echo  for a cherry-pick:  git cherry-pick --abort  and for a revert:  git revert --abort)
 goto done
+
+:conflicted
+echo.
+echo A file in this folder still has a conflict that is not solved (it still holds conflict markers),
+echo so nothing was done. Publishing it would break the page. Ask for help to solve the conflict,
+echo then run this script again.
+goto done
+
+:stagedmarkers
+git reset -q
+echo.
+echo The files to publish still hold conflict markers (see the lines above). Publishing them would
+echo break the page, so nothing was done. Ask for help to solve the conflict, then run this script again.
+goto done
+
+:commitmarkers
+echo.
+echo The commits to publish still hold conflict markers (see the lines above). Publishing them would
+echo break the page, so nothing was published: the commits stay on this computer only.
+echo Ask for help to solve the conflict, then run this script again.
+goto failed
 
 :failed
 echo.

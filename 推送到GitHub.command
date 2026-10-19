@@ -22,21 +22,35 @@ failed() {
   finish 1
 }
 
-# ask "問題"：按 Y 回傳 0、按 N 回傳 1（讀不到輸入時當作 N）。
+# ask "問題"：輸入 Y 再按 Enter 回傳 0、輸入 N 再按 Enter 回傳 1（讀不到輸入時當作 N）。
+# 讀一整行：只讀一個鍵的話，多按的 Enter 會被下一個問題（例如名字）當成空白的回答。
 ask() {
   local a
   while true; do
-    read -r -n 1 -p "$1 (Y/N) " a || { echo; return 1; }
-    echo
+    read -r -p "$1 (輸入 Y 或 N，再按 Enter) " a || [ -n "$a" ] || { echo; return 1; }
     case "$a" in
-      [Yy]) return 0 ;;
-      [Nn]) return 1 ;;
+      [Yy]*) return 0 ;;
+      [Nn]*) return 1 ;;
     esac
   done
 }
 
 rebasing() {
   [ -d "$(git rev-parse --git-path rebase-merge)" ] || [ -d "$(git rev-parse --git-path rebase-apply)" ]
+}
+
+# 還沒完成的合併類動作（rebase、merge、cherry-pick、revert）：印出取消它的指令；沒有就不印。
+unfinished() {
+  if rebasing; then echo "git rebase --abort"
+  elif [ -e "$(git rev-parse --git-path MERGE_HEAD)" ]; then echo "git merge --abort"
+  elif [ -e "$(git rev-parse --git-path CHERRY_PICK_HEAD)" ]; then echo "git cherry-pick --abort"
+  elif [ -e "$(git rev-parse --git-path REVERT_HEAD)" ]; then echo "git revert --abort"
+  fi
+}
+
+# 檔案裡留著衝突標記（<<<<<<<、=======、>>>>>>> 這類的行）：發布出去網站會壞掉。參數是 git diff 的範圍。
+markers() {
+  git diff --check "$@" 2>/dev/null | grep "conflict marker"
 }
 
 # commit 上的名字和 email 會公開在 GitHub 上。還沒設定時，問一次並只存在這個資料夾的設定裡。
@@ -65,11 +79,19 @@ if [ ! -e .git ] || ! git rev-parse --git-dir >/dev/null 2>&1; then
   echo "這個資料夾不是開口練習室的 Git repo（找不到 .git），沒辦法發布。"
   finish 1
 fi
-# 之前和 GitHub 合併到一半沒有完成（或其他程式開始的合併）：在那上面再 commit 可能弄丟手動解決的衝突，所以先不動。
-if rebasing || [ -e "$(git rev-parse --git-path MERGE_HEAD)" ]; then
+# 之前和 GitHub 合併到一半沒有完成（或其他程式開始的合併、cherry-pick、revert）：在那上面再 commit 可能弄丟手動解決的衝突，所以先不動。
+ABORT=$(unfinished)
+if [ -n "$ABORT" ]; then
   echo "之前把你的變更和 GitHub 上的版本合在一起的動作還沒完成，所以這次什麼都沒做。"
   echo "如果你已經手動解決了衝突，請找人幫忙完成。不然，先關掉其他用 Git 的程式（例如 VS Code），"
-  echo "在終端機進到這個資料夾執行：git rebase --abort（如果是合併，執行 git merge --abort），再點一次這個檔案。"
+  echo "在終端機進到這個資料夾執行：$ABORT，再點一次這個檔案。"
+  finish 1
+fi
+# 有檔案的衝突還沒解決（例如 VS Code 拉取 GitHub 的版本後，把你暫存的變更拿回來時衝突）：檔案裡還有衝突標記。
+# 這時加進 commit 會把衝突當成已經解決，標記就會發布出去，所以先不動。
+if [ -n "$(git ls-files -u)" ]; then
+  echo "這個資料夾裡有檔案的衝突還沒解決（檔案裡還留著 <<<<<<<、>>>>>>> 這類的行），所以這次什麼都沒做。"
+  echo "發布出去的話網站會壞掉。請找人幫忙解決衝突後，再點一次這個檔案。"
   finish 1
 fi
 
@@ -78,6 +100,15 @@ for d in docs test tools; do
   if [ -d "$d" ]; then git add -A -- "$d" || failed; fi
 done
 git add -u || failed
+if [ -n "$(markers --cached)" ]; then
+  echo
+  markers --cached
+  git reset -q
+  echo
+  echo "要發布的檔案裡還留著衝突標記（<<<<<<<、=======、>>>>>>> 這類的行，見上面），發布出去的話網站會壞掉。"
+  echo "這次什麼都沒做。請找人幫忙解決衝突後，再點一次這個檔案。"
+  finish 1
+fi
 if git diff --cached --quiet; then
   echo "這個資料夾沒有新的變更。"
 else
@@ -147,6 +178,15 @@ if ! { [ "$COMMITTED" = 1 ] && [ "$AHEAD" = 1 ] && [ -n "$OURTIME" ] && [ "$HEAD
     echo "沒有發布，這些 commit 只留在這台電腦。"
     finish 0
   fi
+fi
+
+if [ -n "$(markers origin/main HEAD)" ]; then
+  echo
+  markers origin/main HEAD
+  echo
+  echo "要發布的 commit 裡還留著衝突標記（<<<<<<<、=======、>>>>>>> 這類的行，見上面），發布出去的話網站會壞掉。"
+  echo "這次沒有發布任何東西，commit 只留在這台電腦。請找人幫忙解決衝突後，再點一次這個檔案。"
+  finish 1
 fi
 
 echo

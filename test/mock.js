@@ -22,6 +22,7 @@
 //                           by default the viewer switches the coach back on there
 //   refuseTask: true        a single-prompt call (hints, review, translation, passage, points) rejects "refused"
 //   noSample: true          use('sample') resolves null (this view cannot run the coach)
+//   sampleDelay: ms         use('sample') answers this much later (Claude may ask the viewer first)
 //   noDownloads: true       use('downloads') resolves null
 //   saveFail: 'declined'    downloads.save() rejects with this code ('declined', 'rate_limited'…)
 //   settings: { plan: '60' }  fields that replace the seeded settings
@@ -34,7 +35,7 @@
 window.__kaikouTest = true;
 (function () {
   const cfg = Object.assign({ owner: true, readOnly: false, readOnlyWrites: false, failWrites: {}, failReads: {}, refuse: '', slowMs: 0, persist: false, noDb: false, noUser: false, failUse: [], failList: 0, jsonDelay: 30,
-    sampleCode: '', refuseTask: false, noSample: false, noDownloads: false, saveFail: '', settings: null, noToday: false, writeDelay: {}, readDelay: {}, writeLandsFirst: false }, window.__mockCfg || {});
+    sampleCode: '', refuseTask: false, noSample: false, noDownloads: false, saveFail: '', settings: null, noToday: false, writeDelay: {}, readDelay: {}, writeLandsFirst: false, sampleDelay: 0 }, window.__mockCfg || {});
   window.__mockCfg = cfg; // tests may change it while the page runs
   const store = new Map();
   const pad = n => String(n).padStart(2, '0');
@@ -240,7 +241,7 @@ window.__kaikouTest = true;
     },
   };
   window.claude = { use: async name => {
-    await new Promise(r => setTimeout(r, 30));
+    await new Promise(r => setTimeout(r, name === 'sample' && cfg.sampleDelay ? cfg.sampleDelay : 30));
     if (cfg.failUse.includes(name)) throw err('unavailable', 'injected');
     if ((name === 'db' && cfg.noDb) || (name === 'user' && cfg.noUser) || (name === 'sample' && cfg.noSample) || (name === 'downloads' && cfg.noDownloads)) return null;
     return ({ db, user, sample, downloads, permissions })[name] || null;

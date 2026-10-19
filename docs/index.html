@@ -776,8 +776,8 @@ const ACCOUNT_CODES = ['key_invalid', 'key_missing', 'no_credit', 'model_missing
 const S = {
   ready: false, booted: false, tab: 'today', viewDate: todayKey(), lastToday: todayKey(), calMonth: todayKey().slice(0, 7),
   settings: Object.assign({}, DEFAULTS),
-  logs: {}, loaded: new Set(), editedDays: new Set(), editedMonthRec: new Set(), planWait: {},
-  sessions: {}, sessLoaded: new Set(), loadErrors: new Set(),
+  logs: {}, loaded: new Set(), editedDays: new Set(), editedMonthRec: new Set(), planWait: {}, planBlind: new Set(),
+  sessions: {}, sessLoaded: new Set(), loadErrors: new Set(), readOnce: new Set(),
   phrases: [], inbox: [], chat: null, review: null, endedChats: new Set(), openSess: new Set(),
   setup: { mode: 'free', topic: 'weekend', scene: 'smalltalk', custom: '' },
   sample: null, sampleState: 'loading',
@@ -878,19 +878,19 @@ const Store = {
     this.pend = {}; this.failed = {}; this.retries = {}; this.carry = {};
     // What never reached the cloud is held now (and what is in flight is held if it fails), so this tab's record goes.
     clearTimeout(this.unsentTimer); this.unsentTimer = 0; lsDel(this.unsentKey); this.unsentKey = '';
-    // A document this visit never read is not written to this browser as it is shown (defaults, or only this visit's
-    // edits): a later read here would take it for the real one. 關於我 stays closed for the rest of the visit when the
-    // settings were never read (typing would replace a text the learner has not seen).
-    const unread = new Set(S.loadErrors);
-    if (!S.settingsRead) { unread.add('settings'); S.settingsLost = true; }
+    // 關於我 stays closed for the rest of the visit when the settings were never read (typing would replace a text the
+    // learner has not seen).
+    if (!S.settingsRead) S.settingsLost = true;
     S.loadErrors.clear();
     if (!quiet) toast(why === 'no_write' ? '這個連結不能把進度存到雲端，改存在這個瀏覽器。' : '雲端同步已停止，之後的變更只存在這個瀏覽器。');
-    // This browser keeps a full working copy for the rest of the visit, merged into anything already stored here.
+    // This browser keeps a working copy of each document for the rest of the visit, as this page has it: the cloud's
+    // version as last read (also when a later read failed), with this visit's changes. It replaces any copy left here
+    // before, which may still list what has been deleted since. A document never read on this visit is not written
+    // as it is shown (defaults, or only this visit's edits): a later read here would take it for the real one (until a
+    // copy of it turns up, the page keeps showing what it has: see reloadDocs).
     for (const [n, full] of Object.entries(allDocs())) {
-      if (unread.has(n)) continue;
-      let doc = full;
-      if (n !== 'chat') { const cur = readLocal(n); if (cur) doc = deepMerge(cur, full); }
-      lsSet('kaikou:' + n, JSON.stringify(doc));
+      if (n === 'settings' ? !S.settingsRead : !S.readOnce.has(n)) continue;
+      lsSet('kaikou:' + n, JSON.stringify(full));
     }
     renderToday();
   },
@@ -1120,7 +1120,10 @@ function dayRec(k) { const L = S.logs[k.slice(0, 7)]; return L && L.days[k] ? L.
 function ensureRec(k) {
   const doc = logDoc(k.slice(0, 7));
   if (doc.days[k]) return [doc.days[k], false];
-  doc.days[k] = { plan: S.settings.plan, plans: { 0: S.settings.plan }, lp: '', items: {}, coach: {}, coachMin: 0 };
+  // The default plan of a day created here (see patchDay).
+  const w = monthRead(k.slice(0, 7)) && S.settingsRead ? '0' : BLIND_W;
+  if (!S.settingsRead) S.planBlind.add(k);
+  doc.days[k] = { plan: S.settings.plan, plans: { [w]: S.settings.plan }, lp: '', items: {}, coach: {}, coachMin: 0 };
   return [doc.days[k], true];
 }
 function coachTotal(rec) {
@@ -1143,14 +1146,33 @@ function minutesOf(rec) {
 // Day patches carry only what changed; the device that creates a day adds its default plan (weight 0).
 // A day created while its month could not be read (an automatic tick: finishing a review, a round, a passage) may
 // already have a plan in the cloud: this device's default is written under a weight below 0, so it decides only when
-// no device has written a default (weight 0) or a choice for that day.
+// no device has written a default (weight 0) or a choice for that day. So is the stand-in a device writes while it
+// does not know the learner's plan (the settings could not be read): the next change to that day made where the plan
+// is known adds the learner's default (and this page adds it as soon as it reads the settings: see planKnown).
 const BLIND_W = '-1';
+const standIn = rec => { const ws = Object.keys(rec.plans || {}); return !rec.lp && ws.length > 0 && ws.every(w => Number(w) < 0); };
 function patchDay(k, rec, created, part) {
   const day = Object.assign({}, part);
   const m = k.slice(0, 7);
-  if (created) day.plans = Object.assign({ [monthRead(m) ? '0' : BLIND_W]: rec.plans[0] || S.settings.plan }, part.plans || {});
+  if (created) day.plans = Object.assign({}, rec.plans, part.plans || {});
+  else if (S.settingsRead && monthRead(m) && standIn(rec)) {
+    rec.plans['0'] = S.settings.plan; rec.plan = resolvePlan(rec.plans, rec.lp);
+    day.plans = Object.assign({ 0: S.settings.plan }, part.plans || {});
+  }
   S.editedDays.add(k);
   Store.patch('log-' + m, logDoc(m), { days: { [k]: day } });
+}
+// The settings have been read: the days created here before that get the learner's default plan.
+function planKnown() {
+  if (!S.settingsRead) return;
+  let n = 0;
+  for (const k of [...S.planBlind]) {
+    const rec = dayRec(k);
+    if (!monthRead(k.slice(0, 7))) continue; // done by the next change to that day, once the month is read
+    S.planBlind.delete(k);
+    if (rec && standIn(rec)) { patchDay(k, rec, false, {}); n++; }
+  }
+  if (n) { renderToday(); renderLog(); refreshStreak(); }
 }
 function setItem(k, key, val) {
   const [rec, created] = ensureRec(k);
@@ -1220,6 +1242,8 @@ function applyLog(m, d, raced) {
   }
   S.loaded.add(m);
   S.loadErrors.delete('log-' + m);
+  S.readOnce.add('log-' + m);
+  if (S.settingsRead && [...S.planBlind].some(k => k.slice(0, 7) === m)) setTimeout(planKnown, 0);
 }
 const monthLoads = {};
 function loadMonth(m) {
@@ -1287,6 +1311,7 @@ function loadSessions(m) {
       sameAsSeen('sessions-' + m, d);
       S.sessions[m] = unionById(normSessions(d), S.sessions[m]);
       S.loadErrors.delete('sessions-' + m);
+      S.readOnce.add('sessions-' + m);
     } catch (_) { S.sessions[m] = S.sessions[m] || []; S.loadErrors.add('sessions-' + m); }
     finally { S.sessLoaded.add(m); delete sessLoads[m]; updateSync(); }
   })();
@@ -1556,6 +1581,7 @@ function finishDrill(early) {
   for (const k of Object.keys(S.say)) if (k.startsWith('dr:')) delete S.say[k]; // a check of this round's card
   if (!d.n) { S.drill = null; renderSaved(); focusHeading('#drill .card-title'); return; } // nothing was reviewed (or every phrase was deleted meanwhile)
   d.done = true;
+  d.early = !!early && d.i < d.q.length; // 先到這裡 before the last card
   if (Mic.cur) micStop(true);
   const tk = todayKey();
   const rec = dayRec(tk);
@@ -1653,12 +1679,12 @@ function drillDone(d) {
   const st = srsStats(todayKey());
   return el('section', { class: 'card' },
     el('div', { class: 'drill-top' },
-      el('h2', { class: 'card-title', tabindex: '-1', text: d.n ? '這一輪完成了！' : '複習結束' }),
+      el('h2', { class: 'card-title', tabindex: '-1', text: !d.n ? '複習結束' : d.early ? '先複習到這裡' : '這一輪完成了！' }),
       el('button', { type: 'button', class: 'btn ghost small', 'data-fk': 'drill-close', onclick: () => { S.drill = null; renderSaved(); focusHeading('#drill .card-title'); } }, '關閉')),
     d.n ? el('p', { class: 'mt6', text: '複習了 ' + d.n + ' 次：記得 ' + d.tally[2] + '、有點卡 ' + d.tally[1] + '、忘了 ' + d.tally[0] + '。' }) : null,
     d.ticked ? el('p', { class: 'item-note', text: '今天的「語塊複習」已打勾。' }) : null,
     el('div', { class: 'start-row mt12' },
-      st.todo ? el('button', { type: 'button', class: 'btn primary', 'data-fk': 'drill-more', onclick: startDrill }, '再複習一輪（' + st.todo + ' 句）') : el('span', { class: 'help', text: '今天的複習都完成了。' + (st.tomorrow ? '明天有 ' + st.tomorrow + ' 句到期。' : '') })));
+      st.todo ? el('button', { type: 'button', class: 'btn primary', 'data-fk': 'drill-more', onclick: startDrill }, (d.early ? '繼續複習（' : '再複習一輪（') + st.todo + ' 句）') : el('span', { class: 'help', text: '今天的複習都完成了。' + (st.tomorrow ? '明天有 ' + st.tomorrow + ' 句到期。' : '') })));
 }
 
 /* ================= pronunciation: sounds Mandarin speakers from Taiwan often mix up ================= */
@@ -2126,7 +2152,7 @@ const sayKey = (ctx, text) => ctx + ':' + phraseId(text);
 function sayBtn(text, ctx, opt) {
   if (!Mic.ok || Mic.blocked || !String(text || '').trim()) return null;
   const key = sayKey(ctx, text);
-  const b = el('button', { type: 'button', class: 'icon-btn sm', 'data-say-btn': key, 'data-fk': 'say:' + key, onclick: () => sayCheck(text, key, opt) });
+  const b = el('button', { type: 'button', class: 'icon-btn sm', 'data-say-btn': key, 'data-fk': 'say:' + key, onclick: single(() => sayCheck(text, key, opt)) });
   setSayBtn(b, key);
   return b;
 }
@@ -2616,10 +2642,11 @@ function cancelInflight() {
   if (S.ctl) { try { S.ctl.abort(); } catch (_) { /* already settled */ } }
   S.ctl = null; S.busy = false;
 }
-// Pressing the same start control twice within a few seconds confirms a warning.
+// Pressing the same start control twice within a few seconds confirms a warning (not twice at once: see arm).
 function confirmTwice(key, msg) {
+  if (armedNow(key)) return false;
   if (isArmed(key)) { S.armed = null; return true; }
-  S.armed = { key, until: Date.now() + 5000 };
+  S.armed = { key, at: Date.now(), until: Date.now() + 5000 };
   toast(msg);
   return false;
 }
@@ -2657,12 +2684,13 @@ async function startSession(setup, firstMessage, voice) {
     c.turns.push({ r: 'c', t: 'Tell me something you want to say. Chinese is fine. I will show you two or three natural ways to say it in English.', zhNote: '把想說的話打出來（中文也可以），我會給你 2–3 種英文說法，再請你唸一次。', sys: true, at: Date.now() });
     saveChat(); renderCoach(); renderToday();
     const sent = firstMessage ? send(firstMessage) : true;
-    focusInput();
+    focusComposer();
     return sent;
   }
   if (voice && voiceAvailable()) { Voice.on = true; Voice.miss = 0; }
-  saveChat(); renderCoach(); renderToday(); focusInput();
+  saveChat(); renderCoach(); renderToday();
   ask();
+  focusComposer(); // after ask(): on a phone the button is the stop button by now
   if (Voice.on && Voice.phase === 'off') voicePause();
   return true;
 }
@@ -2851,6 +2879,32 @@ function localDocNames() {
   return names;
 }
 function forgetLocalDocs(names) { for (const n of names) lsDel('kaikou:' + n); lsDel('kaikou:held'); }
+// The held edits without those just taken to the cloud (sent): another tab still working from this browser may have
+// held more meanwhile, or changed a field again, and that stays held. What was taken is no longer only this browser's
+// (`fresh`: deleting it later must reach the cloud). Once nothing is left, the record and this browser's copies go.
+const leafAt = (o, path) => path.reduce((x, k) => (x && typeof x === 'object' ? x[k] : undefined), o);
+function takeHeld(sent) {
+  let cur = null;
+  try { cur = JSON.parse(lsGet('kaikou:held') || 'null'); } catch (_) { cur = null; }
+  const ok = cur && typeof cur.uid === 'string' && cur.docs && typeof cur.docs === 'object' && !Array.isArray(cur.docs);
+  if (ok && cur.uid !== Store.uid && cur.uid !== '*') return; // another account's record now: that account's to upload
+  const docs = {}, fresh = {};
+  if (ok) {
+    for (const [n, p] of Object.entries(cur.docs)) {
+      const s = sent[n], left = {};
+      if (!p || typeof p !== 'object') continue;
+      leaves(p, (path, v) => { if (JSON.stringify(leafAt(s, path)) !== JSON.stringify(v)) setLeaf(left, path, v); });
+      if (hasChange(left)) docs[n] = left;
+      const f = cur.fresh && cur.fresh[n];
+      if (!f || typeof f !== 'object') continue;
+      const taken = k => !!s && (n.startsWith('log-') ? (k === 'month' ? 'monthRecord' in s : leafAt(s, ['days', k.split('|')[0], 'items', k.split('|')[1]]) !== undefined) : !!(s.map && typeof s.map === 'object' && k in s.map));
+      const keep = Object.keys(f).filter(k => !taken(k));
+      if (keep.length) fresh[n] = Object.fromEntries(keep.map(k => [k, 1]));
+    }
+  }
+  if (!Object.keys(docs).length) { forgetLocalDocs(localDocNames()); return; }
+  lsSet('kaikou:held', JSON.stringify({ uid: cur.uid, docs, fresh, drop: cur.drop && typeof cur.drop === 'object' ? cur.drop : {} }));
+}
 function fullDocFor(n) {
   if (n === 'settings') return S.settings;
   if (n === 'phrases') return phrasesFull();
@@ -2884,7 +2938,7 @@ async function uploadPatches(docs, fromCloud, onQueued, resend) {
     todo = names.filter(moved);
   }
   if (resend) { docs = resend.filter(docs); names = names.filter(n => docs[n]); if (!names.length) return true; }
-  docs = heldOver(cloud, Object.fromEntries(names.map(n => [n, docs[n]])), fromCloud, resend && resend.del);
+  docs = heldOver(cloud, Object.fromEntries(names.map(n => [n, docs[n]])), fromCloud, resend && resend.del, resend && resend.times);
   for (const n of names) {
     // What the document will hold: the cloud's version, these edits, then edits of this visit not saved yet.
     let doc = deepMerge(cloud[n] || {}, docs[n]);
@@ -2904,19 +2958,24 @@ async function uploadPatches(docs, fromCloud, onQueued, resend) {
   return false;
 }
 // The held edits as they apply over these cloud documents (cloud[name], missing when the cloud has none). del: per
-// document, the entries the tab that made the edits had deleted itself (see resendNow).
-function heldOver(cloud, docs, fromCloud, del) {
+// document, the entries the tab that made the edits had deleted itself; times: when each edit was made (see resendNow).
+function heldOver(cloud, docs, fromCloud, del, times) {
   const names = Object.keys(docs);
   // A phrase or a review schedule the cloud has deleted (null) stays deleted, unless the tab that made the edit had
   // deleted it itself before saving it again (the deletion was then that tab's own, and older).
   const gone = n => { const m = fromCloud && cloud[n] && cloud[n].map, own = (del && del[n]) || new Set(); return id => !!(m && typeof m === 'object' && m[id] === null && !own.has(id)); };
+  // A deletion sent again from a record a closed page left does not remove a phrase saved since (on another device, or
+  // here), nor its review schedule: the phrase the cloud has (this page's, when the phrases are not read with it) is
+  // dated after the deletion.
+  const saved = 'phrases' in cloud ? new Map(normPhrases(cloud.phrases).map(p => [p.id, p.at])) : new Map(S.phrases.map(p => [p.id, p.at]));
+  const resaved = (n, id) => { const t = times ? timeAt(times[n], ['map', id]) : 0; return t > 0 && saved.has(id) && saved.get(id) > t; };
   // The edits were made on this browser's copy, which may have been older than the cloud or empty (a visit that could
   // not reach the cloud shows defaults): a phrase the cloud already has keeps its own entry (and with it its review
   // schedule), and a day the cloud already has keeps its own default plan (weight 0; a plan chosen here still counts).
   if (names.includes('phrases') && docs.phrases.map && typeof docs.phrases.map === 'object') {
     const have = new Set(normPhrases(cloud.phrases).map(p => p.id)), deleted = gone('phrases');
     const map = {};
-    for (const [id, p] of Object.entries(docs.phrases.map)) if (p === null || (!have.has(id) && !deleted(id))) map[id] = p;
+    for (const [id, p] of Object.entries(docs.phrases.map)) if (p === null ? !resaved('phrases', id) : !have.has(id) && !deleted(id)) map[id] = p;
     docs = Object.assign({}, docs, { phrases: Object.assign({}, docs.phrases, { map }) });
   }
   // Edits a cloud visit could not save (fromCloud) were made on the cloud's own copy. A note, a passage or a review
@@ -2955,7 +3014,7 @@ function heldOver(cloud, docs, fromCloud, del) {
   if (names.includes('srs') && docs.srs.map && typeof docs.srs.map === 'object') {
     const have = normSrs(cloud.srs), deleted = gone('srs'), map = {};
     for (const [id, e] of Object.entries(docs.srs.map)) {
-      if (e === null) { map[id] = null; continue; }
+      if (e === null) { if (!resaved('srs', id)) map[id] = null; continue; }
       if (!e || typeof e !== 'object' || deleted(id)) continue;
       const c = have[id], ct = String((c && c.t) || '');
       if (!c || (e.f === c.f && (fromCloud ? ct <= String(e.t || '') : ct <= String(e.pt || '') || (!e.pt && String(e.t || '') >= ct)))) map[id] = e;
@@ -2968,12 +3027,17 @@ function heldOver(cloud, docs, fromCloud, del) {
 // queued and kept in this tab's record of unsent changes, the held copy goes (a page closed now sends them next time).
 async function uploadHeld() {
   if (!S.held || S.uploading || Store.mode !== 'db') return;
+  // What this browser holds now: another tab working from this browser may have held more since this page opened.
+  const h = S.held = heldInfo();
+  if (!h) { toast('這些變更已經在別的分頁存到雲端或捨棄了'); renderToday(); return; }
   S.uploading = true; renderToday();
-  const ok = await uploadPatches(S.held.docs, false, () => { forgetLocalDocs(localDocNames()); S.held = null; });
+  let taken = false;
+  const take = () => { if (taken) return; taken = true; takeHeld(h.docs); S.held = heldInfo(); };
+  const ok = await uploadPatches(h.docs, false, take);
   S.uploading = false;
-  if (ok === true) { forgetLocalDocs(localDocNames()); S.held = null; toast('已把這台裝置上的變更存到雲端'); }
+  if (ok === true) { take(); toast(S.held ? '已把這台裝置上的變更存到雲端。之後又留下了新的變更，可以再按一次存到雲端。' : '已把這台裝置上的變更存到雲端'); }
   else if (ok === 'unread') toast('還讀不到雲端的資料，稍後再按一次。');
-  else if (Store.mode === 'db') toast(S.held ? '還沒存完，稍後再按一次。' : '還沒存完，會自動再試。');
+  else if (Store.mode === 'db') toast(taken ? '還沒存完，會自動再試。' : '還沒存完，稍後再按一次。');
   refreshStreak(); renderAll();
 }
 // Each cloud tab holds a lock named after its record for as long as it is open, so another tab can tell a record that
@@ -3112,13 +3176,15 @@ async function retryCloud() {
   S.uploading = true; fillSettings();
   Store.mode = 'db'; Store.why = ''; S.settingsLost = false;
   Store.unsentKey = UNSENT_LS + Store.uid + ':' + newId(); holdTabLock(Store.unsentKey);
-  // Once queued and kept in this tab's record, this browser's copies go and later visits use the cloud (a page closed
-  // now sends them next time; should the cloud refuse them, they are held here again).
-  const ok = await uploadPatches(docs, false, () => { lsDel('kaikou:no-cloud'); forgetLocalDocs(names); });
+  // Once queued and kept in this tab's record, they are no longer held here (nor, once nothing else is held, are this
+  // browser's copies) and later visits use the cloud (a page closed now sends them next time; should the cloud refuse
+  // them, they are held here again).
+  let taken = false;
+  const take = () => { if (taken) return; taken = true; lsDel('kaikou:no-cloud'); takeHeld(docs); };
+  const ok = await uploadPatches(docs, false, take);
   S.uploading = false;
   if (ok === true) {
-    lsDel('kaikou:no-cloud');
-    forgetLocalDocs(names);
+    take();
     await loadAll();
     S.streak = await settleStreak();
     toast('已改用雲端儲存，手機和電腦會同步');
@@ -3169,9 +3235,9 @@ function discardChat() {
   cancelInflight();
   clearComposer();
   const c = S.chat;
-  if (c) S.endedChats.add(c.id);
   S.chat = null; S.hints = null; S.hintSeq++; S.note = null; S.noteNoRetry = false; S.armed = null;
-  Store.put('chat', { active: false, endedId: c ? c.id : '', at: Date.now() });
+  // Its end is written only while the stored chat is still this one (another device may have started a newer one).
+  if (c) { S.endedChats.add(c.id); endStoredChat(c.id, 3); }
   renderCoach(); renderToday();
 }
 function send(text) {
@@ -3291,15 +3357,16 @@ async function getHints() {
   // Redraw even when the answer is stale (the chat changed), so the loading row never stays behind.
   if (S.hintSeq === seq) { renderHints(); if (shown) scrollToEnd(true); }
 }
-// Write the "ended" marker only while the stored chat is still the reviewed one: a newer chat, started here
-// or on another device, must never be replaced by it. (A reviewed chat that keeps its marker unwritten is
-// still recognised as finished, because its review is stored.)
-async function endStoredChat(id) {
+// Write the "ended" marker only while the stored chat is still the reviewed (or discarded) one: a newer chat, started
+// here or on another device, must never be replaced by it. (A reviewed chat that keeps its marker unwritten is
+// still recognised as finished, because its review is stored.) tries: how many more times to read it when the read
+// fails (a discarded chat has no stored review to show that it ended).
+async function endStoredChat(id, tries) {
   if (S.chat && S.chat.id !== id) return;
   const mark = () => Store.put('chat', { active: false, endedId: id, at: Date.now() });
   if (Store.busyDoc('chat')) { mark(); return; } // this device's own write of the reviewed chat is still on its way
   let d;
-  try { d = await Store.get('chat'); } catch (_) { return; }
+  try { d = await Store.get('chat'); } catch (_) { if (tries > 0) setTimeout(() => endStoredChat(id, tries - 1), 5000); return; }
   if (S.chat && S.chat.id !== id) return;
   if (!d || d.active === false || String(d.id) !== id) return;
   mark();
@@ -3360,7 +3427,7 @@ function starBtn(p, cls, ctx) {
   return el('button', {
     type: 'button', class: 'icon-btn' + (cls ? ' ' + cls : ''), 'aria-pressed': String(on), 'aria-label': on ? '取消收藏' : '收藏', title: on ? '取消收藏' : '收藏',
     html: on ? ICON.starOn : ICON.star, disabled: !S.ready, 'data-fk': 'star:' + (ctx || '') + ':' + id,
-    onclick: e => {
+    onclick: single(e => {
       const b = e.currentTarget;
       const r = toggleSaved(p);
       if (!r) return;
@@ -3370,29 +3437,36 @@ function starBtn(p, cls, ctx) {
         b.setAttribute('aria-label', now ? '取消收藏' : '收藏'); b.title = now ? '取消收藏' : '收藏';
       }
       toast(r === 'full' ? FULL_MSG : r === 'added' ? '已加入收藏' : '已取消收藏');
-    },
+    }),
   });
 }
 function checkBtn(on, label, fn, fk) {
-  return el('button', { type: 'button', class: 'check', role: 'checkbox', 'aria-checked': String(on), 'aria-label': label, html: ICON.check, disabled: !S.ready, onclick: fn, 'data-fk': fk });
+  return el('button', { type: 'button', class: 'check', role: 'checkbox', 'aria-checked': String(on), 'aria-label': label, html: ICON.check, disabled: !S.ready, onclick: single(fn), 'data-fk': fk });
 }
 function typing() {
   return el('span', { class: 'typing' }, el('i', { 'aria-hidden': 'true' }), el('i', { 'aria-hidden': 'true' }), el('i', { 'aria-hidden': 'true' }), el('span', { class: 'sr-only', lang: 'zh-Hant-TW', text: '教練正在想' }));
 }
-// Two-step confirmation; the armed state lives in S so a re-render does not reset it.
+// Two-step confirmation; the armed state lives in S so a re-render does not reset it. A second press that comes right
+// after the first (a double click, two quick taps: the button is drawn again in the same place) is not a confirmation.
+const ARM_GAP = 600;
+// A control that switches what it does once pressed (play and pause, listen and stop, save and remove, tick and untick)
+// acts once on a double click.
+const single = fn => e => { if (e && e.detail > 1) return; fn(e); };
 function isArmed(key) { return !!(S.armed && S.armed.key === key && Date.now() < S.armed.until); }
+const armedNow = key => isArmed(key) && Date.now() - S.armed.at < ARM_GAP;
 function arm(key, fn, rerender) {
+  if (armedNow(key)) return;
   if (isArmed(key)) { S.armed = null; fn(); return; }
-  S.armed = { key, until: Date.now() + 3500 };
+  S.armed = { key, at: Date.now(), until: Date.now() + 3500 };
   rerender();
-  setTimeout(() => { if (S.armed && S.armed.key === key && Date.now() >= S.armed.until - 60) { S.armed = null; rerender(); } }, 3600);
+  setTimeout(() => { if (S.armed && S.armed.key === key && Date.now() >= S.armed.until - 60) { S.armed = null; redrawLater(rerender); } }, 3600);
 }
 let toastTimer = 0;
 // On the coach tab the toast sits just above the composer, wherever the composer currently is.
 function placeToast() {
   const t = $('#toast'); if (!t || t.hidden) return;
   const comp = $('#composer');
-  if (S.tab === 'coach' && comp && !comp.hidden) {
+  if (S.tab === 'coach' && comp && !comp.hidden && !$('#settings').open) {
     const top = comp.getBoundingClientRect().top;
     if (top < window.innerHeight) { t.style.bottom = Math.max(24, Math.round(window.innerHeight - top) + 10) + 'px'; return; }
   }
@@ -3692,7 +3766,7 @@ function renderCoach() {
     const ta = $('#msg-input'), typing = ta && !composer.hidden && !ta.disabled;
     const t = S.review ? root.querySelector('h2')
       : S.reviewing ? root.querySelector('[data-fk="stop-review"]')
-      : S.chat ? (fk === 'stop-review' || !typing ? root.querySelector('[data-fk="review"]') : coarse() ? null : ta)
+      : S.chat ? (fk === 'stop-review' || !typing ? root.querySelector('[data-fk="review"]') : composerTarget())
       : root.querySelector('h2');
     if (t) { if (/^H\d$/.test(t.tagName)) t.tabIndex = -1; t.focus({ preventScroll: true }); }
   }
@@ -3885,6 +3959,9 @@ function renderHints() {
     // On a phone the focus does not go into the text box by itself (the keyboard would cover the hints and the chat).
     el('div', { class: 'hints-head' }, el('span', { text: '可以這樣回：點一下放進輸入框，先唸出來再送出' }), el('button', { type: 'button', class: 'btn ghost small', 'data-fk': 'hints-close', onclick: () => { S.hints = null; renderHints(); if (coarse()) focusFk(null, '#hint-btn'); else focusInput(); } }, '收起')),
     S.hints.map((h, i) => el('button', { type: 'button', class: 'hint', lang: 'en', 'data-fk': 'hint-' + i, onclick: () => {
+      // What the learner wrote (or said) themselves is replaced only on a second tap; an earlier hint is replaced at once.
+      const cur = $('#msg-input').value.trim();
+      if (cur && cur !== String(S.hintFill || '').trim() && !confirmTwice('hint-' + i, '輸入框裡有你寫的句子。再點一次這個說法，就換成它。')) return;
       voicePause(); // nothing is sent or heard on its own while you look at a hint
       if (micOn('composer')) { micStop(true); updateMicBtn(); } // a late dictation result must not replace the hint
       const ta = $('#msg-input'); ta.value = h.en; autosize(ta); focusInput();
@@ -4259,6 +4336,15 @@ function autosize(ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.
 // On a touch screen, putting the focus in a text field opens the keyboard over the page: that is left to a tap.
 const coarse = () => matchMedia('(pointer: coarse)').matches;
 function focusInput() { const ta = $('#msg-input'); if (ta && !coarse()) ta.focus({ preventScroll: true }); }
+// Where the focus goes in a chat when the control that had it is gone: the text box on a computer; on a phone (where the
+// keyboard would cover the conversation) the send button, which stops the coach's reply while one is coming.
+function composerTarget() {
+  const ta = $('#msg-input'), btn = $('#send-btn'), comp = $('#composer');
+  if (!comp || comp.hidden) return null;
+  if (!coarse()) return ta && !ta.disabled ? ta : null;
+  return btn && !btn.disabled ? btn : null;
+}
+function focusComposer() { const t = composerTarget(); if (t) t.focus({ preventScroll: true }); }
 function reviewingView() {
   const secs = el('span', { class: 'mono', 'aria-hidden': 'true', text: '0' });
   const timer = setInterval(() => { if (!secs.isConnected) { clearInterval(timer); return; } secs.textContent = String(Math.round((Date.now() - S.reviewStart) / 1000)); }, 1000);
@@ -4444,6 +4530,7 @@ function openPassage(id) {
   S.sh = { id, idx: -1, playing: false, mode: 'pause', script: true, zh: false };
   if (S.shadow.cur !== id) { S.shadow.cur = id; Store.patch('shadow', shadowFull(), { cur: id }); }
   renderTool();
+  if (S.tab !== 'today') return; // written while the learner is on another tab: shown when they come back
   window.scrollTo(0, 0);
   focusHeading('#today-dyn h2');
 }
@@ -4476,8 +4563,8 @@ async function genPassage() {
     g.busy = false; g.ctl = null;
     if (S.tool === 'shadow' && !curPassage()) {
       const ae = document.activeElement, cancel = !!(ae && ae.dataset && ae.dataset.fk === 'sh-gen-stop');
-      renderTool();
-      if (cancel) focusFk('sh-gen', '#today-dyn .card-title'); // 取消 is gone: back to the button that writes one
+      if (cancel) { renderTool(); focusFk('sh-gen', '#today-dyn .card-title'); } // 取消 is gone: back to the button that writes one
+      else redrawLater(renderTool);
     }
   }
 }
@@ -4623,7 +4710,7 @@ function playerView() {
     el('h2', { class: 'card-title mt6', tabindex: '-1', lang: 'en', text: p.title }),
     el('p', { class: 'help', text: (p.src === 'own' ? '自己的稿' : '教練寫的') + (p.level ? '・' + p.level : '') + '・' + p.sents.length + ' 句' + (n >= 3 ? '・已經練 ' + n + ' 天，唸順了就可以換一篇' : '') }),
     TTS.ok ? el('div', { class: 'ctl-row mt12' },
-      el('button', { type: 'button', class: 'btn primary', 'data-fk': 'sh-play', onclick: () => (sh.playing ? shStop() : shPlayFrom(sh.idx >= 0 ? sh.idx : 0)) },
+      el('button', { type: 'button', class: 'btn primary', 'data-fk': 'sh-play', onclick: single(() => (sh.playing ? shStop() : shPlayFrom(sh.idx >= 0 ? sh.idx : 0))) },
         el('span', { class: 'ico', html: sh.playing ? ICON.pause : ICON.play }), sh.playing ? '暫停' : sh.idx > 0 ? '從第 ' + (sh.idx + 1) + ' 句繼續' : '從頭播放'),
       el('div', { class: 'seg', role: 'group', 'aria-label': '播放方式' }, [['pause', '聽一句、跟一句'], ['flow', '連續播放']].map(([k, t]) =>
         el('button', { type: 'button', 'aria-pressed': String(sh.mode === k), 'data-fk': 'shm-' + k, onclick: () => { sh.mode = k; renderTool(); } }, t)))) : null,
@@ -4844,12 +4931,15 @@ async function f432Points() {
     const points = (Array.isArray(v && v.points) ? v.points : []).filter(x => typeof x === 'string' && x.trim()).map(x => x.trim().slice(0, 120)).slice(0, 4);
     const phrases = (Array.isArray(v && v.phrases) ? v.phrases : []).filter(x => x && typeof x.en === 'string' && x.en.trim()).map(x => ({ en: x.en.trim().slice(0, 160), zh: typeof x.zh === 'string' ? x.zh.trim().slice(0, 120) : '' })).slice(0, 4);
     if (!points.length && !phrases.length) throw { code: 'invalid_json', message: 'no points' };
-    if (mine()) { F.pointsReq = null; F.points = same() ? { points, phrases } : null; }
+    if (!mine()) return; // a newer request, or another topic chosen meanwhile: nothing shown changes
+    F.pointsReq = null; F.points = same() ? { points, phrases } : null;
   } catch (e) {
-    if (e && BLOCK_CODES.includes(e.code)) { S.sampleState = 'blocked'; S.blockCode = e.code; }
+    const blocked = e && BLOCK_CODES.includes(e.code);
+    if (blocked) { S.sampleState = 'blocked'; S.blockCode = e.code; }
+    if (!mine() && !blocked) return;
     if (mine()) { F.pointsReq = null; F.points = same() ? { err: sampleErrMsg(e, 'task') } : null; }
   }
-  if (S.tool === 'f432') renderTool();
+  if (S.tool === 'f432') redrawLater(renderTool);
 }
 function pointsBox(F) {
   if (!F.points) return null;
@@ -4901,8 +4991,8 @@ function f432View() {
     F.recErr ? el('p', { class: 'notice mt12', text: F.recErr }) : null,
     F.state === 'run' && Rec.mr ? el('p', { class: 'help mt12' }, el('span', { class: 'rec-dot', 'aria-hidden': 'true' }), '錄音中') : null,
     el('div', { class: 'start-row mt12' },
-      F.state === 'run' ? el('button', { type: 'button', class: 'btn', 'data-fk': 'f432-pause', onclick: () => f432Pause(true) }, '暫停') : null,
-      F.state === 'pause' ? el('button', { type: 'button', class: 'btn primary', 'data-fk': 'f432-resume', onclick: f432Go }, '繼續') : null,
+      F.state === 'run' ? el('button', { type: 'button', class: 'btn', 'data-fk': 'f432-pause', onclick: single(() => f432Pause(true)) }, '暫停') : null,
+      F.state === 'pause' ? el('button', { type: 'button', class: 'btn primary', 'data-fk': 'f432-resume', onclick: single(() => f432Go()) }, '繼續') : null,
       F.state === 'run' || F.state === 'pause' ? el('button', { type: 'button', class: 'btn', 'data-fk': 'f432-end', onclick: f432End }, '這次講完了') : null,
       F.state === 'gap' ? el('button', { type: 'button', class: 'btn primary big', 'data-fk': 'f432-next', onclick: f432Go }, '開始第 ' + (F.phase + 1) + ' 次（' + F432_SECS[F.phase] / 60 + ' 分鐘）') : null,
       F.state === 'done' ? el('button', { type: 'button', class: 'btn', 'data-fk': 'f432-again', onclick: () => {
@@ -4915,13 +5005,14 @@ function f432View() {
   const pb = pointsBox(F);
   if (pb && F.state !== 'done') parts.push(el('section', { class: 'card' }, pb));
   if (F.recs.some(Boolean)) {
+    // Each recording keeps its own player, so a redraw (a refresh in the background) does not stop it while it plays.
     parts.push(el('section', { class: 'card' },
       el('h3', { class: 'card-title', text: '錄音' }),
       el('p', { class: 'help mt6', text: '錄音只留在這個畫面，離開或重新整理就會消失；想保存請下載。' }),
       el('div', { class: 'recs mt12' }, F.recs.map((r, i) => (r ? el('div', null,
         el('div', { class: 'card-head' }, el('b', { text: '第 ' + (i + 1) + ' 次（' + F432_SECS[i] / 60 + ' 分鐘）' }),
           el('a', { class: 'link', href: r.url, download: '4-3-2-第' + (i + 1) + '次.' + (/mp4|aac/.test(r.type) ? 'm4a' : /ogg/.test(r.type) ? 'ogg' : 'webm'), 'data-fk': 'f432-dl-' + i }, '下載')),
-        el('audio', { controls: true, preload: 'metadata', src: r.url })) : null)))));
+        r.audio || (r.audio = el('audio', { controls: true, preload: 'metadata', src: r.url }))) : null)))));
   }
   return el('div', { class: 'panel' }, parts);
 }
@@ -5202,7 +5293,7 @@ async function applyBackup() {
   const imp = S.importing;
   if (!imp || !imp.docs || S.uploading || !S.ready) return;
   S.uploading = true; fillSettings();
-  const docs = imp.docs, n = { phrases: 0, inbox: 0, days: 0, sess: 0, shadow: 0 };
+  const docs = imp.docs, n = { phrases: 0, inbox: 0, days: 0, sess: 0, shadow: 0, settings: '' };
   let full = false;
   try {
     // Every document the file touches must have been read here first, so the merge is applied to what is really
@@ -5214,12 +5305,14 @@ async function applyBackup() {
     const unread = () => Object.keys(docs).filter(name => S.loadErrors.has(name));
     if (unread().length) await reloadDocs(unread());
     if (unread().length) { toast('還讀不到這裡的部分資料，先不合併，等一下再試。'); return; }
-    // On a visit that could not reach the cloud, the settings shown are this browser's (often the defaults): they are
-    // not a sign that the cloud's are, so settings are not imported then.
-    if (docs.settings && Store.why !== 'offline') {
+    // Settings are taken from the file only where the learner's own are known here and are still the defaults (or 關於我
+    // is empty). On a visit that could not reach the cloud, the settings shown are this browser's (often the defaults),
+    // and settings that could not be read are shown as the defaults: neither is a sign that the real ones are.
+    if (docs.settings) {
       const inc = pickSettings(docs.settings);
-      if (JSON.stringify(S.settings) === JSON.stringify(pickSettings({}))) { S.settings = inc; saveSettings(); }
-      else if (!S.settings.about && inc.about) { S.settings.about = inc.about; saveSettings('about'); }
+      if (!S.settingsRead || Store.why === 'offline') n.settings = 'unknown';
+      else if (JSON.stringify(S.settings) === JSON.stringify(pickSettings({}))) { S.settings = inc; saveSettings(); n.settings = 'all'; }
+      else if (!S.settings.about && inc.about) { S.settings.about = inc.about; saveSettings('about'); n.settings = 'about'; }
     }
     if (docs.phrases) {
       const patch = { map: {} };
@@ -5239,10 +5332,12 @@ async function applyBackup() {
     // Lists with a size limit only take what fits; nothing already here is pushed out.
     if (docs.inbox) {
       const patch = { map: {} };
-      const add = normInbox(docs.inbox).filter(x => !S.inbox.some(y => y.id === x.id));
-      for (const x of add) {
+      // A note keeps an id of at most 40 characters, so the file's ids are compared the way they are stored.
+      for (const x of normInbox(docs.inbox)) {
+        const id = String(x.id).slice(0, 40);
+        if (S.inbox.some(y => y.id === id)) continue;
         if (S.inbox.length >= 100) { full = true; break; }
-        const item = { id: String(x.id).slice(0, 40), text: x.text.slice(0, 200), at: x.at };
+        const item = { id, text: x.text.slice(0, 200), at: x.at };
         S.inbox.push(item); patch.map[item.id] = item; n.inbox++;
       }
       S.inbox.sort((a, b) => b.at - a.at);
@@ -5325,7 +5420,10 @@ async function applyBackup() {
   if (n.days) parts.push('練習 ' + n.days + ' 天');
   if (n.sess) parts.push('對話複習 ' + n.sess + ' 次');
   if (n.shadow) parts.push('跟讀短文 ' + n.shadow + ' 篇');
-  toast((parts.length ? '已合併：新增' + parts.join('、') : '已合併，沒有新的資料') + (full ? '。這裡放不下的資料（例如已滿的收藏、隨手記、跟讀短文或某個月的對話複習）沒有加進來' : ''));
+  const took = n.settings === 'all' ? '備份檔裡的設定' : n.settings === 'about' ? '備份檔裡的「關於我」' : '';
+  toast((parts.length ? '已合併：新增' + parts.join('、') + (took ? '，並帶入' + took : '') : took ? '已合併：帶入' + took : '已合併，沒有新的資料')
+    + (n.settings === 'unknown' ? '。這次讀不到你原本的設定，備份檔裡的設定沒有帶入' : '')
+    + (full ? '。這裡放不下的資料（例如已滿的收藏、隨手記、跟讀短文或某個月的對話複習）沒有加進來' : ''));
   refreshStreak(); renderAll(); fillSettings();
 }
 function fillBackup() {
@@ -5437,17 +5535,25 @@ function fillSettings() {
   fillBackup();
   fillInstall();
 }
-// Removes the practice data this app stored in this browser (local mode only), then starts fresh.
+// Removes the practice data this app stored in this browser (local mode only), then starts fresh. Other tabs of the
+// app that work from this browser start fresh too (see the storage listener), so none of them writes back what it shows.
 // The API key stays: it has its own 移除金鑰 button.
+const CLEARED_LS = 'kaikou:cleared';
 function clearLocalData() {
+  lsSet(CLEARED_LS, String(Date.now())); // removed again below, with the rest
+  startFresh(true);
+}
+function startFresh(wipe) {
   for (const n of Object.keys(Store.timers)) clearTimeout(Store.timers[n]);
   Store.pend = {};
   Store.mode = 'memory'; // nothing may be written back while the page reloads
-  try {
-    const keys = [];
-    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('kaikou:') && k !== API_KEY_LS && k !== KEY_GONE_LS) keys.push(k); }
-    for (const k of keys) localStorage.removeItem(k);
-  } catch (_) { /* nothing stored */ }
+  if (wipe) {
+    try {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('kaikou:') && k !== API_KEY_LS && k !== KEY_GONE_LS) keys.push(k); }
+      for (const k of keys) localStorage.removeItem(k);
+    } catch (_) { /* nothing stored */ }
+  }
   location.reload();
 }
 function bindStatic() {
@@ -5513,14 +5619,18 @@ function bindStatic() {
     sendFromComposer();
   });
   $('#hint-btn').addEventListener('click', () => { voicePause('看完提示，按「繼續說」或直接送出。'); getHints(); });
-  $('#tip-close').addEventListener('click', () => { S.tipHidden = true; lsSet('kaikou:tip', 'hide'); $('#composer-tip').hidden = true; updateScrollPad(); focusInput(); });
+  $('#tip-close').addEventListener('click', () => { S.tipHidden = true; lsSet('kaikou:tip', 'hide'); $('#composer-tip').hidden = true; updateScrollPad(); focusComposer(); });
   $('#saved-search').addEventListener('input', renderSavedList);
   $('#copy-anki').addEventListener('click', () => {
     if (!S.phrases.length) { toast('還沒有收藏可以複製'); return; }
     copyText(ankiText(S.phrases), $('#copy-fallback'), '已複製 ' + S.phrases.length + ' 句');
   });
   const dlg = $('#settings');
-  const closeDlg = () => { try { dlg.close(); } catch (_) { dlg.removeAttribute('open'); } };
+  const closeDlg = () => { try { dlg.close(); } catch (_) { dlg.removeAttribute('open'); msgsHome(); } };
+  // While 設定 is open, the rest of the page is out of sight and out of reach of screen readers (a modal dialog): the
+  // short messages shown and read out go inside it meanwhile.
+  const msgsHome = () => { const t = $('#toast'), l = $('#sr-live'); if (dlg.open) dlg.append(t, l); else dlg.after(t, l); };
+  dlg.addEventListener('close', msgsHome);
   // The dialog gives the focus back to the control that opened it; when that control is gone (到設定輸入金鑰 is
   // replaced once a key is saved), the focus goes to the text box of an open chat, or to the settings button.
   dlg.addEventListener('close', () => setTimeout(() => {
@@ -5535,6 +5645,7 @@ function bindStatic() {
     voicePause();
     fillSettings();
     try { dlg.showModal(); } catch (_) { dlg.setAttribute('open', ''); }
+    msgsHome();
     // Settings that could not be read yet are read again (關於我 stays closed until then, so it cannot replace yours).
     if (!S.settingsRead) reloadDocs(['settings']).then(() => { if (dlg.open) fillSettings(); });
   });
@@ -5626,8 +5737,10 @@ function bindStatic() {
   window.addEventListener('storage', e => {
     if (e.key === API_KEY_LS && !window.claude) { keyChanged(); return; } // saved or removed in another tab
     if (Store.mode !== 'local' || !S.ready || !e.key || !e.key.startsWith('kaikou:')) return;
+    if (e.key === CLEARED_LS) { if (e.newValue) startFresh(false); return; } // another tab cleared this browser's data
     const name = e.key.slice(7);
     if (!/^(settings|phrases|inbox|srs|shadow|chat|log-\d{4}-\d{2}|sessions-\d{4}-\d{2})$/.test(name) || Store.busyDoc(name)) return;
+    if (e.newValue === null && Store.why) return; // a copy removed by a tab that uses the cloud (see reloadDocs)
     let d = null;
     try { d = e.newValue ? JSON.parse(e.newValue) : null; } catch (_) { return; }
     if (sameAsSeen(name, d)) return;
@@ -5655,7 +5768,13 @@ function applyChat(d) {
   if (!S.chat || c.updatedAt > S.chat.updatedAt) S.chat = c;
 }
 function applyDoc(name, d, raced) {
-  if (name === 'settings') { S.settings = pickSettings(d); S.settingsRead = !S.settingsLost; }
+  S.readOnce.add(name);
+  if (name === 'settings') {
+    // In Claude, a visit that works from this browser and finds no copy of the settings here does not know the learner's.
+    if (d === null && Store.mode !== 'db' && Store.why) S.settingsLost = true;
+    S.settings = pickSettings(d); S.settingsRead = !S.settingsLost;
+    if (S.settingsRead && S.planBlind.size) setTimeout(planKnown, 0); // once the other documents of this read are in
+  }
   else if (name === 'phrases') S.phrases = normPhrases(d);
   else if (name === 'inbox') S.inbox = normInbox(d);
   else if (name === 'srs') S.srs = normSrs(d);
@@ -5699,6 +5818,10 @@ async function reloadDocs(names) {
   let changed = false;
   list.forEach((n, i) => {
     if (!res[i].ok) { S.loadErrors.add(n); return; }
+    // In Claude, this browser's copies stand in for the cloud: a copy is missing when this visit never read the
+    // document (see leaveCloud), or when a tab that uses the cloud removed it (once the changes kept here were saved
+    // there or dropped). Either way the page keeps what it shows (its later changes are kept here again).
+    if (res[i].v === null && Store.mode === 'local' && Store.why) return;
     const raced = busyAtIssue[n] || (Store.edits[n] || 0) !== marks[n] || Store.busyDoc(n);
     if (!raced) {
       if (n === 'chat' && chatBusyAtIssue) return;
@@ -5718,6 +5841,9 @@ async function reloadDocs(names) {
 }
 // Redraws after a refresh wait while the person is composing text with an input method (Zhuyin, Pinyin…).
 let composing = false, renderAfterComposing = false;
+// So does any other redraw the learner did not ask for (an answer that arrives, a confirmation that runs out): drawing
+// the box again would break the word being composed.
+function redrawLater(fn) { if (composing) { renderAfterComposing = true; return; } fn(); }
 function renderAfterRefresh() {
   if (composing) { renderAfterComposing = true; return; }
   if (S.tab === 'coach' && (S.busy || S.reviewing)) { renderToday(); renderLog(); return; }
@@ -5775,7 +5901,10 @@ async function boot(data) {
   renderAll();
   const c = window.claude;
   if (c && typeof c.use === 'function') {
-    c.use('sample').then(fn => { S.sample = fn || null; S.sampleState = fn ? 'ok' : 'none'; renderCoach(); renderInbox(); updateStartBtn(); }, () => { S.sampleState = 'none'; renderCoach(); });
+    // The answer may come after the page is ready (Claude may first ask the viewer): every view that offers the coach
+    // is drawn again (today's tools among them).
+    const ready = () => redrawLater(() => { renderCoach(); renderInbox(); renderToday(); updateStartBtn(); });
+    c.use('sample').then(fn => { S.sample = fn || null; S.sampleState = fn ? 'ok' : 'none'; ready(); }, () => { S.sampleState = 'none'; ready(); });
   } else if (c) { S.sampleState = 'none'; } else {
     if (!KEY_HERE && lsGet(API_KEY_LS)) { lsDel(API_KEY_LS); lsSet(KEY_GONE_LS, '1'); } // see keyGoneNotice
     useApiKeyIfAny();
