@@ -65,6 +65,13 @@ if [ ! -e .git ] || ! git rev-parse --git-dir >/dev/null 2>&1; then
   echo "這個資料夾不是開口練習室的 Git repo（找不到 .git），沒辦法發布。"
   finish 1
 fi
+# 之前和 GitHub 合併到一半沒有完成（或其他程式開始的合併）：在那上面再 commit 可能弄丟手動解決的衝突，所以先不動。
+if rebasing || [ -e "$(git rev-parse --git-path MERGE_HEAD)" ]; then
+  echo "之前把你的變更和 GitHub 上的版本合在一起的動作還沒完成，所以這次什麼都沒做。"
+  echo "如果你已經手動解決了衝突，請找人幫忙完成。不然，先關掉其他用 Git 的程式（例如 VS Code），"
+  echo "在終端機進到這個資料夾執行：git rebase --abort（如果是合併，執行 git merge --abort），再點一次這個檔案。"
+  finish 1
+fi
 
 echo "== [1/3] 要發布的變更"
 for d in docs test tools; do

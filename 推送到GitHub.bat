@@ -14,6 +14,12 @@ if errorlevel 1 (
     goto failed
 )
 
+rem An earlier attempt to combine with GitHub (or a merge started in another program) is not finished:
+rem committing on top of it could lose conflict fixes made by hand, so nothing is done until it is finished.
+if exist ".git\rebase-merge" goto unfinished
+if exist ".git\rebase-apply" goto unfinished
+if exist ".git\MERGE_HEAD" goto unfinished
+
 echo == [1/3] Changes to publish
 for %%d in (docs test tools) do if exist "%%d\" git add -A -- "%%d"
 git add -u
@@ -108,6 +114,14 @@ goto done
 git reset -q
 echo.
 echo Cancelled. Nothing was published.
+goto done
+
+:unfinished
+echo.
+echo An earlier attempt to combine your changes with GitHub is not finished, so nothing was done.
+echo If you fixed the conflicts by hand, ask for help to finish it. Otherwise close other programs that
+echo use Git (such as VS Code), run this in this folder, then run this script again:  git rebase --abort
+echo (if a merge was started instead, the command is:  git merge --abort)
 goto done
 
 :failed

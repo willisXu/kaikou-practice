@@ -433,6 +433,9 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
   .day{font-size:12px}
   .day.s2::before{inset:5%}
 }
+/* 4/3/2: one flash when a round's time is up (a muted iPhone plays no beep). Without motion it simply shows for a moment. */
+.time-up{position:fixed;inset:0;z-index:60;pointer-events:none;background:var(--accent);opacity:.4;animation:timeup 1.4s ease-out forwards}
+@keyframes timeup{from{opacity:.55}to{opacity:0}}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
   .vb-meter{display:none}
@@ -699,7 +702,7 @@ const ICON = {
 };
 const DEFAULTS = { plan: '20', level: 'B1', about: '', accent: 'en-US', voiceURI: '', rate: 0.95, autoSpeak: true, shRate: 0.85 };
 const LEVELS = {
-  A2: { zh: '入門', style: 'Use very common words and short, simple sentences (under 12 words each). Avoid idioms and slang.' },
+  A2: { zh: '初級', style: 'Use very common words and short, simple sentences (under 12 words each). Avoid idioms and slang.' },
   B1: { zh: '中級', style: 'Use everyday vocabulary and clear sentences. Now and then use one useful phrase they could copy.' },
   B2: { zh: '中高級', style: 'Talk naturally, like a friendly native-speaking colleague, with common idioms and phrasal verbs.' },
 };
@@ -765,7 +768,9 @@ const OPT_RE = /^\s*(casual|neutral|work|final)\s*[:：]\s*(.+)$/i;
 // Codes after which the chat cannot continue in this view at all.
 const BLOCK_CODES = ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'];
 // Codes where sending the same input again would not help.
-const NO_RETRY_CODES = ['refused', 'prompt_too_large', 'empty_completion', 'invalid_request', 'transform_error', 'key_invalid', 'key_missing', 'no_credit', 'model_missing'];
+const NO_RETRY_CODES = ['refused', 'prompt_too_large', 'empty_completion', 'invalid_request', 'transform_error', 'key_invalid', 'key_missing', 'no_credit', 'model_missing', 'spend_limit', 'spend_cap'];
+// Errors of the API key or account itself: asking the coach again cannot work until they are fixed.
+const ACCOUNT_CODES = ['key_invalid', 'key_missing', 'no_credit', 'model_missing', 'spend_limit', 'spend_cap'];
 
 /* ================= state ================= */
 const S = {
@@ -777,7 +782,7 @@ const S = {
   setup: { mode: 'free', topic: 'weekend', scene: 'smalltalk', custom: '' },
   sample: null, sampleState: 'loading',
   busy: false, ctl: null, askStartedAt: 0, reviewing: false, reviewStart: 0,
-  hints: null, hintSeq: 0, note: null, noteNoRetry: false, unsavedReview: null, held: null, uploading: false,
+  hints: null, hintSeq: 0, note: null, noteNoRetry: false, noteTask: false, unsavedReview: null, held: null, uploading: false, settingsRead: false,
   streak: 0, justStamped: false, armed: null, tipHidden: false,
   micZh: null, say: {}, hintFill: '',   // dictation language override (中翻英), read-aloud results, a hint put in the box
   srs: {}, drill: null,                 // review schedule per saved phrase, the running review
@@ -808,7 +813,7 @@ function updateSync() {
   setSync(busy ? 'saving' : 'saved');
 }
 // The platform limit is 256 KiB per document; the app keeps every document well under it.
-const DOC_LIMIT = 200 * 1024;
+const DB_LIMIT = 256 * 1024, DOC_LIMIT = 200 * 1024;
 const utf8 = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
 function docBytes(o) { const s = JSON.stringify(o); return utf8 ? utf8.encode(s).length : s.length * 3; }
 // What a rejected write means (db.d.ts): retry later, stop using the cloud for this visit, or wait for the user.
@@ -824,7 +829,7 @@ function writeFailure(e, full) {
    so two devices never overwrite each other's entries. Writes to one document are serialized,
    a failed write stays queued and is retried with backoff. */
 const Store = {
-  mode: 'loading', db: null, uid: null, isOwner: false, why: '',
+  mode: 'loading', db: null, uid: null, isOwner: false, why: '', unsentKey: '', unsentTimer: 0,
   pend: {}, timers: {}, chain: {}, failed: {}, edits: {}, inflight: {}, sending: {}, retries: {}, hooks: {}, heldAtStop: {},
   async init() {
     const c = window.claude;
@@ -842,7 +847,10 @@ const Store = {
         // A viewer whose link could not save to the cloud keeps working from this browser on later visits too;
         // 設定 offers to try the cloud again (retryCloud), which uploads what is stored here.
         if (!this.isOwner && lsGet('kaikou:no-cloud') === id) { this.why = 'no_write'; this.mode = lsOK() ? 'local' : 'memory'; return; }
-        this.mode = 'db'; return;
+        this.mode = 'db';
+        this.unsentKey = UNSENT_LS + id + ':' + newId(); // this tab's changes on their way to the cloud (see saveUnsent)
+        holdTabLock(this.unsentKey);
+        return;
       }
       // In Claude, but the cloud is not reachable on this visit (it failed to load, or this copy of the page is not
       // opened inside Claude): changes stay in this browser and are recorded as held patches, so the next visit
@@ -855,8 +863,9 @@ const Store = {
     }
     this.mode = lsOK() ? 'local' : 'memory';
   },
-  // Stop using the cloud for the rest of this visit and keep every change in this browser instead.
-  leaveCloud(why) {
+  // Stop using the cloud for the rest of this visit and keep every change in this browser instead (quiet: the caller
+  // says why).
+  leaveCloud(why, quiet) {
     if (this.mode !== 'db') return;
     this.mode = lsOK() ? 'local' : 'memory';
     this.why = why;
@@ -866,8 +875,10 @@ const Store = {
     this.heldAtStop = {};
     for (const [n, p] of Object.entries(this.pend)) if (p.patch && p.patch !== 'replace') { recordHeld(n, p.patch); this.heldAtStop[n] = p.patch; }
     this.pend = {}; this.failed = {}; this.retries = {};
+    // What never reached the cloud is held now (and what is in flight is held if it fails), so this tab's record goes.
+    clearTimeout(this.unsentTimer); this.unsentTimer = 0; lsDel(this.unsentKey); this.unsentKey = '';
     S.loadErrors.clear();
-    toast(why === 'no_write' ? '這個連結不能把進度存到雲端，改存在這個瀏覽器。' : '雲端同步已停止，之後的變更只存在這個瀏覽器。');
+    if (!quiet) toast(why === 'no_write' ? '這個連結不能把進度存到雲端，改存在這個瀏覽器。' : '雲端同步已停止，之後的變更只存在這個瀏覽器。');
     // This browser keeps a full working copy for the rest of the visit, merged into anything already stored here.
     for (const [n, full] of Object.entries(allDocs())) {
       let doc = full;
@@ -901,14 +912,39 @@ const Store = {
     // the meantime cancels out instead of becoming a deletion; see recordHeld).
     if (this.mode !== 'db' && this.why && patch) recordHeld(name, patch);
     this.edits[name] = (this.edits[name] || 0) + 1;
+    delete lastSeen[name]; // a later read that matches the one before this edit is news again (another device undid it)
     const p = this.pend[name] || {};
     p.full = full;
     if (!patch) p.patch = 'replace';
     else if (p.patch !== 'replace') p.patch = deepMerge(p.patch || {}, patch);
     this.pend[name] = p;
+    this.markUnsent();
     clearTimeout(this.timers[name]);
     this.timers[name] = setTimeout(() => this.flush(name), 450);
     updateSync();
+  },
+  // A cloud visit keeps every change the cloud has not confirmed yet in this browser too, in one record per tab
+  // ({ at, docs }), so changes that are waiting for a retry, or still on their way when the page closes, are sent
+  // again by a later visit (resendUnsent) instead of being lost. The whole chat document is not kept: it is written in
+  // one piece. The record is brought up to date a moment after each change (and at once when the page is hidden or
+  // closed), so a burst of changes (an import) is written once.
+  markUnsent() {
+    if (!this.unsentKey || this.mode !== 'db' || this.unsentTimer) return;
+    this.unsentTimer = setTimeout(() => this.saveUnsent(), 300);
+  },
+  saveUnsent() {
+    clearTimeout(this.unsentTimer); this.unsentTimer = 0;
+    if (!this.unsentKey || this.mode !== 'db') return;
+    const docs = {};
+    for (const n of new Set(Object.keys(this.sending).concat(Object.keys(this.pend)))) {
+      if (!DOC_NAME_RE.test(n)) continue;
+      let p = null;
+      for (const q of [this.sending[n], this.pend[n]]) if (q && q.patch && q.patch !== 'replace') p = deepMerge(p || {}, q.patch);
+      if (p && hasChange(p)) docs[n] = p;
+    }
+    if (!Object.keys(docs).length) { lsDel(this.unsentKey); return; }
+    // A record that could not be brought up to date (the storage is full) must not be sent again later as it was.
+    try { localStorage.setItem(this.unsentKey, JSON.stringify({ at: Date.now(), docs })); } catch (_) { lsDel(this.unsentKey); }
   },
   flush(name) {
     clearTimeout(this.timers[name]);
@@ -963,6 +999,7 @@ const Store = {
     } finally {
       this.inflight[name] -= 1;
       if (this.sending[name] === sent) delete this.sending[name];
+      this.markUnsent();
       updateSync();
     }
   },
@@ -984,11 +1021,12 @@ const Store = {
         if (p.patch && p.patch !== 'replace') {
           try { await this.ref(name).update(p.patch); }
           catch (e) {
-            // update() rejects invalid_argument for a missing document, but also for one that is too large:
-            // only a document that really does not exist yet is created from the local copy.
+            // update() rejects invalid_argument for a missing document, for one that would grow too large, and for
+            // a viewer who may not write (a member moved down to Viewer still reads their own documents): only a
+            // document that really does not exist yet is created from the local copy.
             if (!(e && e.code === 'invalid_argument')) throw e;
             const snap = await this.ref(name).get();
-            if (snap.exists) throw { code: 'too_large', message: 'update rejected for an existing document' };
+            if (snap.exists) throw docBytes(deepMerge(snap.data(), p.patch)) > DB_LIMIT * 0.98 ? { code: 'too_large', message: 'update rejected: the document would be too large' } : e;
             await this.ref(name).set(full);
           }
         } else {
@@ -1014,6 +1052,10 @@ const Store = {
    an explicit choice is written under its timestamp, and the highest weight wins. Because update() merges
    these keys, a device that has not refreshed yet can never overwrite a choice made on another device. */
 const isPlan = p => p === '20' || p === '60';
+// A weight is 0, BLIND_W or the time of a choice. A backup file may not bring a choice dated after tomorrow (a
+// hand-made or damaged file must not bring one that always wins); a stored one counts whatever this device's clock says.
+const okWeight = w => /^(0|-1|[1-9]\d{0,15})$/.test(w) && Number.isSafeInteger(Number(w));
+const okImportWeight = w => okWeight(w) && Number(w) <= Date.now() + 86400000;
 function resolvePlan(plans, lp) {
   let best = '', w = -2; // below BLIND_W
   for (const [k, p] of Object.entries(plans || {})) { const n = Number(k); if (isPlan(p) && isFinite(n) && n > w) { w = n; best = p; } }
@@ -1025,7 +1067,7 @@ function normDay(v) {
   if (v.coach && typeof v.coach === 'object') {
     for (const [id, n] of Object.entries(v.coach)) { const x = Number(n); if (isFinite(x) && x > 0) coach[id] = x; }
   }
-  if (v.plans && typeof v.plans === 'object') for (const [k, p] of Object.entries(v.plans)) if (isPlan(p)) plans[k] = p;
+  if (v.plans && typeof v.plans === 'object') for (const [k, p] of Object.entries(v.plans)) if (isPlan(p) && okWeight(k)) plans[k] = p;
   const lp = isPlan(v.plan) ? v.plan : '';
   return { plan: resolvePlan(plans, lp), plans, lp, items: (v.items && typeof v.items === 'object') ? Object.assign({}, v.items) : {}, coach, coachMin: Number(v.coachMin) || 0 };
 }
@@ -1213,15 +1255,20 @@ function loadSessions(m) {
   })();
   return sessLoads[m];
 }
-// A month keeps at most 150 reviews and stays under the size limit; the oldest reviews of that month go first.
-function addSession(sess) {
+// A month keeps at most 150 reviews and stays under the size limit; the oldest reviews of that month go first. With
+// keep, none goes: a review that does not fit is not added. Returns whether it was added.
+function addSession(sess, keep) {
   const m = sess.date.slice(0, 7);
-  const arr = (S.sessions[m] = (S.sessions[m] || []).filter(s => s.id !== sess.id));
+  const arr = (S.sessions[m] || []).filter(s => s.id !== sess.id);
   arr.push(sess);
   arr.sort((a, b) => (a.at || 0) - (b.at || 0));
+  const over = () => arr.length > 150 || docBytes({ map: Object.fromEntries(arr.map(s => [s.id, s])) }) > DOC_LIMIT * 0.8;
+  if (keep && over()) return false;
+  S.sessions[m] = arr;
   const patch = { map: { [sess.id]: sess } };
-  while (arr.length > 1 && (arr.length > 150 || docBytes(sessionsFull(m)) > DOC_LIMIT * 0.8)) patch.map[arr.shift().id] = null;
+  while (arr.length > 1 && over()) patch.map[arr.shift().id] = null;
   Store.patch('sessions-' + m, sessionsFull(m), patch);
+  return true;
 }
 
 /* ================= settings / phrases / inbox ================= */
@@ -1921,7 +1968,7 @@ function micStart(key, lang, h) {
   try { if (TTS.ok) speechSynthesis.cancel(); } catch (_) { /* nothing playing */ }
   let rec;
   try { rec = new SR(); } catch (_) { return false; }
-  const st = { rec, key, fin: '', err: '', dead: false };
+  const st = { rec, key, fin: '', interim: '', err: '', dead: false };
   rec.lang = lang; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
   rec.onresult = e => {
     if (st.dead) return;
@@ -1930,8 +1977,8 @@ function micStart(key, lang, h) {
       const r = e.results[i], t = r && r[0] ? String(r[0].transcript || '') : '';
       if (r && r.isFinal) fin += t; else interim += t;
     }
-    st.fin = fin.trim();
-    if (h.onUpdate) h.onUpdate(st.fin, interim.trim());
+    st.fin = fin.trim(); st.interim = interim.trim();
+    if (h.onUpdate) h.onUpdate(st.fin, st.interim);
   };
   rec.onerror = e => { st.err = (e && e.error) || 'unknown'; };
   rec.onend = () => {
@@ -1945,7 +1992,10 @@ function micStart(key, lang, h) {
       Mic.blocked = true; Mic.why = st.err;
       if (st.err !== 'network') lsSet(MIC_OFF_LS, JSON.stringify({ why: st.err, at: Date.now() }));
     }
-    if (h.onEnd) h.onEnd(st.dead ? '' : st.fin, st.err === 'aborted' ? '' : st.err, st.dead);
+    // A recognition that ends by itself keeps the words still shown as unconfirmed too: a recogniser may stop without
+    // confirming its last guess (some versions of Safari never confirm one).
+    const heard = st.dead ? '' : !st.err ? [st.fin, st.interim].filter(Boolean).join(/^zh/.test(lang) ? '' : ' ') : st.fin;
+    if (h.onEnd) h.onEnd(heard, st.err === 'aborted' ? '' : st.err, st.dead);
     if (off) {
       // The microphone buttons go away: a focused one hands the focus to the text box (or the tab).
       const mine = !!(ae && ae !== document.body && (ae.id === 'mic-btn' || (ae.hasAttribute && ae.hasAttribute('data-say-btn'))));
@@ -2203,22 +2253,26 @@ function extractJson(text) {
 const JSON_LINE = '(^|\\n)[ \\t]*(\\{\\s*(?:["“}]|$)|\\[\\s*(?:[{"“\\]]|$))';
 const SEP_RE = new RegExp('###|(^|\\n)[ \\t]*(##[ \\t]*(?=\\n|$)|```)|' + JSON_LINE);
 const JSON_LINE_RE = new RegExp(JSON_LINE);
+// A label line or a bare bullet the model put just before its corrections ("Corrections:", "-") is not part of the
+// reply (it would be shown, and spoken in a voice conversation).
+const LABEL_TAIL = /(^|\n)[ \t]*(?:[-*•]|(?:corrections?|fix(?:es)?|feedback)[ \t]*[:：]?)[ \t]*$/i;
+const dropLabelTail = s => s.replace(/\s+$/, '').replace(LABEL_TAIL, '$1');
 function streamPart(text) {
   let t = String(text || '');
   const cut = t.search(SEP_RE);
   if (cut >= 0) t = t.slice(0, cut);
   else t = t.replace(/(^|\n)[ \t]*(#{1,2}|`{1,2})[ \t]*$/, ''); // a separator still arriving
-  return t.trim();
+  return dropLabelTail(t).trim();
 }
 function parseCoach(text) {
   const t = String(text || '').replace(/```[a-zA-Z]*/g, '');
   let a = t, b = '';
   const i = t.search(/###|(^|\n)[ \t]*##[ \t]*(?=\n|$)/);
-  if (i >= 0) { a = t.slice(0, i); b = t.slice(i).replace(/^\s*#+/, ''); }
+  if (i >= 0) { a = dropLabelTail(t.slice(0, i)); b = t.slice(i).replace(/^\s*#+/, ''); }
   else {
     let j = t.search(/[[{]\s*\{?\s*["“](?:you|better|none)["”]\s*:/);
     if (j < 0) j = t.search(JSON_LINE_RE);
-    if (j >= 0) { a = t.slice(0, j); b = t.slice(j); }
+    if (j >= 0) { a = dropLabelTail(t.slice(0, j)); b = t.slice(j); }
   }
   const fixes = [];
   let none = false, tail = '';
@@ -2299,14 +2353,22 @@ function normReview(r) {
 async function askJson(prompt, opts) {
   const r = await S.sample(prompt, Object.assign({ cache: false }, opts || {}));
   const v = extractJson(r.text);
-  if (v === undefined) throw { code: 'invalid_json', message: 'no JSON in reply', text: r.text };
+  if (v === undefined) throw { code: r.truncated ? 'truncated' : 'invalid_json', message: 'no JSON in reply', text: r.text };
   return v;
 }
 /* ================= Claude API with the viewer's own key (GitHub Pages / a local file only) ================= */
 // Inside Claude the coach uses the viewer's Claude account through sample(). Elsewhere the viewer may enter their
 // own Claude API key in 設定: it is kept only in this browser (localStorage) and sent only to api.anthropic.com.
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const API_MODELS = { quick: 'claude-haiku-5-5', default: 'claude-sonnet-5-5' };
+// Claude Haiku 5.5 and Claude Sonnet 5.5 think before they answer unless told not to, and that thinking counts toward
+// max_tokens (and the bill) and holds back the first word. The coach answers straight away, as the coach inside
+// Claude does for its quick replies: thinking off on Haiku ("disabled") and no up-front thinking on Sonnet
+// ("between_tools", its lowest setting). A model that replaces one of these may need other values (see the API's
+// documentation on thinking).
+const API_MODELS = {
+  quick: { model: 'claude-haiku-5-5', max_tokens: 2048, thinking: { type: 'disabled' } },
+  default: { model: 'claude-sonnet-5-5', max_tokens: 8192, thinking: { type: 'between_tools' } },
+};
 const API_KEY_LS = 'kaikou:api-key';
 // A page opened as a file shares its storage with every other HTML file opened from this computer (any of them could
 // read a key kept there), so a key is only kept and used on a web address (GitHub Pages).
@@ -2323,12 +2385,22 @@ function apiMessages(input) {
   }
   return out;
 }
+// The API's error type decides first (status codes alone mix up a key that does not work, a spending limit and a
+// region the API does not serve).
 function apiError(status, body) {
-  const type = (body && body.error && body.error.type) || '';
-  const message = String((body && body.error && body.error.message) || '');
-  if (status === 401 || status === 403 || type === 'authentication_error' || type === 'permission_error') return { code: 'key_invalid', message };
-  if (/credit balance|billing/i.test(message)) return { code: 'no_credit', message };
-  if (status === 413 || /prompt is too long|too many tokens/i.test(message)) return { code: 'prompt_too_large', message };
+  const err = (body && body.error) || {};
+  const type = String(err.type || '');
+  const message = String(err.message || '');
+  const detail = err.details && typeof err.details === 'object' ? String(err.details.error_code || '') : '';
+  if (status === 401 || type === 'authentication_error') return { code: 'key_invalid', message };
+  if (status === 402 || type === 'billing_error' || /credit balance/i.test(message)) return { code: 'no_credit', message };
+  // A spending limit set in the Claude Console (400), or the account tier's monthly cap (429, until next month).
+  if (/specified (workspace )?API usage limits/i.test(message)) return { code: 'spend_limit', message };
+  if (detail === 'enforced_spend_limit_reached') return { code: 'spend_cap', message };
+  // 403: this key may not use the model, or the request comes from a region the API does not serve ("Request not
+  // allowed", for example from mainland China or Hong Kong).
+  if (status === 403 || type === 'permission_error' || type === 'forbidden') return { code: 'forbidden', message };
+  if (status === 413 || type === 'request_too_large' || /prompt is too long|too many tokens/i.test(message)) return { code: 'prompt_too_large', message };
   if (status === 429 || type === 'rate_limit_error') return { code: 'rate_limited', message };
   if (status === 529 || type === 'overloaded_error') return { code: 'overloaded', message };
   if (status === 404 || type === 'not_found_error') return { code: 'model_missing', message }; // a retired model id
@@ -2340,13 +2412,13 @@ async function apiSample(input, opts) {
   opts = opts || {};
   const key = apiKey();
   if (!key) throw { code: 'key_missing', message: 'no key' };
-  const tier = opts.modelTier === 'default' ? 'default' : 'quick';
+  const m = API_MODELS[opts.modelTier === 'default' ? 'default' : 'quick'];
   let res;
   try {
     res = await fetch(API_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: API_MODELS[tier], max_tokens: tier === 'default' ? 4096 : 2048, stream: true, messages: apiMessages(input) }),
+      body: JSON.stringify({ model: m.model, max_tokens: m.max_tokens, thinking: m.thinking, stream: true, messages: apiMessages(input) }),
       signal: opts.signal,
     });
   } catch (e) {
@@ -2421,10 +2493,14 @@ function sampleErrMsg(e, ctx) {
   const c = e && e.code;
   if (c === 'key_invalid') return 'Claude API 金鑰無效或已停用，請到設定重新輸入。';
   if (c === 'key_missing') return '還沒有輸入 Claude API 金鑰，請到設定輸入。';
-  if (c === 'no_credit') return 'Claude API 的額度不足，請到 Claude Console 儲值後再試。';
+  if (c === 'no_credit') return 'Claude API 的額度不足或付款有問題，請到 Claude Console 的 Billing 儲值或確認付款資料後再試。';
+  if (c === 'spend_limit') return '已經到了你在 Claude Console 設定的花費上限。到 Console 的 Billing 調高或取消上限後，再試一次。';
+  if (c === 'spend_cap') return '這個月的 Claude API 用量已經到了帳戶等級的上限，下個月 1 號（UTC）才會恢復；也可以到 Claude Console 申請提高上限。';
+  if (c === 'forbidden') return 'Claude API 拒絕了這次的要求：可能是你現在的所在地不在 Claude API 支援的地區（例如中國大陸、香港），或這把金鑰沒有使用教練模型的權限（到 Claude Console 檢查）。換到支援地區的網路後可以再試。';
+  if (c === 'truncated') return '教練這次的回覆太長，被截斷了，再試一次。';
   if (c === 'model_missing') return 'Claude API 找不到教練用的模型，可能已經停用了，這個網頁需要更新。';
   if (c === 'overloaded') return 'Claude 現在太忙了，稍等一下再試。';
-  if (c === 'not_granted') return '這個頁面還沒取得使用 Claude 的權限。重新開啟頁面，詢問時選「允許」。';
+  if (c === 'not_granted') return '這個頁面沒有使用 Claude 的權限，所以教練不能回覆。按「開啟權限設定」把 Claude 打開（也可以從這個頁面的權限選單），再試一次。';
   if (c === 'sampling_disabled') return '你的帳號或組織目前不能使用 Claude，教練暫時無法回覆。打卡和收藏照常可用。';
   if (BLOCK_CODES.includes(c)) return '在這個畫面無法使用 AI 教練，請改用最新版的 Claude 網頁或 App 開啟。打卡和收藏照常可用。';
   if (c === 'invalid_request' || c === 'transform_error') return '這次的請求格式有問題，重新整理頁面後再試。';
@@ -2437,10 +2513,35 @@ function sampleErrMsg(e, ctx) {
   if (c === 'invalid_json') return '教練這次的回覆格式不對，再試一次。';
   return '連線中斷了，再試一次。';
 }
+// The viewer said no to the coach (sample) for this page, or a refusal is remembered: Claude's own Permissions panel is
+// where it is switched back on (asking again on the next load does not help a remembered refusal).
+function permsBtn(fk) {
+  if (!window.claude || S.sampleState !== 'blocked' || S.blockCode !== 'not_granted') return null;
+  return el('button', { type: 'button', class: 'btn small', 'data-fk': fk, onclick: openPermissions }, '開啟權限設定');
+}
+async function openPermissions() {
+  let p = null;
+  try { p = await window.claude.use('permissions'); } catch (_) { p = null; }
+  if (p && typeof p.manage === 'function') {
+    try {
+      await p.manage();
+      const st = await p.state('sample');
+      if (st === 'granted' || st === 'prompt') {
+        S.sampleState = 'ok'; S.blockCode = ''; S.note = null; S.noteNoRetry = false;
+        renderAll(); updateStartBtn(); updateComposer();
+        toast('已經可以用 AI 教練了');
+      }
+      return;
+    } catch (_) { /* the panel did not open */ }
+  }
+  toast('請到這個頁面的權限設定（Permissions）允許使用 Claude，再試一次。');
+}
 function onSampleError(e, ctx) {
   if (!e || e.code === 'cancelled') { renderCoachNote(); return; }
   if (BLOCK_CODES.includes(e.code)) { S.sampleState = 'blocked'; S.blockCode = e.code; }
   S.note = sampleErrMsg(e, ctx);
+  // A hint or a translation that failed: a reply the coach still owes can still be asked for (unless nothing can be).
+  S.noteTask = ctx === 'task' && !ACCOUNT_CODES.includes(e.code);
   // An empty answer to the opening can simply be asked for again (for a sentence, saying it differently helps more).
   S.noteNoRetry = (NO_RETRY_CODES.includes(e.code) && !(e.code === 'empty_completion' && ctx === 'open')) || BLOCK_CODES.includes(e.code);
   announce(S.note);
@@ -2678,32 +2779,65 @@ function fullDocFor(n) {
   if (n.startsWith('log-')) return logDoc(n.slice(4));
   return sessionsFull(n.slice(9));
 }
-// Sends held edits to the cloud as update() merges (only ever after a button press), so anything changed
-// on another device in the meantime is kept. Resolves true once every upload has landed, false if the
-// cloud refused or the upload is still retrying.
-async function uploadPatches(docs) {
+// Sends held edits to the cloud as update() merges (after a button press, or for changes an earlier cloud visit could
+// not save), so anything changed on another device in the meantime is kept. Resolves true once every upload has
+// landed, false if the cloud refused or the upload is still retrying, and 'unread' when a document could not be read
+// first or 'stopped' when the cloud stopped while they were read (in both cases nothing was sent). fromCloud: the
+// edits were made on a cloud visit (see heldOver).
+async function uploadPatches(docs, fromCloud) {
   const names = Object.keys(docs).filter(n => DOC_NAME_RE.test(n) && docs[n] && typeof docs[n] === 'object' && !Array.isArray(docs[n]));
-  for (const n of names) {
-    if (n.startsWith('log-')) await loadMonth(n.slice(4));
-    if (n.startsWith('sessions-')) await loadSessions(n.slice(9));
+  // Each document is read again first, and the edits are laid over what the cloud has now: a document this visit
+  // could not read before is not mistaken for one that holds only these edits. A document changed here while it was
+  // being read (an edit, or an earlier change that landed meanwhile) is read again, so what is shown keeps the change.
+  const cloud = {}, marks = {};
+  const moved = n => (Store.edits[n] || 0) !== marks[n].e || (marks[n].busy && !Store.busyDoc(n));
+  for (let todo = names, round = 0; todo.length; round++) {
+    if (round === 4) return 'unread'; // changed again on every read: tried again later
+    for (const n of todo) marks[n] = { e: Store.edits[n] || 0, busy: Store.busyDoc(n) };
+    for (const n of todo) {
+      try { cloud[n] = await Store.get(n); } catch (_) { return Store.mode === 'db' ? 'unread' : 'stopped'; }
+      if (Store.mode !== 'db') return 'stopped';
+    }
+    todo = names.filter(moved);
   }
+  docs = heldOver(cloud, Object.fromEntries(names.map(n => [n, docs[n]])), fromCloud);
+  for (const n of names) {
+    // What the document will hold: the cloud's version, these edits, then edits of this visit not saved yet.
+    let doc = deepMerge(cloud[n] || {}, docs[n]);
+    for (const q of [Store.sending[n], Store.pend[n]]) if (q && q.patch && q.patch !== 'replace') doc = deepMerge(doc, q.patch);
+    applyDoc(n, doc, false);
+    S.loadErrors.delete(n);
+    Store.patch(n, fullDocFor(n), docs[n]);
+  }
+  Store.saveUnsent(); // recorded at once: the caller may now let go of the record these edits came from
+  Store.flushAll();
+  for (let i = 0; i < 100; i++) {
+    await sleep(200);
+    if (Store.mode !== 'db') return false;
+    if (names.every(n => !Store.busyDoc(n) && !Store.failed[n])) return true;
+  }
+  return false;
+}
+// The held edits as they apply over these cloud documents (cloud[name], missing when the cloud has none).
+function heldOver(cloud, docs, fromCloud) {
+  const names = Object.keys(docs);
   // The edits were made on this browser's copy, which may have been older than the cloud or empty (a visit that could
   // not reach the cloud shows defaults): a phrase the cloud already has keeps its own entry (and with it its review
   // schedule), and a day the cloud already has keeps its own default plan (weight 0; a plan chosen here still counts).
+  // Edits a cloud visit could not save (fromCloud) were made on the cloud's own copy, but the cloud may have moved on
+  // since: a phrase or a review schedule deleted there in the meantime stays deleted.
+  const gone = n => { const m = cloud[n] && cloud[n].map; return id => !!(fromCloud && m && typeof m === 'object' && m[id] === null); };
   if (names.includes('phrases') && docs.phrases.map && typeof docs.phrases.map === 'object') {
-    let cloud;
-    try { cloud = new Set(normPhrases(await Store.get('phrases')).map(p => p.id)); } catch (_) { return false; }
+    const have = new Set(normPhrases(cloud.phrases).map(p => p.id)), deleted = gone('phrases');
     const map = {};
-    for (const [id, p] of Object.entries(docs.phrases.map)) if (p === null || !cloud.has(id)) map[id] = p;
+    for (const [id, p] of Object.entries(docs.phrases.map)) if (p === null || (!have.has(id) && !deleted(id))) map[id] = p;
     docs = Object.assign({}, docs, { phrases: Object.assign({}, docs.phrases, { map }) });
   }
   for (const n of names) {
     if (!n.startsWith('log-') || !docs[n].days || typeof docs[n].days !== 'object') continue;
-    let cloud;
-    try { cloud = normLog(await Store.get(n)).days; } catch (_) { return false; }
-    const days = {};
+    const have = normLog(cloud[n]).days, days = {};
     for (const [k, d] of Object.entries(docs[n].days)) {
-      if (cloud[k] && d && typeof d === 'object') {
+      if (have[k] && d && typeof d === 'object') {
         const day = Object.assign({}, d);
         if (day.plans && typeof day.plans === 'object') { day.plans = Object.assign({}, day.plans); delete day.plans['0']; }
         delete day.plan; delete day.coachMin; // fields of the first version, written for days new here (an import)
@@ -2715,31 +2849,20 @@ async function uploadPatches(docs) {
   // A review schedule kept here is sent only when it continues the cloud's schedule (same first review) and the cloud
   // has not had a review of that phrase since the one this schedule was built on (this browser's copy may have been
   // older than the cloud, or empty); otherwise the cloud's own schedule stays. An entry without pt (kept by an earlier
-  // version of the page) is sent when it continues the cloud's schedule and is not older than it.
+  // version of the page) is sent when it continues the cloud's schedule and is not older than it. A schedule a cloud
+  // visit could not save was built on the cloud's own: it is sent unless the cloud has a later review (another rating
+  // the same day counts as later here, so a phrase rated twice today keeps its second rating).
   if (names.includes('srs') && docs.srs.map && typeof docs.srs.map === 'object') {
-    let cloud;
-    try { cloud = normSrs(await Store.get('srs')); } catch (_) { return false; }
-    const map = {};
+    const have = normSrs(cloud.srs), deleted = gone('srs'), map = {};
     for (const [id, e] of Object.entries(docs.srs.map)) {
       if (e === null) { map[id] = null; continue; }
-      if (!e || typeof e !== 'object') continue;
-      const c = cloud[id];
-      if (!c || (e.f === c.f && (String(c.t || '') <= String(e.pt || '') || (!e.pt && String(e.t || '') >= String(c.t || ''))))) map[id] = e;
+      if (!e || typeof e !== 'object' || deleted(id)) continue;
+      const c = have[id], ct = String((c && c.t) || '');
+      if (!c || (e.f === c.f && (fromCloud ? ct <= String(e.t || '') : ct <= String(e.pt || '') || (!e.pt && String(e.t || '') >= ct)))) map[id] = e;
     }
-    S.srs = cloud;
     docs = Object.assign({}, docs, { srs: { map } });
   }
-  for (const n of names) {
-    applyDoc(n, deepMerge(fullDocFor(n), docs[n]), false);
-    Store.patch(n, fullDocFor(n), docs[n]);
-  }
-  Store.flushAll();
-  for (let i = 0; i < 100; i++) {
-    await sleep(200);
-    if (Store.mode !== 'db') return false;
-    if (names.every(n => !Store.busyDoc(n) && !Store.failed[n])) return true;
-  }
-  return false;
+  return docs;
 }
 // On a cloud visit: changes this browser kept during an earlier fallback can be uploaded or dropped.
 async function uploadHeld() {
@@ -2747,9 +2870,77 @@ async function uploadHeld() {
   S.uploading = true; renderToday();
   const ok = await uploadPatches(S.held.docs);
   S.uploading = false;
-  if (ok) { forgetLocalDocs(localDocNames()); S.held = null; toast('已把這台裝置上的變更存到雲端'); }
+  if (ok === true) { forgetLocalDocs(localDocNames()); S.held = null; toast('已把這台裝置上的變更存到雲端'); }
+  else if (ok === 'unread') toast('還讀不到雲端的資料，稍後再按一次。');
   else if (Store.mode === 'db') toast('還沒存完，稍後再按一次。');
   refreshStreak(); renderAll();
+}
+// Each cloud tab holds a lock named after its record for as long as it is open, so another tab can tell a record that
+// is still looked after from one a closed page left behind. Where locks cannot be used, a record counts as left behind
+// once it has not been brought up to date for UNSENT_IDLE (a tab with changes still waiting renews its record more
+// often: after every try, and every few minutes; see boot).
+function holdTabLock(name) {
+  try { if (name && navigator.locks) navigator.locks.request(name, () => new Promise(() => {})).catch(() => {}); } catch (_) { /* no locks here */ }
+}
+async function liveTabs() {
+  try {
+    if (!navigator.locks || !Store.unsentKey) return null;
+    const q = await navigator.locks.query();
+    const names = new Set([].concat(q.held || [], q.pending || []).map(l => l.name));
+    return names.has(Store.unsentKey) ? names : null; // this tab's own lock not listed: locks do not work here
+  } catch (_) { return null; }
+}
+// Changes an earlier cloud visit made but the cloud never confirmed (it closed while they waited for a retry or were on
+// their way; see saveUnsent) are sent now, merged in the order they were made. Once queued here they are this tab's
+// own changes, kept in its record until the cloud has them, and the records they came from go.
+const UNSENT_LS = 'kaikou:unsent:', UNSENT_IDLE = 5 * 60000;
+let resending = false;
+async function resendUnsent() {
+  if (Store.mode !== 'db' || !Store.uid || !Store.unsentKey || resending) return;
+  resending = true;
+  try {
+    // One tab at a time (where locks can be used), so tabs opened together do not both send the same record; a tab
+    // that finds another one at it leaves it to that one (records it could not send stay for the next refresh).
+    let locks = null;
+    try { locks = navigator.locks && typeof navigator.locks.request === 'function' ? navigator.locks : null; } catch (_) { locks = null; }
+    if (!locks) { await resendNow(); return; }
+    let ran = false;
+    try { await locks.request(UNSENT_LS + Store.uid, { ifAvailable: true }, lock => { ran = true; return lock ? resendNow() : null; }); }
+    catch (e) { if (ran) throw e; await resendNow(); } // locks cannot be used here after all
+  } finally { resending = false; }
+}
+async function resendNow() {
+  if (Store.mode !== 'db' || !Store.uid || !Store.unsentKey) return;
+  const prefix = UNSENT_LS + Store.uid + ':', keys = [];
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith(prefix) && k !== Store.unsentKey) keys.push(k); } } catch (_) { return; }
+  if (!keys.length) return;
+  const live = await liveTabs(), recs = [];
+  for (const k of keys) {
+    if (live && live.has(k)) continue; // a tab that is still open sends its own
+    let r = null;
+    try { r = JSON.parse(lsGet(k) || 'null'); } catch (_) { r = null; }
+    const at = (r && Number(r.at)) || 0;
+    if (!live && Math.abs(Date.now() - at) < UNSENT_IDLE) continue;
+    recs.push({ k, at, docs: r && r.docs && typeof r.docs === 'object' && !Array.isArray(r.docs) ? r.docs : {} });
+  }
+  if (!recs.length) return;
+  recs.sort((a, b) => a.at - b.at);
+  const docs = {};
+  for (const r of recs) {
+    for (const [n, p] of Object.entries(r.docs)) if (DOC_NAME_RE.test(n) && p && typeof p === 'object' && !Array.isArray(p)) docs[n] = deepMerge(docs[n] || {}, p);
+  }
+  if (!Object.keys(docs).length) { recs.forEach(r => lsDel(r.k)); return; }
+  const ok = await uploadPatches(docs, true);
+  if (ok === 'unread' || ok === 'stopped') return; // nothing was sent: the records stay for a later visit or refresh
+  recs.forEach(r => lsDel(r.k));
+  // A review among them belongs to a chat that may still show as open (its end was never written): it is finished.
+  for (const [n, p] of Object.entries(docs)) {
+    if (!n.startsWith('sessions-') || !p.map || typeof p.map !== 'object') continue;
+    const id = S.chat && S.chat.id;
+    if (id && p.map[id] && !S.busy && !S.reviewing) { voiceOff(); S.endedChats.add(id); S.chat = null; clearComposer(); endStoredChat(id); }
+  }
+  if (ok === true) toast('上次還沒存到雲端的變更，已經補存好了');
+  refreshStreak(); renderAfterRefresh();
 }
 function dropHeld() {
   if (!S.held) return;
@@ -2761,20 +2952,46 @@ function dropHeld() {
 async function retryCloud() {
   if (Store.mode !== 'local' || Store.why !== 'no_write' || !Store.db || S.uploading) return;
   const names = localDocNames();
+  let raw = null;
+  try { raw = JSON.parse(lsGet('kaikou:held') || 'null'); } catch (_) { raw = null; }
+  if (raw && typeof raw.uid === 'string' && raw.uid !== '*' && raw.uid !== Store.uid) {
+    // The record here belongs to another account, so the copies in this browser are that account's (it may still
+    // upload them): nothing of them goes to this account's cloud, and they stay. The page starts again from the cloud,
+    // so nothing this visit took from them (an open chat, older reviews) is written there later either.
+    S.uploading = true; fillSettings();
+    Store.flushAll();
+    await Promise.all(Object.values(Store.chain));
+    Store.mode = 'memory'; // nothing more is written while the page reloads
+    lsDel('kaikou:no-cloud');
+    try { sessionStorage.setItem(NOTE_SS, '已改用雲端儲存。這個瀏覽器裡留著另一個帳號的資料，所以這裡的資料都沒有搬到你的雲端。'); } catch (_) { /* the note is optional */ }
+    location.reload();
+    return;
+  }
   // Everything this viewer has is in this browser: send the held edits (none when every edit was undone), or the
   // whole documents when this browser has no record of them.
   const held = heldRecord();
   const docs = held ? held.docs : Object.fromEntries(names.map(n => [n, readLocal(n)]));
   S.uploading = true; fillSettings();
   Store.mode = 'db'; Store.why = '';
+  Store.unsentKey = UNSENT_LS + Store.uid + ':' + newId(); holdTabLock(Store.unsentKey);
   const ok = await uploadPatches(docs);
   S.uploading = false;
-  if (ok) {
-    lsDel('kaikou:no-cloud'); forgetLocalDocs(names);
+  if (ok === true) {
+    lsDel('kaikou:no-cloud');
+    forgetLocalDocs(names);
     await loadAll();
     S.streak = await settleStreak();
     toast('已改用雲端儲存，手機和電腦會同步');
-  } else if (Store.mode === 'db') toast('還沒存完，會自動再試。');
+  } else if (ok === 'unread') {
+    // Nothing was sent: this visit goes on with this browser's copy, which also keeps (and holds for the next try)
+    // what was changed meanwhile, and the button stays.
+    Store.leaveCloud('no_write', true);
+    toast('還讀不到雲端的資料，這次先不搬，等一下再試。');
+  } else if (Store.mode === 'db') {
+    // The cloud takes changes again (some are still on their way): later visits use it too.
+    lsDel('kaikou:no-cloud');
+    toast('還沒存完，會自動再試。');
+  }
   renderAll(); fillSettings();
 }
 function normChat(d) {
@@ -2924,7 +3141,7 @@ async function getHints() {
       S.hints = list.length ? list : null;
       if (list.length && S.note) { S.note = null; S.noteNoRetry = false; renderCoachNote(); }
       shown = list.length > 0;
-      if (!list.length) { S.note = '教練這次沒想到提示，再按一次試試。'; S.noteNoRetry = true; renderCoachNote(); }
+      if (!list.length) { S.note = '教練這次沒想到提示，再按一次試試。'; S.noteNoRetry = true; S.noteTask = true; renderCoachNote(); }
     }
   } catch (e) {
     if (S.hintSeq === seq && S.chat === c) { S.hints = null; onSampleError(e, 'task'); }
@@ -3152,7 +3369,7 @@ function renderToday() {
       S.streak ? ['連續 ', el('b', { text: String(S.streak) }), ' 天'] : (todayDone ? '今天是第 1 天' : '練一項就開始連續'),
       S.streak && !todayDone ? '・今天練了就延續' : null);
   } else {
-    side = el('button', { type: 'button', class: 'btn ghost small', 'data-fk': 'back-today', onclick: () => { S.viewDate = tk; renderToday(); } }, '回到今天');
+    side = el('button', { type: 'button', class: 'btn ghost small', 'data-fk': 'back-today', onclick: () => { S.viewDate = tk; renderToday(); focusHeading('#today-dyn .date-big'); } }, '回到今天');
   }
   const meterFill = el('span');
   meterFill.style.width = Math.round(Math.min(1, done / total) * 100) + '%';
@@ -3348,7 +3565,8 @@ function unavailableView() {
       el('h2', { class: 'card-title', text: 'AI 教練目前無法使用' }),
       el('p', { class: 'help mt6', text: blocked
         ? sampleErrMsg({ code: S.blockCode || 'not_granted' })
-        : noSampleMsg('') + '今日菜單與打卡照樣可以用。' }));
+        : noSampleMsg('') + '今日菜單與打卡照樣可以用。' }),
+      blocked && S.blockCode === 'not_granted' ? el('div', { class: 'start-row mt12' }, permsBtn('open-perms')) : null);
   }
   if (!KEY_HERE) {
     return el('section', { class: 'card' },
@@ -3524,11 +3742,12 @@ function renderHints() {
   if (!S.hints) { fill(box); return; }
   if (S.hints === 'loading') { fill(box, el('div', { class: 'hint-loading' }, typing(), '想幾個可以回的說法…')); return; }
   fill(box,
-    el('div', { class: 'hints-head' }, el('span', { text: '可以這樣回：點一下放進輸入框，先唸出來再送出' }), el('button', { type: 'button', class: 'btn ghost small', onclick: () => { S.hints = null; renderHints(); $('#msg-input').focus(); } }, '收起')),
+    // On a phone the focus does not go into the text box by itself (the keyboard would cover the hints and the chat).
+    el('div', { class: 'hints-head' }, el('span', { text: '可以這樣回：點一下放進輸入框，先唸出來再送出' }), el('button', { type: 'button', class: 'btn ghost small', 'data-fk': 'hints-close', onclick: () => { S.hints = null; renderHints(); if (coarse()) focusFk(null, '#hint-btn'); else focusInput(); } }, '收起')),
     S.hints.map((h, i) => el('button', { type: 'button', class: 'hint', lang: 'en', 'data-fk': 'hint-' + i, onclick: () => {
       voicePause(); // nothing is sent or heard on its own while you look at a hint
       if (micOn('composer')) { micStop(true); updateMicBtn(); } // a late dictation result must not replace the hint
-      const ta = $('#msg-input'); ta.value = h.en; autosize(ta); ta.focus();
+      const ta = $('#msg-input'); ta.value = h.en; autosize(ta); focusInput();
       S.hintFill = h.en; // saying it (dictation or 繼續說) replaces it instead of adding to it
       if (S.settings.autoSpeak) speak(h.en);
     } }, el('span', { class: 'hint-en', text: h.en }), h.zh ? el('small', { lang: 'zh-Hant-TW', text: h.zh }) : null)));
@@ -3547,18 +3766,21 @@ function renderCoachNote() {
   const box = $('#coach-note'); if (!box) return;
   const c = S.chat;
   const need = !S.busy && !S.reviewing && S.sampleState === 'ok' ? chatNeeds(c) : null;
-  const msg = S.note
+  const needMsg = need === 'open' ? '對話還沒開始。' : need === 'reply' ? '教練還沒回覆你的上一句。' : need === 'cut' ? '教練的回覆中斷了。' : null;
+  // A hint or a translation that failed says so, and a reply the coach still owes stays on offer next to it.
+  const msg = (S.note && S.noteTask && needMsg ? S.note + needMsg : S.note)
     || (S.sampleState === 'none' ? (window.claude ? noSampleMsg('回覆') : KEY_HERE ? '要從 Claude 的連結開啟，或到設定輸入 Claude API 金鑰，教練才能回覆。' : '直接打開檔案時教練不能回覆：請從 Claude 的連結開啟，或改開 GitHub Pages 的網址。') : null)
     || (S.sampleState === 'blocked' ? sampleErrMsg({ code: S.blockCode || 'not_granted' }) : null)
-    || (need === 'open' ? '對話還沒開始。' : need === 'reply' ? '教練還沒回覆你的上一句。' : need === 'cut' ? '教練的回覆中斷了。' : null);
+    || needMsg;
   if (!msg) { box.hidden = true; fill(box); return; }
-  const showRetry = !!need && !(S.note && S.noteNoRetry);
+  const showRetry = !!need && !(S.note && S.noteNoRetry && !S.noteTask);
   // Outside Claude, a missing or rejected API key is fixed in 設定.
   const keyFix = !window.claude && KEY_HERE && (S.note ? ['key_invalid', 'key_missing'].some(k => S.note === sampleErrMsg({ code: k })) : S.sampleState === 'none');
   box.hidden = false;
   fill(box, el('span', { text: msg }),
     showRetry ? el('button', { type: 'button', class: 'btn small', 'data-fk': 'retry', onclick: () => { S.note = null; S.noteNoRetry = false; ask(); } }, need === 'open' ? '請教練開場' : '重新回覆') : null,
-    keyFix ? el('button', { type: 'button', class: 'btn small', 'data-fk': 'note-key', onclick: openKeySettings }, '到設定輸入金鑰') : null);
+    keyFix ? el('button', { type: 'button', class: 'btn small', 'data-fk': 'note-key', onclick: openKeySettings }, '到設定輸入金鑰') : null,
+    permsBtn('note-perms'));
 }
 function updateComposer() {
   const btn = $('#send-btn'), ta = $('#msg-input'), hint = $('#hint-btn');
@@ -3649,6 +3871,7 @@ function composerMic(pressed) {
     const ph = pressed || Voice.phase;
     if (ph === 'waiting' || Voice.phase === 'waiting') return; // the coach is answering
     if (ph === 'countdown') { if (Voice.phase === 'countdown') voiceMore(); } // already listening again: nothing to do
+    else if (ph === 'speaking') { if (!micOn('composer')) voiceListen(true); } // 換我說 (the microphone may have just opened)
     else if (micOn('composer')) voiceDone();
     else if (Voice.phase === 'paused') voiceResume(); // 繼續說
     else voiceListen(true); // 換我說
@@ -3748,7 +3971,7 @@ function voiceOn() {
   updateVoiceToggle(); updateComposer();
   const need = chatNeeds(S.chat);
   if (S.busy) voiceSet('waiting');
-  else if (need && !(S.note && S.noteNoRetry)) ask(); // the coach still owes a reply: ask for it, then the loop starts
+  else if (need && !(S.note && S.noteNoRetry && !S.noteTask)) ask(); // the coach still owes a reply: ask for it, then the loop starts
   else if (need) voicePause(); // the note above says what is wrong
   else voiceListen(true);
 }
@@ -3867,6 +4090,9 @@ function voiceListen(gesture, more) {
       const stop = Voice.stopAsked; Voice.stopAsked = false;
       if (!fin) {
         if (stop) { if (ta.value.trim()) voiceListen(false, true); else voicePause(); return; }
+        // Listening on through the countdown, a sound made it stop for a moment but no words came: what was said is
+        // still there, so the countdown starts again (it is not a silence to count).
+        if (more && ta.value.trim()) { voiceListen(false, true); return; }
         // Nothing new heard (Chrome says no-speech after a few seconds, Safari may just stop): listen again twice
         // (time to think), then wait for 繼續說.
         if (Voice.miss < 2) { Voice.miss++; Voice.timer = setTimeout(() => { if (tok === Voice.tok) voiceListen(false); }, 300); return; }
@@ -4014,7 +4240,7 @@ function splitSentences(text) {
   for (const s of out) {
     if (s.length <= 220) { res.push(s); continue; }
     let cur = '';
-    for (const piece of s.split(/(?<=,)\s+/)) {
+    for (const piece of s.replace(/,\s+/g, ',\n').split('\n')) { // after each comma (no lookbehind: Safari before 16.4)
       if (cur && (cur + ' ' + piece).length > 160) { res.push(cur); cur = piece; } else cur = cur ? cur + ' ' + piece : piece;
     }
     if (cur) res.push(cur);
@@ -4064,7 +4290,7 @@ function backBtn() {
 }
 function aiUnavailable(what) {
   if (S.sampleState === 'loading') return [el('p', { class: 'help', text: '連線中…' })];
-  if (S.sampleState === 'blocked') return [el('p', { class: 'help', text: sampleErrMsg({ code: S.blockCode || 'not_granted' }) })];
+  if (S.sampleState === 'blocked') return [el('p', { class: 'help', text: sampleErrMsg({ code: S.blockCode || 'not_granted' }) }), S.blockCode === 'not_granted' ? el('div', { class: 'start-row' }, permsBtn('tool-perms')) : null];
   if (window.claude) return [el('p', { class: 'help', text: noSampleMsg(what) })];
   if (!KEY_HERE) return [el('p', { class: 'help', text: '直接打開檔案時不能用 AI 教練：請從 Claude 的連結開啟，或改開 GitHub Pages 的網址並在設定輸入 Claude API 金鑰，教練才能' + what + '。' })];
   return [el('p', { class: 'help', text: '在這個網頁上，要先到設定輸入 Claude API 金鑰，教練才能' + what + '。' }),
@@ -4108,7 +4334,11 @@ async function genPassage() {
     if (g.err) announce(g.err);
   } finally {
     g.busy = false; g.ctl = null;
-    if (S.tool === 'shadow' && !curPassage()) renderTool();
+    if (S.tool === 'shadow' && !curPassage()) {
+      const ae = document.activeElement, cancel = !!(ae && ae.dataset && ae.dataset.fk === 'sh-gen-stop');
+      renderTool();
+      if (cancel) focusFk('sh-gen', '#today-dyn .card-title'); // 取消 is gone: back to the button that writes one
+    }
   }
 }
 function useOwnText() {
@@ -4325,6 +4555,10 @@ function beep() {
     }
   } catch (_) { /* no sound */ }
   try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (_) { /* no vibration */ }
+  // An iPhone in silent mode plays no beep, and web pages cannot vibrate it: the screen flashes once as well.
+  const f = el('div', { class: 'time-up', 'aria-hidden': 'true' });
+  document.body.append(f);
+  setTimeout(() => f.remove(), 1400);
 }
 async function recStart() {
   if (!Rec.stream) Rec.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -4531,7 +4765,12 @@ function f432View() {
       F.state === 'pause' ? el('button', { type: 'button', class: 'btn primary', 'data-fk': 'f432-resume', onclick: f432Go }, '繼續') : null,
       F.state === 'run' || F.state === 'pause' ? el('button', { type: 'button', class: 'btn', 'data-fk': 'f432-end', onclick: f432End }, '這次講完了') : null,
       F.state === 'gap' ? el('button', { type: 'button', class: 'btn primary big', 'data-fk': 'f432-next', onclick: f432Go }, '開始第 ' + (F.phase + 1) + ' 次（' + F432_SECS[F.phase] / 60 + ' 分鐘）') : null,
-      F.state === 'done' ? el('button', { type: 'button', class: 'btn', 'data-fk': 'f432-again', onclick: () => { for (const r of F.recs) if (r) URL.revokeObjectURL(r.url); S.f432 = Object.assign(f432New(), { topic: F.topic, custom: F.custom, points: F.points }); renderTool(); } }, '換主題再練') : null));
+      F.state === 'done' ? el('button', { type: 'button', class: 'btn', 'data-fk': 'f432-again', onclick: () => {
+        for (const r of F.recs) if (r) URL.revokeObjectURL(r.url);
+        S.f432 = Object.assign(f432New(), { topic: F.topic, custom: F.custom, points: F.points });
+        renderTool();
+        focusHeading('#today-dyn .card-title'); // the setup again: from its title, the topics come next
+      } }, '換主題再練') : null));
   const parts = [head, timer];
   const pb = pointsBox(F);
   if (pb && F.state !== 'done') parts.push(el('section', { class: 'card' }, pb));
@@ -4568,7 +4807,10 @@ function renderLog() {
   const nav = el('div', { class: 'month-nav' },
     iconBtn('left', '上個月', () => { S.calMonth = prevM; renderLog(); }, null, 'm-prev'),
     el('h2', { class: 'month-title', text: y + ' 年 ' + mo + ' 月' }),
-    el('button', { type: 'button', class: 'icon-btn', 'aria-label': '下個月', title: '下個月', html: ICON.right, disabled: nextM > tk.slice(0, 7), 'data-fk': 'm-next', onclick: () => { S.calMonth = nextM; renderLog(); } }));
+    el('button', { type: 'button', class: 'icon-btn', 'aria-label': '下個月', title: '下個月', html: ICON.right, disabled: nextM > tk.slice(0, 7), 'data-fk': 'm-next', onclick: () => {
+      S.calMonth = nextM; renderLog();
+      const n = $('[data-fk="m-next"]'); if (n && n.disabled) focusHeading('.month-title'); // this month: no later one
+    } }));
   const stat = (n, label) => el('div', { class: 'stat' }, el('b', { text: String(n) }), el('span', { text: label }));
   const stats = el('div', { class: 'stats' },
     stat(practiced, '有練習的天數'), stat(complete, '達標天數'), stat(minutes, '專注分鐘'),
@@ -4706,11 +4948,23 @@ async function collectDocs() {
   } else if (Store.mode === 'local') {
     for (const n of localDocNames()) { const v = readLocal(n); if (v) out[n] = v; }
   }
+  const filled = (n, v) => n === 'settings' || (n.startsWith('log-') ? Object.keys(v.days || {}).length > 0 || !!v.monthRecord : Object.keys(v.map || {}).length > 0);
+  const mine = allDocs();
+  // Changes this browser kept from a visit that could not reach the cloud, and has not uploaded yet, go in too (as
+  // they would be uploaded: see heldOver), over what this device shows of a document that could not be listed.
+  const held = Store.mode === 'db' ? heldInfo() : null;
+  if (held) {
+    const base = {};
+    for (const n of Object.keys(held.docs)) {
+      if (out[n]) base[n] = out[n];
+      else if (mine[n] && !S.loadErrors.has(n) && filled(n, mine[n])) base[n] = clone(mine[n]);
+    }
+    for (const [n, p] of Object.entries(heldOver(base, clone(held.docs)))) if (BACKUP_RE.test(n)) out[n] = deepMerge(base[n] || {}, p);
+  }
   // The stored copy is the latest (another device may have saved since this one read it): only the changes this
   // device has not saved yet (on their way, waiting or failed) are laid over it. What this device shows is used for a
   // document that could not be listed; one it could not read is left as stored, and empty documents are left out.
-  const filled = (n, v) => n === 'settings' || (n.startsWith('log-') ? Object.keys(v.days || {}).length > 0 || !!v.monthRecord : Object.keys(v.map || {}).length > 0);
-  for (const [n, v] of Object.entries(allDocs())) {
+  for (const [n, v] of Object.entries(mine)) {
     if (!BACKUP_RE.test(n) || S.loadErrors.has(n)) continue;
     if (out[n]) {
       for (const p of [Store.sending[n], Store.pend[n]]) {
@@ -4726,7 +4980,9 @@ async function exportBackup() {
   S.exporting = true; fillSettings();
   try {
     const { docs, partial } = await collectDocs();
-    const done = partial ? '已匯出備份檔，但這次讀不到雲端上較舊的月份，檔案裡只有這台裝置載入的資料。晚一點可以再匯出一次。' : '已匯出備份檔';
+    const done = partial ? '已匯出備份檔，但這次讀不到雲端上較舊的月份，檔案裡只有這台裝置載入的資料。晚一點可以再匯出一次。'
+      : Store.why === 'offline' ? '已匯出備份檔。這次連不上 Claude 的雲端，檔案裡只有這個瀏覽器裡的資料；連上雲端後可以再匯出一次。'
+        : Store.why === 'stopped' ? '已匯出備份檔。這次雲端同步停止了，檔案裡只有這個瀏覽器裡的資料；之後能用雲端時可以再匯出一次。' : '已匯出備份檔';
     const data = JSON.stringify({ app: 'kaikou-practice', v: 1, at: new Date().toISOString(), docs });
     const filename = 'kaikou-backup-' + todayKey() + '.json'; // ASCII: some browsers drop a non-ASCII download name
     if (window.claude && typeof window.claude.use === 'function') {
@@ -4735,7 +4991,12 @@ async function exportBackup() {
       try { dl = await window.claude.use('downloads'); } catch (_) { dl = null; }
       if (!dl) { toast('這個畫面不能下載檔案'); return; }
       try { await dl.save({ filename, data }); toast(done); }
-      catch (e) { if (!e || e.code !== 'declined') toast(e && e.code === 'rate_limited' ? '已經有一個下載在等你確認' : '沒有存成檔案，再試一次'); }
+      catch (e) {
+        // downloads.d.ts: the viewer said no (nothing to add), a prompt is still open, a fault in this request (try
+        // again), or saving is not possible in this view at all (unknown codes count as that).
+        const c = e && e.code;
+        if (c !== 'declined') toast(c === 'rate_limited' ? '已經有一個下載在等你確認' : ['bad_request', 'transform_error', 'too_large'].includes(c) ? '沒有存成檔案，再試一次' : '這個畫面不能下載檔案');
+      }
     } else {
       const url = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
       const a = el('a', { href: url, download: filename, hidden: true });
@@ -4782,7 +5043,7 @@ function cleanDay(d) {
   for (const [k, v] of Object.entries(d.items || {})) if (v === true && ITEM_KEYS.has(k)) items[k] = true;
   for (const [id, n] of Object.entries(d.coach || {}).slice(0, 20)) if (id.length <= 40) coach[id] = Math.min(600, n);
   // The five latest plan choices (the highest weight decides the plan).
-  const ws = Object.keys(d.plans || {}).filter(w => w.length <= 16 && isFinite(Number(w))).sort((a, b) => Number(b) - Number(a)).slice(0, 5);
+  const ws = Object.keys(d.plans || {}).filter(okImportWeight).sort((a, b) => Number(b) - Number(a)).slice(0, 5);
   for (const w of ws) plans[w] = d.plans[w];
   return Object.assign({}, d, { items, coach, plans, plan: resolvePlan(plans, d.lp), coachMin: Math.min(600, Number(d.coachMin) || 0) });
 }
@@ -4822,8 +5083,13 @@ async function applyBackup() {
     }
     if (docs.phrases) {
       const patch = { map: {} };
-      for (const p of normPhrases(docs.phrases)) {
-        if (S.phrases.some(x => x.id === p.id)) continue;
+      for (const raw of normPhrases(docs.phrases)) {
+        // Taken in as if it were saved here: the same id for the same sentence, and the same field lengths.
+        const en = phraseText(raw.en);
+        if (!en) continue;
+        const p = { id: phraseId(en), en, zh: raw.zh.trim().slice(0, 200), note: raw.note.trim().slice(0, 200), ex: raw.ex.trim().slice(0, 300), src: raw.src.slice(0, 20), at: raw.at };
+        if (raw.was && normEn(raw.was) !== normEn(en)) p.was = raw.was.trim().slice(0, 300);
+        if (S.phrases.some(x => x.id === p.id) || patch.map[p.id]) continue;
         if (S.phrases.length >= MAX_PHRASES || docBytes(phrasesFull()) + docBytes(p) > DOC_LIMIT * 0.8) { full = true; break; }
         S.phrases.push(p); patch.map[p.id] = p; n.phrases++;
       }
@@ -4898,9 +5164,12 @@ async function applyBackup() {
       for (const raw of normSessions(v)) {
         const s = importSession(raw);
         if (!s || (S.sessions[s.date.slice(0, 7)] || []).some(x => x.id === s.id)) continue;
-        if (!S.sessLoaded.has(s.date.slice(0, 7))) await loadSessions(s.date.slice(0, 7));
-        if ((S.sessions[s.date.slice(0, 7)] || []).some(x => x.id === s.id)) continue;
-        addSession(s); n.sess++;
+        const m = s.date.slice(0, 7);
+        if (!S.sessLoaded.has(m)) await loadSessions(m);
+        if ((S.sessions[m] || []).some(x => x.id === s.id)) continue;
+        // A month that is full takes no more (nothing of this month is pushed out to make room).
+        if (!addSession(s, true)) { full = true; continue; }
+        n.sess++;
       }
     }
     Store.flushAll();
@@ -4916,7 +5185,7 @@ async function applyBackup() {
   if (n.days) parts.push('練習 ' + n.days + ' 天');
   if (n.sess) parts.push('對話複習 ' + n.sess + ' 次');
   if (n.shadow) parts.push('跟讀短文 ' + n.shadow + ' 篇');
-  toast((parts.length ? '已合併：新增' + parts.join('、') : '已合併，沒有新的資料') + (full ? '。這裡放不下的資料（例如已滿的收藏、隨手記或跟讀短文）沒有加進來' : ''));
+  toast((parts.length ? '已合併：新增' + parts.join('、') : '已合併，沒有新的資料') + (full ? '。這裡放不下的資料（例如已滿的收藏、隨手記、跟讀短文或某個月的對話複習）沒有加進來' : ''));
   refreshStreak(); renderAll(); fillSettings();
 }
 function fillBackup() {
@@ -4980,8 +5249,13 @@ function fillSettings() {
     if (S.chat && S.chat.level !== k) { S.chat.level = k; saveChat(); toast('這次對話接下來用 ' + k + ' ' + LEVELS[k].zh + '的程度回覆'); }
     fillSettings(); if (S.tab === 'coach') renderCoach();
   } }, k + ' ' + LEVELS[k].zh)));
-  const about = $('#set-about');
-  if (document.activeElement !== about) about.value = s.about;
+  // 關於我 is replaced as a whole when typed in, so it waits until the settings have been read once (a later read that
+  // fails changes nothing); once read, it shows the stored text, also if it was focused while it waited.
+  const about = $('#set-about'), aboutUnread = !S.settingsRead;
+  about.readOnly = aboutUnread;
+  about.placeholder = aboutUnread ? '還讀不到你的設定，正在重新讀取…' : '例如：我在台北做行銷，週末喜歡爬山，最近想練英文簡報。';
+  if (document.activeElement !== about || aboutUnread || about.dataset.unread) about.value = aboutUnread ? '' : s.about;
+  if (aboutUnread) about.dataset.unread = '1'; else delete about.dataset.unread;
   $('#set-auto').checked = !!s.autoSpeak;
   $('#set-accent').value = s.accent;
   $('#set-rate').value = String(s.rate);
@@ -5121,6 +5395,8 @@ function bindStatic() {
     voicePause();
     fillSettings();
     try { dlg.showModal(); } catch (_) { dlg.setAttribute('open', ''); }
+    // Settings that could not be read yet are read again (關於我 stays closed until then, so it cannot replace yours).
+    if (!S.settingsRead) reloadDocs(['settings']).then(() => { if (dlg.open) fillSettings(); });
   });
   $('#set-clear').addEventListener('click', () => arm('clear-local', clearLocalData, fillSettings));
   $('#set-cloud').addEventListener('click', retryCloud);
@@ -5168,7 +5444,7 @@ function bindStatic() {
   $('#settings-form').addEventListener('submit', e => e.preventDefault());
   $('#set-close').addEventListener('click', closeDlg);
   $('#set-done').addEventListener('click', closeDlg);
-  $('#set-about').addEventListener('input', e => { S.settings.about = e.target.value.slice(0, 600); saveSettings('about'); });
+  $('#set-about').addEventListener('input', e => { if (!S.settingsRead) return; S.settings.about = e.target.value.slice(0, 600); saveSettings('about'); });
   $('#set-auto').addEventListener('change', e => { S.settings.autoSpeak = e.target.checked; saveSettings('autoSpeak'); if (S.tab === 'coach') renderCoach(); });
   $('#set-accent').addEventListener('change', e => { S.settings.accent = e.target.value; S.settings.voiceURI = ''; saveSettings('accent', 'voiceURI'); fillVoiceSelect(); });
   $('#set-voice').addEventListener('change', e => { S.settings.voiceURI = e.target.value; saveSettings('voiceURI'); });
@@ -5185,6 +5461,7 @@ function bindStatic() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       Store.flushAll();
+      Store.saveUnsent(); // a hidden page may be closed without another word (a phone discarding it)
       viewSave();
       if (S.f432 && S.f432.state === 'run') f432Pause(); // the phone locked or another app came up: pause the round
       shStop();
@@ -5195,7 +5472,7 @@ function bindStatic() {
     refresh();
     for (const n of Object.keys(Store.failed)) Store.flush(n);
   });
-  window.addEventListener('pagehide', () => { Store.flushAll(); viewSave(); });
+  window.addEventListener('pagehide', () => { Store.flushAll(); Store.saveUnsent(); viewSave(); });
   // A desktop window can stay visible while you practise on the phone; coming back to it re-reads (throttled).
   window.addEventListener('focus', () => refresh());
   window.addEventListener('scroll', placeToast, { passive: true });
@@ -5238,7 +5515,7 @@ function applyChat(d) {
   if (!S.chat || c.updatedAt > S.chat.updatedAt) S.chat = c;
 }
 function applyDoc(name, d, raced) {
-  if (name === 'settings') S.settings = pickSettings(d);
+  if (name === 'settings') { S.settings = pickSettings(d); S.settingsRead = true; }
   else if (name === 'phrases') S.phrases = normPhrases(d);
   else if (name === 'inbox') S.inbox = normInbox(d);
   else if (name === 'srs') S.srs = normSrs(d);
@@ -5325,6 +5602,7 @@ async function refresh() {
     if (streak !== S.streak) { S.streak = streak; changed = true; }
   } finally { refreshing = false; }
   if (changed) renderAfterRefresh();
+  resendUnsent(); // changes an earlier visit left that could not be read against yet
 }
 function scheduleMidnight() {
   const now = new Date();
@@ -5335,6 +5613,9 @@ function scheduleMidnight() {
 /* ================= boot ================= */
 // A reload (also when the page is updated) keeps the open tab and the unsent text, for this browser tab only.
 const VIEW_SS = 'kaikou:view';
+// A message for the page that loads next in this tab (see retryCloud).
+const NOTE_SS = 'kaikou:note';
+function takeNote() { try { const v = sessionStorage.getItem(NOTE_SS); sessionStorage.removeItem(NOTE_SS); return v; } catch (_) { return null; } }
 function viewSaved() { try { const v = JSON.parse(sessionStorage.getItem(VIEW_SS) || 'null'); return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; } }
 function viewSave() {
   if (!S.ready) return; // before that the page has not shown what was saved yet
@@ -5372,12 +5653,17 @@ async function boot(data) {
   updateSync();
   S.streak = await settleStreak();
   renderAll();
+  const note = takeNote(); if (note) toast(note);
+  resendUnsent();
   scheduleMidnight();
-  setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 180000);
+  setInterval(() => {
+    Store.saveUnsent(); // a record of changes still waiting is renewed, so other tabs see this one still looks after it
+    if (document.visibilityState === 'visible') refresh();
+  }, 180000);
   if (data && typeof data.draft === 'string' && data.draft && S.chat) { const ta = $('#msg-input'); if (ta && !ta.value) { ta.value = data.draft; autosize(ta); } }
   if (S.tab === 'coach' && S.chat) scrollToEnd(true);
 }
-if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats };
+if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats };
 
 boot(viewSaved()).catch(err => { console.error(err); setSync('error'); });
 })();

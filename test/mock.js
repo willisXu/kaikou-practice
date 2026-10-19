@@ -4,6 +4,9 @@
 // Each test page can set window.__mockCfg before load:
 //   owner: false            the viewer is not the artifact's owner
 //   readOnly: true          the viewer may not write (reads see nothing, writes reject invalid_argument)
+//   readOnlyWrites: true    a member moved down to Viewer: their own documents still read, every write rejects
+//                           invalid_argument (db.d.ts: a call below the minimum level)
+//   window.__mockSeed(store, P, dk, back)   an init script may define this to change the seeded cloud
 //   failWrites: { name: { n, code } }   the next n writes to that document reject with that code
 //   failReads: { name: n }               the next n reads of that document reject "unavailable"
 //   refuse: 'text'          sample() rejects "refused" when the learner's last message contains this text
@@ -15,6 +18,8 @@
 //   failList: n             the next n listings of the user's documents reject "unavailable"
 //   jsonDelay: 800          JSON answers (hints, review, passage, 4/3/2 points) take this long
 //   sampleCode: 'not_granted'   every sample() call rejects with this code (the viewer declined the coach)
+//   permsPanel: 'stay' | 'fail' the Permissions panel (permissions.manage) leaves the coach off, or does not open;
+//                           by default the viewer switches the coach back on there
 //   refuseTask: true        a single-prompt call (hints, review, translation, passage, points) rejects "refused"
 //   noSample: true          use('sample') resolves null (this view cannot run the coach)
 //   noDownloads: true       use('downloads') resolves null
@@ -22,10 +27,12 @@
 //   settings: { plan: '60' }  fields that replace the seeded settings
 //   noToday: true           the cloud has no record of today yet
 //   writeDelay: { name: ms }  writes to that document take this long before they land or fail
+//   readDelay: { name: ms | [ms, ms…] }  reads of that document take this long (a list: the first read, the second…,
+//                           then the usual 20 ms); window.__readStarts[name] counts the reads started
 window.__kaikouTest = true;
 (function () {
-  const cfg = Object.assign({ owner: true, readOnly: false, failWrites: {}, failReads: {}, refuse: '', slowMs: 0, persist: false, noDb: false, noUser: false, failUse: [], failList: 0, jsonDelay: 30,
-    sampleCode: '', refuseTask: false, noSample: false, noDownloads: false, saveFail: '', settings: null, noToday: false, writeDelay: {} }, window.__mockCfg || {});
+  const cfg = Object.assign({ owner: true, readOnly: false, readOnlyWrites: false, failWrites: {}, failReads: {}, refuse: '', slowMs: 0, persist: false, noDb: false, noUser: false, failUse: [], failList: 0, jsonDelay: 30,
+    sampleCode: '', refuseTask: false, noSample: false, noDownloads: false, saveFail: '', settings: null, noToday: false, writeDelay: {}, readDelay: {} }, window.__mockCfg || {});
   window.__mockCfg = cfg; // tests may change it while the page runs
   const store = new Map();
   const pad = n => String(n).padStart(2, '0');
@@ -73,6 +80,7 @@ window.__kaikouTest = true;
   ] });
   const curM = dk(today).slice(0, 7);
   store.set(P('sessions-' + curM), { items: [{ id: 's1', date: dk(back(2)), at: Date.now() - 2 * 86400000, mode: 'role', label: '角色扮演・向主管報告進度', level: 'B1', minutes: 12, count: 9, summary: '你能清楚說出專案進度，句子越說越完整。下次可以多用連接詞把原因和結果串起來。', strengths: ['主動說明風險'], patterns: [{ issue: '時態混用', example: 'Yesterday we finish the test', fix: 'Yesterday we finished the test' }], phrases: [{ en: "We're on track to launch next week.", zh: '我們預計下週可以如期上線。', example: "We're on track to launch next Friday." }], next: '練習用英文說明延遲的原因與補救方案' }] });
+  if (typeof window.__mockSeed === 'function') window.__mockSeed(store, P, dk, back);
 
   if (cfg.persist) {
     try { const saved = JSON.parse(sessionStorage.getItem('__mockStore') || 'null'); if (saved) { store.clear(); for (const [k, v] of saved) store.set(k, v); } } catch (_) { /* fresh store */ }
@@ -92,7 +100,7 @@ window.__kaikouTest = true;
     const name = path.split('/').pop();
     const f = cfg.failWrites[name];
     let code = '';
-    if (cfg.readOnly) code = 'invalid_argument';
+    if (cfg.readOnly || cfg.readOnlyWrites) code = 'invalid_argument';
     else if (f && f.n > 0) { f.n--; code = f.code || 'unavailable'; }
     window.__dbCalls.push({ op, name, code });
     if (code) throw err(code, 'injected');
@@ -105,8 +113,11 @@ window.__kaikouTest = true;
       return {
         id: path.split('/').pop(), path,
         get: async () => {
-          await new Promise(r => setTimeout(r, 20));
           const name = path.split('/').pop();
+          const starts = window.__readStarts = window.__readStarts || {};
+          const nth = starts[name] = (starts[name] || 0) + 1;
+          const d = (cfg.readDelay || {})[name];
+          await new Promise(r => setTimeout(r, (Array.isArray(d) ? d[nth - 1] : d) || 20));
           if (cfg.failReads[name] > 0) { cfg.failReads[name]--; window.__dbCalls.push({ op: 'get', name, code: 'unavailable' }); throw err('unavailable', 'injected'); }
           window.__dbCalls.push({ op: 'get', name, code: '' });
           return snap(path);
@@ -189,7 +200,11 @@ window.__kaikouTest = true;
       if (cfg.refuseTask) { await new Promise(r => setTimeout(r, 30)); throw err('refused', 'declined'); }
       if (JSON_PROMPTS.test(input)) {
         const v = answerJson(input);
-        await new Promise(r => setTimeout(r, cfg.jsonDelay));
+        // Stopped while thinking (取消): rejects "cancelled", as sample() does.
+        await new Promise((r, j) => {
+          const t = setTimeout(r, cfg.jsonDelay);
+          if (opts && opts.signal) opts.signal.addEventListener('abort', () => { clearTimeout(t); j(err('cancelled', 'aborted')); });
+        });
         // vary the wrapping so the page's JSON extraction gets exercised
         const text = Array.isArray(v) ? '```json\n' + JSON.stringify(v, null, 1) + '\n```' : 'Here is the review:\n' + JSON.stringify(v, null, 1) + '\nHope this helps!';
         return { text, truncated: false, modelTierApplied: (opts && opts.modelTier) || 'default' };
@@ -204,10 +219,23 @@ window.__kaikouTest = true;
     return stream('That sounds fun! What was the best part of the day?\n###\n{"you": "I eat a big lunch", "better": "I had a big lunch", "why": "吃飯常用 have，過去式 had"}\n{"you": "it make me happy", "better": "it made me happy", "why": "過去式"}', opts);
   };
   sample.limits = async () => ({ maxPromptBytes: 65536 });
+  // permissions.d.ts: manage() opens Claude's Permissions panel; here the viewer switches the coach back on there
+  // (permsPanel: 'stay' leaves it off, 'fail' means the panel did not open).
+  window.__permsOpened = 0;
+  const permissions = {
+    state: async name => (name === 'sample' && cfg.sampleCode === 'not_granted' ? 'denied' : 'granted'),
+    request: async names => Object.fromEntries((names || ['sample']).map(n => [n, n === 'sample' && cfg.sampleCode === 'not_granted' ? 'denied' : 'granted'])),
+    manage: async () => {
+      await new Promise(r => setTimeout(r, 30));
+      if (cfg.permsPanel === 'fail') throw err('unavailable', 'the panel did not open');
+      window.__permsOpened++;
+      if (cfg.permsPanel !== 'stay' && cfg.sampleCode === 'not_granted') cfg.sampleCode = '';
+    },
+  };
   window.claude = { use: async name => {
     await new Promise(r => setTimeout(r, 30));
     if (cfg.failUse.includes(name)) throw err('unavailable', 'injected');
     if ((name === 'db' && cfg.noDb) || (name === 'user' && cfg.noUser) || (name === 'sample' && cfg.noSample) || (name === 'downloads' && cfg.noDownloads)) return null;
-    return ({ db, user, sample, downloads })[name] || null;
+    return ({ db, user, sample, downloads, permissions })[name] || null;
   } };
 })();
