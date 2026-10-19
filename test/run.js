@@ -877,20 +877,23 @@ function serve(root) {
     await page.click('#btn-settings');
     await page.click('#set-cloud');
     await page.click('[data-fk="slvl-B2"]');
+    await page.waitForTimeout(700);
+    const auto = await page.evaluate(() => !document.querySelector('#set-auto').checked); // what it is switched to
+    await page.click('#set-auto'); // waits behind the level's write
     await until(page, () => /還讀不到雲端的資料/.test(document.querySelector('#toast').textContent), null, 8000).catch(() => {});
     // (The level's write is still on its way when the cloud is left: it is held once it fails, a moment later, and that
-    // failure is not reported as one of the cloud's.)
-    await until(page, () => /"settings":\{"level":"B2"\}/.test(localStorage.getItem('kaikou:held') || ''), null, 6000).catch(() => {});
+    // failure is not reported as one of the cloud's. The other change was still waiting: it is held at once.)
+    await until(page, () => { const h = localStorage.getItem('kaikou:held') || ''; return /"level":"B2"/.test(h) && /"autoSpeak"/.test(h); }, null, 6000).catch(() => {});
     const unread = await page.evaluate(() => ({ mode: window.__kaikouTest.Store.mode, button: !document.querySelector('#set-cloud').hidden, toast: document.querySelector('#toast').textContent,
       held: (JSON.parse(localStorage.getItem('kaikou:held') || '{}').docs || {}).settings }));
     await page.evaluate(() => { const c = window.__mockCfg; c.failReads = {}; c.readDelay = {}; c.failWrites = {}; c.writeDelay = {}; });
     await page.click('#set-cloud');
     await until(page, () => window.__kaikouTest.Store.mode === 'db' && !window.__kaikouTest.S.uploading, null, 10000);
-    const c = await page.evaluate(() => ({ cloud: Object.values((window.__store.get('data/users/u_test/inbox') || {}).map || {}).map(x => x && x.text), flag: localStorage.getItem('kaikou:no-cloud'), level: (window.__store.get('data/users/u_test/settings') || {}).level }));
+    const c = await page.evaluate(() => ({ cloud: Object.values((window.__store.get('data/users/u_test/inbox') || {}).map || {}).map(x => x && x.text), flag: localStorage.getItem('kaikou:no-cloud'), level: (window.__store.get('data/users/u_test/settings') || {}).level, auto: (window.__store.get('data/users/u_test/settings') || {}).autoSpeak }));
     check('之後有了寫入權限：設定裡再試一次，會把這個瀏覽器的資料存到雲端（讀不到雲端時先不搬，按鈕留著，那時改的設定也留著）', () => {
       eq([unread.mode, unread.button, /這次先不搬/.test(unread.toast)], ['local', true, true]);
-      eq(unread.held, { level: 'B2' });
-      assert.ok(c.cloud.includes('唯讀連結的句子')); eq(c.flag, null); eq(c.level, 'B2');
+      eq(unread.held, { level: 'B2', autoSpeak: auto });
+      assert.ok(c.cloud.includes('唯讀連結的句子')); eq(c.flag, null); eq([c.level, c.auto], ['B2', auto]);
     });
     await ctx.close();
   }
