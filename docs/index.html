@@ -886,18 +886,7 @@ const Store = {
     if (!S.settingsRead) S.settingsLost = true;
     S.loadErrors.clear();
     if (!quiet) toast(why === 'no_write' ? '這個連結不能把進度存到雲端，改存在這個瀏覽器。' : '雲端同步已停止，之後的變更只存在這個瀏覽器。');
-    // This browser keeps a working copy of each document for the rest of the visit, as this page has it: the cloud's
-    // version as last read (also when a later read failed), with this visit's changes, and with the changes this browser
-    // still holds for the cloud (from earlier visits, or another tab). It replaces any copy left here before, which may
-    // still list what has been deleted since. A document never read on this visit is not written as it is shown
-    // (defaults, or only this visit's edits): a later read here would take it for the real one (until a copy of it turns
-    // up, the page keeps showing what it has: see reloadDocs).
-    const held = heldRecord();
-    for (const [n, full] of Object.entries(allDocs())) {
-      if (n === 'settings' ? !S.settingsRead : !S.readOnce.has(n)) continue;
-      const h = held && held.docs[n];
-      lsSet('kaikou:' + n, JSON.stringify(h ? deepMerge(full, h) : full));
-    }
+    writeCopies(); // the working copies for the rest of the visit
     renderToday();
   },
   retryBlocked() {
@@ -934,7 +923,7 @@ const Store = {
       else {
         this.known[name] = stampTimes(this.known[name], patch, Date.now());
         if (patch.map && typeof patch.map === 'object') for (const [id, v] of Object.entries(patch.map)) if (v === null) del.add(id);
-        if (!this.fromHeld) heldSuperseded(name, patch);
+        if (!this.fromHeld && heldSuperseded(name, patch)) this.carry[name] = true;
       }
     }
     delete lastSeen[name]; // a later read that matches the one before this edit is news again (another device undid it)
@@ -2890,6 +2879,29 @@ function localDocNames() {
   return names;
 }
 function forgetLocalDocs(names) { for (const n of names) lsDel('kaikou:' + n); lsDel('kaikou:held'); }
+// This browser's working copy of each document a visit has read, for visits (and tabs) that cannot use the cloud: as
+// this page has it (the cloud's version as last read, also when a later read failed, with this visit's changes), with
+// the changes this browser still holds for the cloud laid over it the way an upload would apply them (see heldOver). It
+// replaces any copy left here before, which may still list what has been deleted, dropped or replaced since. Written
+// when the cloud stops, and on a cloud visit while changes are held (at the start, and whenever some of them go). A
+// document never read on this visit is not written as it is shown (defaults, or only this visit's edits): a later read
+// here would take it for the real one (until a copy of it turns up, the page keeps showing what it has: see reloadDocs).
+function writeCopies() {
+  const held = heldRecord(), mine = allDocs(), base = {};
+  for (const [n, full] of Object.entries(mine)) if (n === 'settings' ? S.settingsRead : S.readOnce.has(n)) base[n] = full;
+  const over = held ? heldOver(base, Object.fromEntries(Object.keys(base).filter(n => held.docs[n]).map(n => [n, clone(held.docs[n])])), false) : {};
+  for (const [n, full] of Object.entries(base)) lsSet('kaikou:' + n, JSON.stringify(over[n] ? deepMerge(full, over[n]) : full));
+}
+// The parts of a held patch that go together: an entry of a list (map[id]) is one version of that entry, sent or kept
+// whole (half of a newer rating over an older one would be neither); every other field is a part of its own.
+function heldParts(p, fn) {
+  for (const [k, v] of Object.entries(p || {})) {
+    if (k === 'map' && v && typeof v === 'object' && !Array.isArray(v)) { for (const [id, e] of Object.entries(v)) fn(['map', id], e); }
+    else leaves({ [k]: v }, fn);
+  }
+}
+const canonJson = v => (v && typeof v === 'object' ? (Array.isArray(v) ? '[' + v.map(canonJson).join(',') + ']' : '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonJson(v[k])).join(',') + '}') : JSON.stringify(v));
+const sameValue = (a, b) => canonJson(a) === canonJson(b);
 const leafAt = (o, path) => path.reduce((x, k) => (x && typeof x === 'object' ? x[k] : undefined), o);
 // Whether a fresh marker's item (an id; 'day|item' or 'month' in a month) is set in patch p.
 const heldKey = (n, k, p) => !!p && (n.startsWith('log-') ? (k === 'month' ? 'monthRecord' in p : leafAt(p, ['days', k.split('|')[0], 'items', k.split('|')[1]]) !== undefined) : !!(p.map && typeof p.map === 'object' && k in p.map));
@@ -2902,42 +2914,51 @@ function heldParse() {
 // could not be used (held before the change): that edit must not come back with a later 存到雲端, nor show in this
 // browser's copies, so it goes, together with the mark that its item was only added here (the item is in the cloud
 // now). An edit held after the change (by another tab still unable to use the cloud) stays: it is the later one.
+// Returns whether anything held went (the change then stays in this tab's record of unsent changes until it lands, as
+// nothing else keeps it: see Store.queue).
 function heldSuperseded(name, patch) {
   const cur = heldParse();
-  if (!cur || (cur.uid !== Store.uid && cur.uid !== '*')) return;
+  if (!cur || (cur.uid !== Store.uid && cur.uid !== '*')) return false;
   const p = cur.docs[name];
-  // Whether the patch sets this field, a field holding it (also as a deletion), or something inside it.
-  const covered = path => {
+  const whole = name === 'srs' ? () => true : name.startsWith('sessions-') ? v => typeof v.date === 'string' : FULL_ADD[name];
+  // Whether the patch replaces this held field v: it sets the field, a field holding it (also as a deletion), or
+  // something inside it. A held deletion of an entry goes only for the whole entry saved again (in the cloud, a change
+  // inside a deleted entry does not bring it back).
+  const covered = (path, v) => {
     let x = patch;
     for (const k of path) {
       if (!x || typeof x !== 'object' || Array.isArray(x)) return true;
       if (!(k in x)) return false;
       x = x[k];
     }
-    let any = !x || typeof x !== 'object' || Array.isArray(x);
-    if (!any) leaves(x, () => { any = true; });
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return true;
+    if (v === null) return path.length === 2 && path[0] === 'map' && !!whole && whole(x);
+    let any = false;
+    leaves(x, () => { any = true; });
     return any;
   };
   let changed = false;
   const left = {};
-  if (p && typeof p === 'object') leaves(p, (path, v) => { if (covered(path)) changed = true; else setLeaf(left, path, v); });
+  if (p && typeof p === 'object') leaves(p, (path, v) => { if (covered(path, v)) changed = true; else setLeaf(left, path, v); });
   const f = cur.fresh && typeof cur.fresh === 'object' ? cur.fresh[name] : null;
   if (f && typeof f === 'object') for (const k of Object.keys(f)) if (heldKey(name, k, patch)) { delete f[k]; changed = true; }
-  if (!changed) return;
+  if (!changed) return false;
   const docs = Object.assign({}, cur.docs);
   if (hasChange(left)) docs[name] = left; else delete docs[name];
-  if (Object.keys(docs).some(n => DOC_NAME_RE.test(n) && hasChange(docs[n]))) lsSet('kaikou:held', JSON.stringify(Object.assign({}, cur, { docs })));
+  if (Object.keys(docs).some(n => DOC_NAME_RE.test(n) && hasChange(docs[n]))) { lsSet('kaikou:held', JSON.stringify(Object.assign({}, cur, { docs }))); writeCopies(); }
   else forgetLocalDocs(localDocNames()); // nothing left to save: the record and this browser's copies go
-  if (S.held) S.held = heldInfo();
+  // The notice shows what is held now (and 不要了 drops that).
+  if (S.held) { S.held = heldInfo(); setTimeout(() => redrawLater(renderToday), 0); }
+  return true;
 }
-// The part of a snapshot of the held edits that is still held: a field changed since (on this visit, see heldSuperseded,
-// or again in another tab) is not sent from the older snapshot.
+// The part of a snapshot of the held edits that is still held: a field or an entry changed since (on this visit, see
+// heldSuperseded, or again in another tab) is not sent from the older snapshot (it is sent as it is now, next time).
 function stillHeld(docs) {
   const cur = heldRecord(), out = {};
   for (const [n, p] of Object.entries(docs)) {
     const h = cur && cur.docs[n], left = {};
     if (!h) continue;
-    leaves(p, (path, v) => { if (JSON.stringify(leafAt(h, path)) === JSON.stringify(v)) setLeaf(left, path, v); });
+    heldParts(p, (path, v) => { if (sameValue(leafAt(h, path), v)) setLeaf(left, path, v); });
     if (hasChange(left)) out[n] = left;
   }
   return out;
@@ -2953,7 +2974,7 @@ function takeHeld(sent) {
     for (const [n, p] of Object.entries(cur.docs)) {
       const s = sent[n], left = {};
       if (!p || typeof p !== 'object') continue;
-      leaves(p, (path, v) => { if (JSON.stringify(leafAt(s, path)) !== JSON.stringify(v)) setLeaf(left, path, v); });
+      heldParts(p, (path, v) => { if (!sameValue(leafAt(s, path), v)) setLeaf(left, path, v); });
       if (hasChange(left)) docs[n] = left;
     }
     // Markers of items that were taken go (they are the cloud's now); those of other items stay.
@@ -2964,6 +2985,7 @@ function takeHeld(sent) {
   }
   if (!Object.keys(docs).length) { forgetLocalDocs(localDocNames()); return; }
   lsSet('kaikou:held', JSON.stringify({ uid: cur.uid, docs, fresh, drop: cur.drop && typeof cur.drop === 'object' ? cur.drop : {} }));
+  writeCopies(); // what went is no longer shown by a later visit working from this browser
 }
 function fullDocFor(n) {
   if (n === 'settings') return S.settings;
@@ -2981,7 +3003,8 @@ function fullDocFor(n) {
 // edits were made on a cloud visit (see heldOver). onQueued runs once the edits are queued and kept in this tab's record
 // of unsent changes (the record they came from can go then). resend: { times, del, filter } for edits from records a
 // closed page left (filter drops what was changed here later, also while the documents were read). held: docs are a
-// snapshot of this browser's held edits, of which only what is still held is sent (see stillHeld).
+// snapshot of this browser's held edits, of which only what is still held is sent (see stillHeld); held.sent is set to
+// that part.
 async function uploadPatches(docs, fromCloud, onQueued, resend, held) {
   let names = Object.keys(docs).filter(n => DOC_NAME_RE.test(n) && docs[n] && typeof docs[n] === 'object' && !Array.isArray(docs[n]));
   // Each document is read again first, and the edits are laid over what the cloud has now: a document this visit
@@ -2999,7 +3022,7 @@ async function uploadPatches(docs, fromCloud, onQueued, resend, held) {
     todo = names.filter(moved);
   }
   if (resend) { docs = resend.filter(docs); names = names.filter(n => docs[n]); if (!names.length) return true; }
-  if (held) { docs = stillHeld(docs); names = names.filter(n => docs[n]); if (!names.length) return true; }
+  if (held) { docs = held.sent = stillHeld(docs); names = names.filter(n => docs[n]); if (!names.length) return true; }
   docs = heldOver(cloud, Object.fromEntries(names.map(n => [n, docs[n]])), fromCloud, resend && resend.del, resend && resend.times);
   Store.fromHeld = true; // not this tab's own changes (see heldSuperseded)
   try {
@@ -3011,9 +3034,15 @@ async function uploadPatches(docs, fromCloud, onQueued, resend, held) {
       S.loadErrors.delete(n);
       Store.patch(n, fullDocFor(n), docs[n], resend ? { times: resend.times[n], del: [...(resend.del[n] || [])] } : null);
       Store.carry[n] = true; // kept in this tab's record until they land
-      // A day these edits bring with only a stand-in plan (made where the learner's plan was not known) gets it now.
+      // A day these edits bring with only a stand-in plan (made where the learner's plan was not known) gets it now,
+      // or as soon as the settings are read (see planKnown).
       if (n.startsWith('log-') && docs[n].days && typeof docs[n].days === 'object') {
-        for (const k of Object.keys(docs[n].days)) { const rec = dayRec(k); if (rec) patchDay(k, rec, false, {}, true); }
+        for (const k of Object.keys(docs[n].days)) {
+          const rec = dayRec(k);
+          if (!rec) continue;
+          if (!S.settingsRead && standIn(rec)) S.planBlind.add(k);
+          patchDay(k, rec, false, {}, true);
+        }
       }
     }
   } finally { Store.fromHeld = false; }
@@ -3101,8 +3130,9 @@ async function uploadHeld() {
   if (!h) { toast('這些變更已經在別的分頁存到雲端或捨棄了'); renderToday(); return; }
   S.uploading = true; renderToday();
   let taken = false;
-  const take = () => { if (taken) return; taken = true; takeHeld(h.docs); S.held = heldInfo(); };
-  const ok = await uploadPatches(h.docs, false, take, null, true);
+  const box = { sent: null }; // what is sent of it (see stillHeld): that goes from this browser's record
+  const take = () => { if (taken) return; taken = true; takeHeld(box.sent || {}); S.held = heldInfo(); };
+  const ok = await uploadPatches(h.docs, false, take, null, box);
   S.uploading = false;
   if (ok === true) { take(); toast(S.held ? '已把這台裝置上的變更存到雲端。之後又留下了新的變更，可以再按一次存到雲端。' : '已把這台裝置上的變更存到雲端'); }
   else if (ok === 'unread') toast('還讀不到雲端的資料，稍後再按一次。');
@@ -3241,8 +3271,9 @@ async function retryCloud() {
   }
   // Everything this viewer has is in this browser: send the held edits (none when every edit was undone), or the
   // whole documents when this browser has no record of them.
+  // (A copy of settings written while they were not known holds the defaults: it is not taken for the learner's.)
   const held = heldRecord();
-  const docs = held ? held.docs : Object.fromEntries(names.map(n => [n, readLocal(n)]));
+  const docs = held ? held.docs : Object.fromEntries(names.filter(n => !(n === 'settings' && (readLocal(n) || {})._part)).map(n => [n, readLocal(n)]));
   S.uploading = true; fillSettings();
   Store.mode = 'db'; Store.why = ''; S.settingsLost = false;
   Store.unsentKey = UNSENT_LS + Store.uid + ':' + newId(); holdTabLock(Store.unsentKey);
@@ -3250,8 +3281,9 @@ async function retryCloud() {
   // browser's copies) and later visits use the cloud (a page closed now sends them next time; should the cloud refuse
   // them, they are held here again).
   let taken = false;
-  const take = () => { if (taken) return; taken = true; lsDel('kaikou:no-cloud'); takeHeld(docs); S.held = heldInfo(); };
-  const ok = await uploadPatches(docs, false, take, null, !!held);
+  const box = held ? { sent: null } : null;
+  const take = () => { if (taken) return; taken = true; lsDel('kaikou:no-cloud'); takeHeld(box ? box.sent || {} : docs); S.held = heldInfo(); };
+  const ok = await uploadPatches(docs, false, take, null, box);
   S.uploading = false;
   if (ok === true) {
     take();
@@ -3309,7 +3341,7 @@ function discardChat() {
   // Its end is written only while the stored chat is still this one (another device may have started a newer one); if
   // that cannot be read now, the next read that finds it unchanged writes it (see applyChat).
   if (c) {
-    S.endedChats.add(c.id); S.endPending = { id: c.id, upd: Number(c.updatedAt) || 0 };
+    S.endedChats.add(c.id); setEndPending({ id: c.id, upd: Number(c.updatedAt) || 0 });
     delete lastSeen.chat; // the next read is applied even when the chat has not changed
     endStoredChat(c.id, S.endPending.upd);
   }
@@ -3438,7 +3470,7 @@ async function getHints() {
 // here; one continued on another device since then is left as it is (see applyChat).
 async function endStoredChat(id, upd) {
   if (S.chat && S.chat.id !== id) return;
-  const done = () => { if (S.endPending && S.endPending.id === id) S.endPending = null; };
+  const done = () => { if (S.endPending && S.endPending.id === id) setEndPending(null); };
   const mark = () => { done(); Store.put('chat', { active: false, endedId: id, at: Date.now() }); };
   if (Store.busyDoc('chat')) { mark(); return; } // this device's own write of the reviewed chat is still on its way
   let d;
@@ -5369,6 +5401,9 @@ function importSession(s) {
 async function applyBackup() {
   const imp = S.importing;
   if (!imp || !imp.docs || S.uploading || !S.ready) return;
+  // Changes this browser holds for the cloud are saved (or dropped) first: merged now, the file would count as later than
+  // them (see heldSuperseded), though they may well be newer.
+  if (Store.mode === 'db' && heldInfo()) { toast('這台裝置上還有連不上雲端時留下的變更：先在今日頁按「存到雲端」（或「不要了」），再匯入備份檔。'); return; }
   S.uploading = true; fillSettings();
   const docs = imp.docs, n = { phrases: 0, inbox: 0, days: 0, sess: 0, shadow: 0, settings: '' };
   let full = false;
@@ -5385,7 +5420,7 @@ async function applyBackup() {
     // Settings are taken from the file only where the learner's own are known here and are still the defaults (or 關於我
     // is empty). On a visit that could not reach the cloud, the settings shown are this browser's (often the defaults),
     // and settings that could not be read are shown as the defaults: neither is a sign that the real ones are.
-    if (docs.settings) {
+    if (docs.settings && !docs.settings._part) { // (_part: written where the settings were not known; see Store.send)
       const inc = pickSettings(docs.settings);
       if (!S.settingsRead || Store.why === 'offline') n.settings = 'unknown';
       else if (JSON.stringify(S.settings) === JSON.stringify(pickSettings({}))) { S.settings = inc; saveSettings(); n.settings = 'all'; }
@@ -5836,14 +5871,20 @@ function isReviewed(id) {
   for (const list of Object.values(S.sessions)) if ((list || []).some(s => s.id === id)) return true;
   return false;
 }
+// The end of a discarded chat still to be written is kept in this browser too, so a later visit writes it (see boot).
+const END_LS = 'kaikou:end-pending';
+function setEndPending(v) {
+  S.endPending = v;
+  if (v && Store.uid) lsSet(END_LS, JSON.stringify({ uid: Store.uid, id: v.id, upd: v.upd })); else lsDel(END_LS);
+}
 function applyChat(d) {
   // A chat discarded here whose end could not be written then (its read failed): a later read that finds it as it was
   // writes the end now. One continued elsewhere since (or replaced by another chat) is left as it is.
   const pend = S.endPending;
   if (pend) {
     const same = d && d.active !== false && String(d.id) === pend.id && (Number(d.updatedAt) || 0) <= pend.upd;
-    if (!same || (S.chat && S.chat.id !== pend.id)) S.endPending = null;
-    else if (!Store.busyDoc('chat')) { S.endPending = null; Store.put('chat', { active: false, endedId: pend.id, at: Date.now() }); return; }
+    if (!same || (S.chat && S.chat.id !== pend.id)) setEndPending(null);
+    else if (!Store.busyDoc('chat')) { setEndPending(null); Store.put('chat', { active: false, endedId: pend.id, at: Date.now() }); return; }
   }
   if (S.busy || S.reviewing) return;
   if (d && d.active === false) {
@@ -5857,8 +5898,10 @@ function applyChat(d) {
 function applyDoc(name, d, raced) {
   S.readOnce.add(name);
   if (name === 'settings') {
+    // A copy written by a visit that did not know the settings (see Store.send) does not replace settings this page knows.
+    if (d && d._part && S.settingsRead && Store.mode !== 'db') return;
     // In Claude, a visit that works from this browser and finds no copy of the settings here (or one written while they
-    // were not known: see Store.send) does not know the learner's.
+    // were not known) does not know the learner's.
     if ((d === null || (d && d._part)) && Store.mode !== 'db' && Store.why) S.settingsLost = true;
     S.settings = pickSettings(d); S.settingsRead = !S.settingsLost;
     if (S.settingsRead && S.planBlind.size) setTimeout(planKnown, 0); // once the other documents of this read are in
@@ -5999,6 +6042,13 @@ async function boot(data) {
     useApiKeyIfAny();
   }
   await Store.init();
+  if (Store.mode === 'db') {
+    // A chat discarded on an earlier visit whose end could not be written then: the read below writes it if the chat is
+    // still as it was (see applyChat).
+    let e = null;
+    try { e = JSON.parse(lsGet(END_LS) || 'null'); } catch (_) { e = null; }
+    if (e && e.uid === Store.uid && typeof e.id === 'string') S.endPending = { id: e.id, upd: Number(e.upd) || 0 };
+  }
   if (Store.why === 'offline') toast('這次連不上 Claude 的雲端，變更先存在這個瀏覽器。');
   await loadAll();
   if (Store.mode === 'db') {
@@ -6006,6 +6056,7 @@ async function boot(data) {
     // Every edit kept here while the cloud could not be used was undone: there is nothing to save, so the copies go.
     if (h && !h.names.length) forgetLocalDocs(localDocNames());
     S.held = h && h.names.length ? h : null;
+    if (S.held) writeCopies(); // a later visit working from this browser starts from the cloud as read now
   }
   S.ready = true;
   updateSync();
