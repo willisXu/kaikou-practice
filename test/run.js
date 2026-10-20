@@ -4534,6 +4534,8 @@ function serve(root) {
       eq(hinted.rules, [true, false, true]);
     });
     const wideHint = await horiz(page);
+    // The chat's own write is done first, so only 看答案 itself can store that the answer was opened.
+    await until(page, () => !window.__kaikouTest.Store.busyDoc('chat'));
     await page.click('#msgs button:has-text("看答案")');
     await until(page, () => { const d = window.__store.get('data/users/u_test/chat'); const me = d && d.turns.filter(t => t.r === 'm').pop(); return !!(me && me.fx && me.fx[0].open); });
     await until(page, () => document.querySelector('#sr-live').textContent.includes('答案：I had a big lunch'));
