@@ -185,6 +185,17 @@ textarea.input{resize:vertical;line-height:1.5}
 .chip:hover{border-color:var(--accent)}
 .chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);font-weight:700}
 .chip-n{margin-left:6px;font-family:var(--font-mono);font-size:13px;font-weight:500;color:var(--muted)}
+.chip-group{display:grid;gap:6px}
+.chip-group+.chip-group,.chip-group+.chips{margin-top:6px}
+.chip-group-name{font-size:13px;color:var(--muted)}
+/* a role-play scene: what happens, the task, phrases to have ready */
+.scene-card{display:grid;gap:6px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2)}
+.scene-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.scene-say{display:grid;gap:0;margin-top:4px}
+.scene-say>.label{padding-bottom:2px}
+.scene-say .label+.phrase{border-top:0}
+.scene-card .phrase-en{font-size:16px}
+.scene-help{padding:12px 14px}
 .start-row{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
 .tips{display:grid;gap:8px;margin-top:10px;padding-left:20px;font-size:15px;color:var(--muted)}
 .tips b{color:var(--ink)}
@@ -432,6 +443,7 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
 .recs{display:grid;gap:10px}
 .recs audio{width:100%}
 .points{display:grid;gap:4px;margin:6px 0 0;padding-left:20px}
+.topic-pts{display:grid;gap:4px;margin:0;padding-left:22px;font-size:16px}
 
 @media (max-width:600px){
   .modes{grid-template-columns:1fr}
@@ -762,15 +774,136 @@ const TOPICS = [
   { k: 'custom', zh: '自訂話題', en: '' },
 ];
 const SCENES = [
-  { k: 'smalltalk', zh: '和外國同事閒聊', en: 'Small talk by the coffee machine with a friendly new colleague from Canada.', ai: 'the Canadian colleague', me: 'themself' },
-  { k: 'boss', zh: '向主管報告進度', en: "A weekly one-on-one: the learner updates their manager on a project's progress, risks and next steps.", ai: 'the manager', me: 'the team member' },
-  { k: 'supplier', zh: '跟供應商確認交期', en: 'A video call: the learner, a product manager, checks a delivery date with a supplier whose shipment is running late.', ai: "the supplier's account manager", me: 'the product manager' },
-  { k: 'intro', zh: '交流活動自我介紹', en: 'A tech networking event: two people meet for the first time and introduce themselves.', ai: 'another attendee who works in tech', me: 'themself' },
-  { k: 'interview', zh: '產品經理面試', en: 'A job interview for a product manager role at an international company.', ai: 'the interviewer', me: 'the candidate' },
-  { k: 'hotel', zh: '飯店入住出問題', en: 'Checking into a hotel abroad, but the room that was booked is not available.', ai: 'the front desk clerk', me: 'the guest' },
-  { k: 'restaurant', zh: '餐廳點餐', en: 'Ordering dinner at a restaurant abroad and asking about the dishes.', ai: 'the server', me: 'the customer' },
-  { k: 'custom', zh: '自訂情境', en: '', ai: 'the other person in the scene', me: 'themself' },
+  { k: 'smalltalk', g: 'work', lv: 'A2–B1', zh: '和外國同事閒聊', dz: '在茶水間遇到剛從加拿大來的新同事，聊幾句。',
+    en: 'Small talk by the coffee machine with a friendly new colleague from Canada.',
+    ai: 'the Canadian colleague', aiZh: '加拿大來的新同事', me: 'themself',
+    goal: '聊週末、工作和一個你推薦的地方，每次回答後把問題丟回去。',
+    task: 'Keep the small talk going: talk about the weekend, work and one place they would recommend, and ask a question back after each answer.',
+    say: [['How was your weekend?', '你週末過得怎麼樣？'], ['Pretty good, thanks. I went hiking with some friends.', '還不錯，謝謝。我跟幾個朋友去爬山。'], ['How are you settling in?', '你適應得還好嗎？'], ['You should try the beef noodles near the office.', '你應該試試公司附近的牛肉麵。'], ["Anyway, I'd better get back to work.", '好啦，我該回去工作了。']] },
+  { k: 'standup', g: 'work', lv: 'A2–B1', zh: '每日站會', dz: '視訊站會：每個人說昨天做了什麼、今天要做什麼、有沒有卡住。',
+    en: 'A daily stand-up on a video call: each person says what they did yesterday, what they will do today and whether anything is blocking them.',
+    ai: 'the engineering lead running the stand-up', aiZh: '主持站會的工程主管', me: 'the product manager',
+    goal: '用三句話報告昨天做了什麼、今天要做什麼、卡在哪裡，再回答一個追問。',
+    task: 'Report briefly what they did yesterday, what they will do today and one blocker, then answer a short follow-up question.',
+    say: [['Yesterday I wrapped up the user survey.', '昨天我把使用者問卷收尾了。'], ["Today I'm going to focus on the release notes.", '今天我會專心寫版本說明。'], ["I'm blocked on the API key. I need it from IT.", '我卡在 API 金鑰，需要 IT 給我。'], ['No blockers on my side.', '我這邊沒有卡關。'], ["Let's take that offline.", '這個我們會後再聊。']] },
+  { k: 'boss', g: 'work', lv: 'B1', zh: '向主管報告進度', dz: '每週一對一，向主管報告專案的進度、風險和下一步。',
+    en: "A weekly one-on-one: the learner updates their manager on a project's progress, risks and next steps.",
+    ai: 'the manager', aiZh: '主管', me: 'the team member',
+    goal: '報告進度、說出一個風險和你的處理方式，最後確認主管要你做什麼。',
+    task: 'Give a clear update: progress, one risk and how they will handle it, then confirm what the manager wants them to do next.',
+    say: [["We're on track for the launch next month.", '我們照進度，下個月可以上線。'], ["One risk is that the test data isn't ready yet.", '有一個風險是測試資料還沒準備好。'], ["To handle that, I'll ask the data team for help this week.", '為了處理這件事，我這週會請資料團隊幫忙。'], ['Do you want me to loop in the engineering team?', '要我把工程團隊拉進來嗎？'], ["I'll keep you posted.", '我會隨時跟你更新。']] },
+  { k: 'requirement', g: 'work', lv: 'B1–B2', zh: '需求釐清', dz: '品牌行銷經理想在官網加一個「AI 膚質檢測問卷」，你要先把需求問清楚。',
+    en: 'A meeting with a brand marketing manager who wants to add an AI skin analysis quiz to the website.',
+    ai: 'the brand marketing manager', aiZh: '品牌行銷經理', me: 'the product manager',
+    goal: '問清楚要解決什麼問題、給誰用、怎樣算成功、哪些是必要功能，最後整理共識。',
+    task: 'Ask questions to clarify the problem, the main users, how success will be measured and which features are must-haves, then sum up what was agreed.',
+    say: [['What problem are we trying to solve here?', '我們要解決的是什麼問題？'], ["Who's the main user for this?", '這主要是給誰用的？'], ["How will we know it's working?", '我們怎麼知道它有效？'], ['Is this a must-have or a nice-to-have?', '這是一定要有的，還是有了更好？'], ["Let me sum up what we've agreed.", '我整理一下我們的共識。']] },
+  { k: 'priority', g: 'work', lv: 'B2', zh: '優先順序會議', dz: '有三個功能需求，但這個 sprint 只做得完一個；業務總監很想先做他的。',
+    en: 'A planning meeting: there are three feature requests, but the team only has time for one this sprint. The sales director is pushing hard for their own request.',
+    ai: 'the sales director', aiZh: '業務總監', me: 'the product manager',
+    goal: '比較三個需求的效益和工作量、說明理由、回應反對意見，最後讓大家同意先做哪一個。',
+    task: 'Compare the three requests by impact and effort, explain their reasoning, respond to pushback and reach a decision everyone can accept.',
+    say: [["What's the impact compared with the effort?", '效益跟投入相比怎麼樣？'], ["Given the timeline, I'd suggest we start with the checkout fix.", '考量時程，我建議先修結帳流程。'], ['If we add this, something else has to move.', '如果加這個，就得有別的往後挪。'], ["I see where you're coming from, but the data says otherwise.", '我懂你的考量，不過數據顯示的不一樣。'], ['Can we agree to revisit this next sprint?', '我們可以說好下個 sprint 再討論這個嗎？']] },
+  { k: 'metrics', g: 'work', lv: 'B1–B2', zh: '每月指標檢討', dz: '每月跟總經理檢討官網的數字：轉換率、回購率和客單價。',
+    en: 'A monthly review with the general manager about the online store: conversion rate, repeat purchase rate and average order value.',
+    ai: 'the general manager', aiZh: '總經理', me: 'the product manager presenting the numbers',
+    goal: '報告三個指標的變化和原因，回答總經理的追問，最後提出一個行動。',
+    task: 'Present how three metrics changed and why, answer the follow-up "why" questions, and propose one action.',
+    say: [["First, a quick overview of this month's numbers.", '首先，快速看一下這個月的數字。'], ['Conversion went up from 2.1% to 3.4%.', '轉換率從 2.1% 升到 3.4%。'], ['This is mainly because of the new landing page.', '這主要是因為新的到達頁。'], ["Repeat purchases dipped slightly, so we're looking into it.", '回購率小幅下滑，我們正在了解原因。'], ['The key takeaway is that more new customers are coming in.', '重點是新客人變多了。']] },
+  { k: 'vendor', g: 'work', lv: 'B1–B2', zh: 'AI 客服機器人廠商', dz: '跟賣 AI 客服機器人的廠商開視訊會議：報價不清楚，你們也很在意客戶資料的隱私。',
+    en: "A video call with a vendor selling an AI customer-service chatbot. The quote is unclear, and the learner's company cares a lot about customer data privacy.",
+    ai: "the vendor's sales manager", aiZh: '廠商的業務經理', me: 'the product manager',
+    goal: '問清楚報價包含什麼、多久能上線、客戶資料怎麼處理，試著談價格，最後請對方書面確認。',
+    task: 'Clarify what the quote includes, the lead time and how customer data is handled, try to negotiate the price, and ask for written confirmation.',
+    say: [['Could you walk us through the quote?', '可以帶我們看一下報價嗎？'], ["What's included in this price?", '這個價格包含哪些項目？'], ["Where is our customers' data stored?", '我們客戶的資料存在哪裡？'], ['Is there any flexibility on the price?', '價格有彈性嗎？'], ['Could you put that in writing?', '可以用書面確認嗎？']] },
+  { k: 'supplier', g: 'work', lv: 'B1', zh: '跟供應商確認交期', dz: '視訊會議：供應商的出貨延誤了，你要問清楚原因和新的交期。',
+    en: 'A video call: the learner, a product manager, checks a delivery date with a supplier whose shipment is running late.',
+    ai: "the supplier's account manager", aiZh: '供應商的業務窗口', me: 'the product manager',
+    goal: '問清楚延誤的原因和新的交期，試著請對方加快，並請對方用 email 確認。',
+    task: 'Find out why the shipment is late and the new delivery date, ask whether it can be sped up, and ask for written confirmation.',
+    say: [["I'm calling about our order from last month.", '我打來是想問上個月的訂單。'], ["Could you tell me what's causing the delay?", '可以告訴我延誤的原因嗎？'], ['When can we expect the shipment?', '我們什麼時候可以收到貨？'], ['Is there any way to speed it up?', '有沒有辦法加快？'], ['Could you confirm that by email?', '可以用 email 確認嗎？']] },
+  { k: 'claim', g: 'work', lv: 'B2', zh: '質疑過度的功效宣稱', dz: '資深研發同事想在上市活動說新精華液「3 天修復肌膚」，但臨床數據撐不起這句話。',
+    en: 'A senior R&D colleague wants the launch campaign to say a new serum "repairs skin in 3 days". The clinical data does not clearly support it.',
+    ai: 'the senior R&D colleague', aiZh: '資深研發同事', me: 'the product manager',
+    goal: '先部分同意，再說出你對宣稱的疑慮，並提出另一種說法或下一步。',
+    task: 'Disagree politely: agree in part, explain the concern about the claim, and propose another wording or a next step.',
+    say: [['I like the direction, but I have one concern.', '我喜歡這個方向，但我有一個疑慮。'], ["I could be wrong, but the data doesn't quite support that claim.", '我可能說錯，但數據不太支持這個宣稱。'], ['My worry is the regulatory review.', '我擔心的是法規審查。'], ['What if we say it helps improve skin texture instead?', '如果改成「幫助改善膚質」呢？'], ['Could we run a small patch test first?', '我們可以先做一個小規模的貼膚測試嗎？']] },
+  { k: 'delay', g: 'work', lv: 'B2', zh: '上市延期', dz: '跟海外經銷商開視訊會議：新產品因為包材出問題，要晚三週上市。',
+    en: 'A video call with an overseas distributor: the launch of a new product will be three weeks late because of a packaging problem.',
+    ai: 'the overseas distributor, who is not happy', aiZh: '不太高興的海外經銷商', me: 'the product manager',
+    goal: '道歉、說明原因，提出兩個選項，並約好下次更新的時間。',
+    task: 'Apologise, explain the reason, offer two options and agree when they will give the next update.',
+    say: [["I'm afraid I have some bad news about the launch.", '恐怕我有一個關於上市的壞消息。'], ["We've had a problem with our packaging supplier.", '我們的包材供應商出了問題。'], ["I'm sorry for the trouble this causes.", '很抱歉造成你們的困擾。'], ['We could ship a smaller first batch, or move the launch to May.', '我們可以先出一小批，或把上市改到五月。'], ["I'll update you by Friday.", '我會在週五前跟你更新。']] },
+  { k: 'feedback', g: 'work', lv: 'B1–B2', zh: '一對一回饋', dz: '一對一會議：主管說你上次的簡報太長，重點不見了。',
+    en: 'A one-on-one where the manager gives critical feedback: their last presentation was too long and the main point got lost.',
+    ai: 'the manager', aiZh: '主管', me: 'the team member',
+    goal: '聽完回饋、確認你懂了，說你會怎麼改，再請主管給一個具體的建議。',
+    task: 'Respond to critical feedback constructively: acknowledge it, check they understood, say what they will change and ask for one specific tip.',
+    say: [["Thanks for telling me. That's fair.", '謝謝你告訴我，你說得有道理。'], ['Just to make sure I understand, it was too long?', '我確認一下，是太長了嗎？'], ["Next time, I'll start with the main point.", '下次我會先講重點。'], ['Do you have any tips on keeping it short?', '你有什麼讓簡報變短的建議嗎？'], ['I really appreciate the feedback.', '很謝謝你的回饋。']] },
+  { k: 'intro', g: 'work', lv: 'A2–B1', zh: '交流活動自我介紹', dz: '科技業的交流活動，第一次見面的兩個人互相認識。',
+    en: 'A tech networking event: two people meet for the first time and introduce themselves.',
+    ai: 'another attendee who works in tech', aiZh: '在科技業工作的參加者', me: 'themself',
+    goal: '介紹你和你的工作，問對方兩個問題，最後交換聯絡方式。',
+    task: 'Introduce themself and their work, ask the other person two questions, and end by exchanging contact details.',
+    say: [['Hi, nice to meet you. I work on AI products at a skincare company.', '嗨，很高興認識你。我在一家保養品公司做 AI 產品。'], ['What brings you here today?', '你今天怎麼會來這裡？'], ['How did you get into that?', '你是怎麼開始做這個的？'], ['It was great talking to you.', '很高興跟你聊天。'], ['Are you on LinkedIn?', '你有用 LinkedIn 嗎？']] },
+  { k: 'interview', g: 'work', lv: 'B1–B2', zh: '產品經理面試', dz: '應徵國際公司的產品經理職位，面試官請你舉例說明。',
+    en: 'A job interview for a product manager role at an international company.',
+    ai: 'the interviewer', aiZh: '面試官', me: 'the candidate',
+    goal: '用一個實際的例子說明你怎麼做產品決定（情況、做法、結果），最後問面試官一個問題。',
+    task: 'Answer with one concrete example of a product decision (the situation, what they did, the result) and ask the interviewer a question at the end.',
+    say: [['Let me give you an example.', '我舉個例子。'], ['Our sign-up rate was low, so I simplified the form.', '我們的註冊率很低，所以我簡化了表單。'], ['As a result, sign-ups went up by 12%.', '結果，註冊數增加了 12%。'], ['What I learned from that is to test early.', '我從中學到的是要早點測試。'], ['Could you tell me more about the team?', '可以多介紹一下團隊嗎？']] },
+  { k: 'coffee', g: 'life', lv: 'A2', zh: '咖啡店點飲料', dz: '在國外很忙的咖啡店點一杯飲料，還想改一下做法。',
+    en: 'Ordering a drink at a busy coffee shop abroad, with one change to the usual recipe.',
+    ai: 'the barista', aiZh: '咖啡師', me: 'the customer',
+    goal: '點一杯飲料並改一個做法（例如換燕麥奶），確認價格後付款。',
+    task: 'Order a drink with one change (such as oat milk or less sugar), check the price and pay.',
+    say: [['Can I get a medium latte, please?', '請給我一杯中杯拿鐵。'], ['Could I have it with oat milk instead?', '可以改成燕麥奶嗎？'], ['Less sweet, please.', '甜度少一點，謝謝。'], ["It's to go, please.", '外帶，謝謝。'], ['Can I pay by card?', '可以刷卡嗎？']] },
+  { k: 'restaurant', g: 'life', lv: 'A2', zh: '餐廳點餐', dz: '在國外的餐廳吃晚餐，問菜色、點餐。',
+    en: 'Ordering dinner at a restaurant abroad and asking about the dishes.',
+    ai: 'the server', aiZh: '服務生', me: 'the customer',
+    goal: '問一道菜是什麼、點餐時說一個要求（例如不要洋蔥），最後結帳。',
+    task: 'Ask about one dish, order with one special request (such as no onions), and ask for the bill.',
+    say: [['What would you recommend?', '你推薦什麼？'], ["What's in this dish?", '這道菜裡面有什麼？'], ["I'll have the salmon, please.", '我要鮭魚，謝謝。'], ['Could I have it without onions?', '可以不要加洋蔥嗎？'], ['Could we get the check, please?', '可以幫我們結帳嗎？']] },
+  { k: 'booking', g: 'life', lv: 'A2–B1', zh: '打電話訂位', dz: '打電話到餐廳，幫團隊聚餐訂位。',
+    en: 'Calling a restaurant to book a table for a team dinner.',
+    ai: 'the restaurant host on the phone', aiZh: '餐廳接電話的人', me: 'the customer',
+    goal: '說明日期、時間、人數和一個特別需求，最後確認訂位的名字。',
+    task: 'Give the date, time, number of people and one special request (such as a vegetarian guest), and confirm the name on the booking.',
+    say: [["I'd like to book a table for six on Friday.", '我想訂週五六個人的位子。'], ['Around seven, if possible.', '可以的話，大約七點。'], ['One of us is vegetarian.', '我們有一位吃素。'], ['Could we have a table by the window?', '可以坐靠窗的位子嗎？'], ['The booking is under Chen.', '訂位的名字是陳。']] },
+  { k: 'hotel', g: 'life', lv: 'B1', zh: '飯店入住出問題', dz: '在國外的飯店辦入住，但你訂的房間沒有了。',
+    en: 'Checking into a hotel abroad, but the room that was booked is not available.',
+    ai: 'the front desk clerk', aiZh: '櫃檯人員', me: 'the guest',
+    goal: '說明你訂的是什麼房、提出你能接受的辦法，並確認要不要加錢。',
+    task: 'Explain what was booked, suggest a solution they can accept, and check whether there is any extra charge.',
+    say: [['I booked a double room with a view.', '我訂的是有景觀的雙人房。'], ["Here's my confirmation email.", '這是我的訂房確認信。'], ['Is there anything else available tonight?', '今晚還有其他房間嗎？'], ['Would there be an extra charge for that?', '那樣要另外收費嗎？'], ["I'd appreciate it if you could sort this out.", '如果你能幫我處理好，我會很感謝。']] },
+  { k: 'return', g: 'life', lv: 'B1', zh: '退換瑕疵品', dz: '上週買的耳機左邊沒聲音了，店員說退換期快過了。',
+    en: 'Returning a pair of headphones bought last week because the left side stopped working. The clerk says the return period is almost over.',
+    ai: 'the store clerk', aiZh: '店員', me: 'the customer',
+    goal: '說明問題和購買時間，客氣但堅持地要求換貨或退款。',
+    task: 'Explain the problem and when it was bought, and politely but firmly ask for an exchange or a refund.',
+    say: [['I bought these headphones here last week.', '我上週在這裡買了這副耳機。'], ['The left side stopped working.', '左邊沒有聲音了。'], ["Here's my receipt.", '這是我的收據。'], ['Would it be possible to exchange them?', '可以換貨嗎？'], ["I'd prefer a refund, if that's OK.", '可以的話，我比較想退款。']] },
+  { k: 'clinic', g: 'life', lv: 'A2–B1', zh: '看診', dz: '在國外的診所看醫生：喉嚨痛，還有一點發燒。',
+    en: 'Seeing a doctor at a clinic abroad because of a sore throat and a slight fever.',
+    ai: 'the doctor', aiZh: '醫生', me: 'the patient',
+    goal: '說明症狀和從什麼時候開始，問清楚藥怎麼吃。',
+    task: 'Describe the symptoms and how long they have had them, and ask how to take the medicine.',
+    say: [["I've had a sore throat since Monday.", '我從星期一開始喉嚨痛。'], ['I also have a slight fever.', '我還有一點發燒。'], ['It hurts when I swallow.', '吞東西的時候會痛。'], ['How often should I take this?', '這個要多久吃一次？'], ['Should I take it before or after meals?', '要飯前吃還是飯後吃？']] },
+  { k: 'favour', g: 'life', lv: 'B1', zh: '請鄰居幫忙', dz: '下週要出差，想請鄰居幫你澆花、收信。',
+    en: 'Asking a neighbour to water the plants and collect the mail while the learner is away on a business trip.',
+    ai: 'the neighbour', aiZh: '鄰居', me: 'themself',
+    goal: '客氣地提出請求、說明細節並道謝，可以提議回報對方。',
+    task: 'Ask for a favour politely, explain the details and thank them, offering something in return.',
+    say: [['Could I ask you a favour?', '可以請你幫個忙嗎？'], ["I'm away on a business trip next week.", '我下週要出差。'], ['Would you mind watering my plants?', '你介意幫我澆花嗎？'], ["Only if it's no trouble.", '不麻煩的話再幫就好。'], ['Thanks a lot. I owe you one.', '非常感謝，我欠你一次。']] },
+  { k: 'news', g: 'life', lv: 'B1', zh: '聽朋友說近況', dz: '跟好久不見的朋友聊天，他有一個好消息、一個壞消息。',
+    en: 'Catching up with a friend who has one piece of good news and one piece of bad news.',
+    ai: 'a friend', aiZh: '好久不見的朋友', me: 'themself',
+    goal: '對好消息和壞消息做出合適的反應，並追問細節。',
+    task: 'React naturally to good and bad news and ask follow-up questions.',
+    say: [["That's great news! Congratulations!", '太好了！恭喜你！'], ["Oh no, I'm sorry to hear that.", '喔不，聽到這個我很遺憾。'], ['Really? Tell me more.', '真的嗎？多說一點。'], ['How are you feeling about it?', '你現在心情怎麼樣？'], ["Let me know if there's anything I can do.", '有什麼我能幫忙的就跟我說。']] },
+  { k: 'custom', g: 'custom', zh: '自訂情境', en: '', ai: 'the other person in the scene', me: 'themself' },
 ];
+// A scene with its task and phrases (a custom scene has none).
+const sceneOf = k => SCENES.find(x => x.k === k && x.say) || null;
 const STARTERS = [
   ['Sorry, could you say that again?', '抱歉，可以再說一次嗎？', '沒聽清楚'],
   ['Could you speak a bit more slowly?', '可以說慢一點嗎？', '跟不上'],
@@ -784,6 +917,24 @@ const STARTERS = [
   ['Can I ask a quick question?', '可以問個小問題嗎？', '開口提問'],
   ["I'll get back to you on that.", '這個我再回覆你。', '工作場合'],
   ['I was wondering if …', '我在想能不能…', '委婉請求'],
+  ["It's a kind of …", '它是一種…', '找不到字', "It's a kind of app that checks your skin."],
+  ['What do you mean by …?', '你說的…是什麼意思？', '確認詞意', 'What do you mean by a phased rollout?'],
+  ['Does that make sense?', '這樣說清楚嗎？', '確認對方懂'],
+  ['Sorry, where was I?', '抱歉，我剛剛說到哪？', '拉回主題'],
+];
+// The second rescue pack (收藏): for meetings and video calls.
+const MEETING = [
+  ['Sorry to interrupt, but …', '抱歉打斷一下…', '插話', 'Sorry to interrupt, but can I add something?'],
+  ['Can I just finish this point?', '我先把這點說完好嗎？', '保住發言權'],
+  ['What do you think, …?', '…，你覺得呢？', '請別人發言', 'What do you think, Amy?'],
+  ['Could you go back to the last slide?', '可以回到上一張投影片嗎？', '簡報'],
+  ["I think you're on mute.", '你好像靜音了。', '視訊'],
+  ["You're breaking up a bit.", '你的聲音有點斷斷續續。', '視訊'],
+  ['Let me share my screen.', '我來分享螢幕。', '視訊'],
+  ["Just to make sure we're on the same page, …", '確認一下我們的理解一樣：…', '確認共識', "Just to make sure we're on the same page, we launch on May 5."],
+  ["Who's the owner for this?", '這件事誰負責？', '確認負責人'],
+  ["Let's take that offline.", '這個我們會後再聊。', '收尾'],
+  ["I'll send a recap after the meeting.", '會後我會寄重點摘要。', '收尾'],
 ];
 const OPT_LABEL = { casual: '口語', neutral: '一般', work: '職場', final: '精修版' };
 const OPT_RE = /^\s*(casual|neutral|work|final)\s*[:：]\s*(.+)$/i;
@@ -800,7 +951,7 @@ const S = {
   settings: Object.assign({}, DEFAULTS),
   logs: {}, loaded: new Set(), editedDays: new Set(), editedMonthRec: new Set(), planWait: {}, planBlind: new Set(),
   sessions: {}, sessLoaded: new Set(), loadErrors: new Set(), readOnce: new Set(),
-  phrases: [], inbox: [], chat: null, review: null, endedChats: new Set(), endPending: null, openSess: new Set(), openErr: new Set(),
+  phrases: [], inbox: [], chat: null, review: null, endedChats: new Set(), endPending: null, openSess: new Set(), openErr: new Set(), sceneOpen: false, starterSet: 'basic',
   setup: { mode: 'free', topic: 'weekend', scene: 'smalltalk', custom: '', pattern: '' },
   sample: null, sampleState: 'loading',
   busy: false, ctl: null, askStartedAt: 0, reviewing: false, reviewStart: 0,
@@ -2375,7 +2526,10 @@ function rulesFor(c) {
   if (c.mode === 'free') {
     mode = 'FREE CONVERSATION about ' + c.topicEn + '. Be a warm, curious conversation partner: react to what they say, sometimes add a short opinion or experience of your own, and keep the topic going. If it runs dry, move to a related topic.';
   } else if (c.mode === 'role') {
-    mode = 'ROLE-PLAY. Scenario: ' + c.sceneEn + ' You play ' + c.aiRole + '; the learner plays ' + c.meRole + '. Stay in character in your reply and keep it realistic, adding a small complication now and then. When the scene reaches a natural end, close it in character and offer to replay it with a different twist.';
+    const sc = sceneOf(c.sceneK);
+    mode = 'ROLE-PLAY. Scenario: ' + c.sceneEn + ' You play ' + c.aiRole + '; the learner plays ' + c.meRole + '. '
+      + (sc ? "The learner's task: " + sc.task + ' Let the scene give them the chance to do it, and do not do it for them. ' : '')
+      + 'Stay in character in your reply and keep it realistic, adding a small complication now and then. When the scene reaches a natural end, close it in character and offer to replay it with a different twist.';
   } else if (c.pattern) {
     mode = 'CHINESE-TO-ENGLISH SPEAKING DRILL on one pattern: ' + c.pattern + ', ' + ERR_TYPES[c.pattern].en + '.\n'
       + '- Give the learner one short sentence in Traditional Chinese as used in Taiwan to say in English, on its own line starting with "say:". Saying it in English must need this pattern. Make it fit their everyday life or work (see About the learner), and vary the sentences.\n'
@@ -2543,7 +2697,9 @@ function reviewPrompt(c) {
     } else lines.push('Coach: ' + t.t);
   }
   const transcript = lines.join('\n').slice(-24000);
+  const sc = c.mode === 'role' ? sceneOf(c.sceneK) : null;
   return 'Review this English speaking practice session. The learner is a Mandarin speaker from Taiwan practising at level ' + c.level + '. Session: ' + chatLabelEn(c) + '.\n'
+    + (sc ? "The learner's task in this role-play: " + sc.task + ' Say in the summary whether they did it.\n' : '')
     + 'Transcript ("Learner" lines are what they said; "Fix" lines are corrections the coach already gave, with their pattern code):\n' + transcript + '\n\n'
     + 'Write in Traditional Chinese as used in Taiwan, except for English examples. Be specific and encouraging. Reply with only one JSON object:\n'
     + '{"summary": "2 sentences of overall feedback", "strengths": ["up to 2 specific things they did well"], "patterns": [{"code": "its pattern code from the list below, or empty", "issue": "a recurring mistake or habit", "example": "their exact words", "fix": "a better way in English"}], "phrases": [{"en": "a useful spoken chunk for this kind of conversation", "zh": "its meaning", "example": "a short English example sentence"}], "next": "one concrete suggestion for what to practise next time"}\n'
@@ -2780,6 +2936,7 @@ function newChat(setup) {
     c.sceneZh = s.k === 'custom' ? custom : s.zh;
     c.sceneEn = s.k === 'custom' ? 'The learner described this scene (it may be in Chinese; play it in English): "' + custom + '".' : s.en;
     c.aiRole = s.ai; c.meRole = s.me;
+    if (sceneOf(s.k)) c.sceneK = s.k; // its task and phrases
   } else if (errCode(setup.pattern)) c.pattern = errCode(setup.pattern); // 中翻英 on one pattern: the coach gives the sentences
   return c;
 }
@@ -2878,6 +3035,7 @@ function chatDoc() {
     startedAt: c.startedAt, updatedAt: c.updatedAt, lastAt: c.lastAt, activeMs: c.activeMs || 0, meCount: c.meCount || 0, turns,
   };
   if (c.pattern) doc.pattern = c.pattern;
+  if (c.sceneK) doc.sceneK = c.sceneK;
   if (docBytes(doc) > DOC_LIMIT * 0.8) {
     const size = turns.map(docBytes);
     let total = docBytes(doc);
@@ -3484,6 +3642,7 @@ function normChat(d) {
     startedAt: Number(d.startedAt) || Date.now(), updatedAt: Number(d.updatedAt) || Date.now(), lastAt: Number(d.lastAt) || Number(d.updatedAt) || Date.now(),
     activeMs, meCount: Number.isFinite(Number(d.meCount)) && d.meCount !== null && d.meCount !== undefined && d.meCount !== '' ? Number(d.meCount) : turns.filter(t => t.r === 'm' && !t.ex).length, turns,
     pattern: d.mode === 'zh' ? errCode(d.pattern) : '',
+    sceneK: d.mode === 'role' && sceneOf(d.sceneK) ? d.sceneK : '',
   };
 }
 // A chat that ends (discarded or reviewed) or a new one: nothing typed or being said for the old chat is carried over
@@ -4068,7 +4227,7 @@ function unavailableView() {
 }
 function startView() {
   const s = S.setup;
-  const modes = [['free', '自由聊天', '想到什麼聊什麼，練習把話接下去。'], ['role', '情境角色扮演', '開會、閒聊、出國，練臨場反應。'], ['zh', '中翻英口說', '打出想說的中文，學 2–3 種英文說法再唸回來；也可以挑一個句型，讓教練出題。']];
+  const modes = [['free', '自由聊天', '想到什麼聊什麼，練習把話接下去。'], ['role', '情境角色扮演', '開會、閒聊、出國，每個情境都有任務和用得上的說法。'], ['zh', '中翻英口說', '打出想說的中文，學 2–3 種英文說法再唸回來；也可以挑一個句型，讓教練出題。']];
   const pickMode = k => { s.mode = k; s.custom = ''; renderCoach(); };
   const parts = [
     el('section', { class: 'card' },
@@ -4079,7 +4238,11 @@ function startView() {
   ];
   const opts = el('section', { class: 'card panel' });
   if (s.mode === 'free') opts.append(chipGroup('聊什麼', TOPICS, s.topic, k => { s.topic = k; s.custom = ''; renderCoach(); }));
-  if (s.mode === 'role') opts.append(chipGroup('什麼情境', SCENES, s.scene, k => { s.scene = k; s.custom = ''; renderCoach(); }));
+  if (s.mode === 'role') {
+    opts.append(groupedChips('什麼情境', SCENES, s.scene, k => { s.scene = k; s.custom = ''; renderCoach(); }));
+    const sc = sceneOf(s.scene);
+    if (sc) opts.append(sceneCard(sc));
+  }
   const needCustom = (s.mode === 'free' && s.topic === 'custom') || (s.mode === 'role' && s.scene === 'custom');
   if (needCustom) {
     opts.append(el('div', { class: 'field' },
@@ -4140,6 +4303,36 @@ function chipGroup(label, list, current, onPick) {
     el('span', { class: 'label', text: label }),
     el('div', { class: 'chips' }, list.map(x => el('button', { type: 'button', class: 'chip', 'aria-pressed': String(x.k === current), 'data-fk': 'chip-' + x.k, onclick: () => onPick(x.k) }, x.zh))));
 }
+// Chips in two groups (工作, 生活; lifeFirst puts 生活 first), with the custom one last on its own.
+const CHIP_GROUPS = [['work', '工作'], ['life', '生活']];
+function groupedChips(label, list, current, onPick, lifeFirst) {
+  const chip = x => el('button', { type: 'button', class: 'chip', 'aria-pressed': String(x.k === current), 'data-fk': 'chip-' + x.k, onclick: () => onPick(x.k) }, x.zh);
+  const own = list.filter(x => x.g === 'custom');
+  return el('div', { class: 'field' },
+    el('span', { class: 'label', text: label }),
+    (lifeFirst ? CHIP_GROUPS.slice().reverse() : CHIP_GROUPS).map(([g, name]) => {
+      const items = list.filter(x => x.g === g);
+      return items.length ? el('div', { class: 'chip-group' }, el('span', { class: 'chip-group-name', text: name }),
+        el('div', { class: 'chips', role: 'group', 'aria-label': label + '・' + name }, items.map(chip))) : null;
+    }),
+    own.length ? el('div', { class: 'chips' }, own.map(chip)) : null);
+}
+// The chosen scene: what happens, the learner's task and phrases worth having ready (to hear, say and save).
+function sceneCard(sc) {
+  return el('div', { class: 'scene-card' },
+    el('div', { class: 'scene-top' }, el('b', { text: sc.zh }), el('span', { class: 'tag', text: '建議程度 ' + sc.lv })),
+    el('p', { class: 'help', text: sc.dz + '教練扮演' + sc.aiZh + '。' }),
+    el('p', null, el('b', { text: '你的任務：' }), sc.goal),
+    scenePhrases(sc, 'sc'));
+}
+function scenePhrases(sc, ctx) {
+  return el('div', { class: 'scene-say' },
+    el('span', { class: 'label', text: '用得上的說法' }),
+    sc.say.map(([en, zh]) => el('div', { class: 'phrase' },
+      el('div', null, el('div', { class: 'phrase-en', lang: 'en', text: en }), el('div', { class: 'phrase-zh', text: zh })),
+      el('div', { class: 'phrase-acts' }, speakBtn(en, 'sm', ctx), sayBtn(en, ctx), starBtn({ en, zh, note: sc.zh, src: 'scene' }, 'sm', ctx)),
+      sayBox(en, ctx))));
+}
 function updateStartBtn() {
   const b = $('#start-btn'); if (!b) return;
   const s = S.setup;
@@ -4149,6 +4342,7 @@ function updateStartBtn() {
 }
 function chatView() {
   const c = S.chat;
+  const sc = c.mode === 'role' ? sceneOf(c.sceneK) : null; // a role-play's task and phrases, at hand while it runs
   const count = meCountOf(c);
   const auto = !!S.settings.autoSpeak;
   const armed = isArmed('discard');
@@ -4163,6 +4357,10 @@ function chatView() {
           onclick: () => { S.settings.autoSpeak = !S.settings.autoSpeak; if (!S.settings.autoSpeak && TTS.ok) speechSynthesis.cancel(); saveSettings('autoSpeak'); renderCoach(); toast(S.settings.autoSpeak ? '教練回覆時會自動朗讀' : '已關閉自動朗讀'); } }) : null,
         el('button', { type: 'button', class: 'btn small' + (armed ? ' danger' : ''), disabled: S.reviewing, 'data-fk': 'discard', onclick: () => arm('discard', discardChat, renderCoach) }, armed ? '確定放棄？' : '放棄'),
         el('button', { type: 'button', class: 'btn small primary', disabled: S.busy, 'data-fk': 'review', onclick: review }, '結束並複習'))),
+    sc ? el('details', { class: 'card scene-help', open: S.sceneOpen, ontoggle: e => { S.sceneOpen = e.currentTarget.open; } },
+      el('summary', { 'data-fk': 'scene-help' }, '這次的任務和用得上的說法'),
+      el('p', { class: 'mt6' }, el('b', { text: '你的任務：' }), sc.goal),
+      scenePhrases(sc, 'sh')) : null,
     el('div', { id: 'msgs', class: 'msgs' }),
     el('div', { id: 'hints', class: 'hints' }),
     el('div', { id: 'coach-note', class: 'coach-note', hidden: true }));
@@ -5080,13 +5278,45 @@ function playerView() {
 /* ---- 4/3/2: the same talk three times, in 4, 3 and 2 minutes ---- */
 const F432_SECS = [240, 180, 120];
 const F432_TOPICS = [
-  { k: 'intro', zh: '自我介紹', en: 'introduce yourself: your work, where you live and what you enjoy' },
-  { k: 'job', zh: '我的工作', en: 'what you do at work and what a typical day looks like' },
-  { k: 'trip', zh: '最近一次旅行', en: 'the last trip you took' },
-  { k: 'memory', zh: '難忘的經驗', en: 'a memorable experience' },
-  { k: 'show', zh: '推薦一部劇或電影', en: 'a show or film you would recommend, and why' },
-  { k: 'learn', zh: '最近在學的東西', en: 'something you are learning these days' },
-  { k: 'custom', zh: '自訂主題', en: '' },
+  { k: 'intro', g: 'life', zh: '自我介紹', en: 'introduce yourself: your work, where you live and what you enjoy',
+    pts: ['Who are you, and where do you live?', 'What do you do at work?', 'What do you enjoy in your free time?'], pz: '你是誰、住哪裡／你的工作／你喜歡做什麼' },
+  { k: 'hometown', g: 'life', zh: '我的家鄉', en: 'your hometown',
+    pts: ['Where is it?', 'What is it known for?', 'What would you show a visitor?'], pz: '在哪裡／有名的是什麼／會帶朋友去看什麼' },
+  { k: 'weekend', g: 'life', zh: '平常的週末', en: 'a typical weekend',
+    pts: ['What do you usually do?', 'Who do you spend it with?', 'What would you like to change?'], pz: '通常做什麼／跟誰一起／想改變什麼' },
+  { k: 'app', g: 'life', zh: '每天用的 App', en: 'an app you use every day',
+    pts: ['What does it do?', 'How do you use it?', 'Why would you recommend it?'], pz: '它做什麼／你怎麼用／為什麼推薦' },
+  { k: 'habit', g: 'life', zh: '一個健康習慣', en: 'a healthy habit you have',
+    pts: ['What is it?', 'When did you start?', 'How does it help you?'], pz: '是什麼／什麼時候開始／對你有什麼幫助' },
+  { k: 'trip', g: 'life', zh: '最近一次旅行', en: 'the last trip you took',
+    pts: ['Where did you go, and who with?', 'What did you do there?', 'What was the best part?'], pz: '去哪裡、跟誰／做了什麼／最棒的部分' },
+  { k: 'badtrip', g: 'life', zh: '不如預期的旅行', en: "a trip that didn't go as planned",
+    pts: ['Where did you go?', 'What went wrong?', 'What did you learn?'], pz: '去哪裡／出了什麼問題／學到什麼' },
+  { k: 'food', g: 'life', zh: '喜歡的餐廳', en: 'a restaurant you like',
+    pts: ['Where is it?', 'What should people order?', 'Why do you keep going back?'], pz: '在哪裡／推薦點什麼／為什麼一去再去' },
+  { k: 'pet', g: 'life', zh: '寵物或動物', en: 'a pet or an animal in your life',
+    pts: ['What is it like?', 'Can you tell a funny story about it?', 'What has it taught you?'], pz: '牠是什麼樣子／一件好笑的事／牠讓你學到什麼' },
+  { k: 'memory', g: 'life', zh: '難忘的經驗', en: 'a memorable experience',
+    pts: ['What happened?', 'Who was there?', 'Why do you still remember it?'], pz: '發生什麼事／有誰在／為什麼還記得' },
+  { k: 'show', g: 'life', zh: '推薦一部劇或電影', en: 'a show or film you would recommend, and why',
+    pts: ['What is it about?', 'What do you like about it?', 'Who would enjoy it?'], pz: '在講什麼／你喜歡哪裡／適合誰看' },
+  { k: 'learn', g: 'life', zh: '最近在學的東西', en: 'something you are learning these days',
+    pts: ['What are you learning?', 'How do you practise?', 'What is hard about it?'], pz: '在學什麼／怎麼練習／難在哪裡' },
+  { k: 'job', g: 'work', zh: '我的工作', en: 'what you do at work and what a typical day looks like',
+    pts: ['What does your company do?', 'What do you do on a typical day?', 'What do you enjoy most?'], pz: '公司做什麼／平常一天做什麼／最喜歡的部分' },
+  { k: 'launch', g: 'work', zh: '參與過的產品上市', en: 'a product launch you were part of',
+    pts: ['What was the product?', 'What was your role?', 'What was the result, and what would you change?'], pz: '是什麼產品／你的角色／結果和想改的地方' },
+  { k: 'team', g: 'work', zh: '一次團隊合作', en: 'a time you worked well in a team',
+    pts: ['What was the goal?', 'Who was involved?', 'How did you solve a problem together?'], pz: '目標是什麼／有誰參與／怎麼一起解決問題' },
+  { k: 'challenge', g: 'work', zh: '工作上的挑戰', en: 'a challenge you faced at work',
+    pts: ['What happened?', 'How did you handle it?', 'What would you do differently?'], pz: '發生什麼事／你怎麼處理／下次會怎麼做' },
+  { k: 'aiskin', g: 'work', zh: 'AI 如何改變保養品', en: 'how AI is changing skincare',
+    pts: ['Can you give one example?', 'How does it help customers?', 'What are the risks?'], pz: '舉一個例子／對顧客的好處／有什麼風險' },
+  { k: 'metric', g: 'work', zh: '解釋一個儀表板指標', en: 'one metric on a dashboard you use at work',
+    pts: ['What does it measure?', 'What is the recent trend?', 'What action did you take?'], pz: '量的是什麼／最近的趨勢／你們做了什麼' },
+  { k: 'wfh', g: 'work', zh: '在家工作還是進辦公室', en: 'working from home compared with working in the office',
+    pts: ['What are the good points of each?', 'What are the downsides?', 'Which do you prefer, and why?'], pz: '各自的優點／缺點／你比較喜歡哪個、為什麼' },
+  { k: 'custom', g: 'custom', zh: '自訂主題', en: '' },
 ];
 const canRecord = () => !window.claude && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
 const Rec = { stream: null, mr: null, chunks: [] };
@@ -5283,6 +5513,16 @@ async function f432Points() {
   }
   if (S.tool === 'f432') redrawLater(renderTool);
 }
+// A topic's own three points, until the coach gives some: a frame for the talk (planning helps fluency).
+function topicPts(F) {
+  if (F.points && F.points.points && F.points.points.length) return null;
+  const t = F432_TOPICS.find(x => x.k === F.topic);
+  if (!t || !t.pts) return null;
+  return el('div', { class: 'field' },
+    el('span', { class: 'label', text: '三個要點' }),
+    el('ol', { class: 'topic-pts', lang: 'en' }, t.pts.map(x => el('li', { text: x }))),
+    el('p', { class: 'help', text: t.pz }));
+}
 function pointsBox(F) {
   if (!F.points) return null;
   if (F.points === 'loading') return el('p', { class: 'hint-loading' }, typing(), '教練正在想重點…');
@@ -5304,13 +5544,14 @@ function f432View() {
     el('p', { class: 'help mt6', text: '同一個主題講三次：4 分鐘、3 分鐘、2 分鐘。內容一樣、時間越來越短，第三次會比第一次順很多。卡住就換個說法繼續，不要停下來查字典。' }));
   if (F.state === 'setup') {
     const set = el('section', { class: 'card panel' },
-      chipGroup('講什麼', F432_TOPICS, F.topic, k => { F.topic = k; F.points = null; F.pointsReq = null; renderTool(); }));
+      groupedChips('講什麼', F432_TOPICS, F.topic, k => { F.topic = k; F.points = null; F.pointsReq = null; renderTool(); }, true));
     if (F.topic === 'custom') {
       set.append(el('div', { class: 'field' },
         el('label', { class: 'label', for: 'f432-custom', text: '自訂主題（中英文都可以）' }),
         el('input', { id: 'f432-custom', class: 'input', maxlength: '120', value: F.custom, 'data-fk': 'f432-custom', placeholder: '例如：我們團隊正在做的產品', oninput: e => { F.custom = e.target.value; } })));
     }
-    if (S.sampleState === 'ok') set.append(el('div', { class: 'start-row' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'f432-points', 'aria-disabled': F.points === 'loading' ? 'true' : null, onclick: f432Points }, F.points && F.points !== 'loading' ? '換一組重點' : '請教練給 3 個重點')));
+    const tp = topicPts(F); if (tp) set.append(tp);
+    if (S.sampleState === 'ok') set.append(el('div', { class: 'start-row' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'f432-points', 'aria-disabled': F.points === 'loading' ? 'true' : null, onclick: f432Points }, F.points && F.points !== 'loading' ? '換一組重點' : t.pts ? '請教練給說法和重點' : '請教練給 3 個重點')));
     const pb = pointsBox(F); if (pb) set.append(pb);
     if (canRecord()) set.append(el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: F.recOn, 'data-fk': 'f432-rec', onchange: e => { F.recOn = e.target.checked; } }), '每次都錄音（錄音只留在這個畫面，可以下載）'));
     else set.append(el('p', { class: 'help', text: '想比較三次的差別，可以用手機的錄音程式把三次都錄下來。' }));
@@ -5344,8 +5585,8 @@ function f432View() {
         focusHeading('#today-dyn .card-title'); // the setup again: from its title, the topics come next
       } }, '換主題再練') : null));
   const parts = [head, timer];
-  const pb = pointsBox(F);
-  if (pb && F.state !== 'done') parts.push(el('section', { class: 'card' }, pb));
+  const pb = pointsBox(F), tp = topicPts(F);
+  if ((pb || tp) && F.state !== 'done') parts.push(el('section', { class: 'card' }, tp, pb));
   if (F.recs.some(Boolean)) {
     // Each recording keeps its own player, so a redraw (a refresh in the background) does not stop it while it plays.
     parts.push(el('section', { class: 'card' },
@@ -5445,15 +5686,20 @@ function sessionCard(s) {
 /* ================= rendering: saved ================= */
 function renderStarters() {
   const box = $('#starters'); if (!box || S.tab !== 'saved') return;
+  // Two packs: everyday conversation, and meetings and video calls.
+  const meet = S.starterSet === 'meeting', list = meet ? MEETING : STARTERS, ctx = meet ? 'mt' : 'st';
   fill(box, el('section', { class: 'card' },
-    el('h2', { class: 'card-title', text: '開口救急包' }),
-    el('p', { class: 'help mt6', text: '卡住的時候，先用這些句子爭取時間、把對話接下去。點星號加入收藏。' }),
-    el('div', { class: 'mt6' }, STARTERS.map(([en, zh, use, say]) => el('div', { class: 'phrase' },
+    el('div', { class: 'card-head' },
+      el('h2', { class: 'card-title', text: meet ? '會議救急包' : '開口救急包' }),
+      el('div', { class: 'seg', role: 'group', 'aria-label': '救急包' }, [['basic', '日常'], ['meeting', '開會']].map(([k, t]) =>
+        el('button', { type: 'button', 'aria-pressed': String((meet ? 'meeting' : 'basic') === k), 'data-fk': 'starters-' + k, onclick: () => { S.starterSet = k; renderStarters(); } }, t)))),
+    el('p', { class: 'help mt6', text: meet ? '開會和視訊時用得上的句子：插話、請別人發言、視訊出狀況、確認共識和負責人、收尾。點星號加入收藏。' : '卡住的時候，先用這些句子爭取時間、把對話接下去。點星號加入收藏。' }),
+    el('div', { class: 'mt6' }, list.map(([en, zh, use, say]) => el('div', { class: 'phrase' },
       el('div', null,
         el('div', { class: 'phrase-en', lang: 'en', text: en }),
         el('div', { class: 'phrase-zh' }, zh, el('span', { class: 'use', text: use }))),
-      el('div', { class: 'phrase-acts' }, speakBtn(say || en, 'sm'), sayBtn(say || en, 'st'), starBtn({ en, zh, note: use, src: 'starter' }, 'sm', 'st')),
-      sayBox(say || en, 'st'))))));
+      el('div', { class: 'phrase-acts' }, speakBtn(say || en, 'sm', ctx), sayBtn(say || en, ctx), starBtn({ en, zh, note: use, src: 'starter' }, 'sm', ctx)),
+      sayBox(say || en, ctx))))));
 }
 // The list of common mistakes (ERR_TYPES), by tier: each with an example, why, how often the coach corrected it lately,
 // and 用中翻英練這個.
@@ -6343,7 +6589,7 @@ async function boot(data) {
   if (data && typeof data.draft === 'string' && data.draft && S.chat) { const ta = $('#msg-input'); if (ta && !ta.value) { ta.value = data.draft; autosize(ta); } }
   if (S.tab === 'coach' && S.chat) scrollToEnd(true);
 }
-if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats, leaves, timeAt, stampTimes, mergeTimes, heldOver, takeHeld, recordHeld, heldSuperseded, stillHeld, ERR_TYPES, errCode, chatErrs, errCounts, knownErrs, normErrs, normChat, reviewPrompt };
+if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats, leaves, timeAt, stampTimes, mergeTimes, heldOver, takeHeld, recordHeld, heldSuperseded, stillHeld, ERR_TYPES, errCode, chatErrs, errCounts, knownErrs, normErrs, normChat, reviewPrompt, SCENES, sceneOf, F432_TOPICS, STARTERS, MEETING };
 
 boot(viewSaved()).catch(err => { console.error(err); setSync('error'); });
 })();

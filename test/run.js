@@ -41,7 +41,7 @@ function check(name, fn) {
 const eq = (actual, expected) => assert.deepStrictEqual(actual, expected);
 // npm test -- 3b,6 (or ONLY=3b,6) runs just those sections (each section's blocks are wrapped in want()). The argument
 // works in every shell, Windows' too.
-const SECTIONS = ['1', '2', '3', '3b', '4', '5', '6', '6b', '6c', '7', '8', '9', '10'];
+const SECTIONS = ['1', '2', '3', '3b', '4', '5', '6', '6b', '6c', '7', '8', '9', '10', '11'];
 const ONLY = String(process.argv[2] || process.env.ONLY || '').split(',').map(s => s.trim()).filter(Boolean);
 if (ONLY.some(s => !SECTIONS.includes(s))) {
   console.error('ONLY: unknown section ' + ONLY.filter(s => !SECTIONS.includes(s)).join(', ') + ' (sections: ' + SECTIONS.join(', ') + ')');
@@ -4717,6 +4717,136 @@ function serve(root) {
       eq(fromList, { tab: 'coach', pattern: 'A6', label: '中翻英口說・練「問句的語序」' });
       eq(stillOpen, [true, false, false]);
       eq(guarded, { tab: 'coach', pattern: 'A6', me: 1 });
+    });
+    await ctx.close();
+  }
+
+  // ---------- 11. Scenes and chunks: role-play tasks and phrases, 4/3/2 topics with three points, the meeting pack ----------
+  if (want('11')) {
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 400, height: 860 } }, 'scenes-unit');
+    const pure = await page.evaluate(() => {
+      const T = window.__kaikouTest;
+      const cjk = s => /[㐀-鿿]/.test(s);
+      const scenes = T.SCENES.filter(s => s.k !== 'custom');
+      const badScene = scenes.filter(s => !['work', 'life'].includes(s.g) || !/^(A2|B1|B2)(–(B1|B2))?$/.test(s.lv) || ![s.zh, s.dz, s.goal, s.aiZh].every(cjk)
+        || ![s.en, s.ai, s.me, s.task].every(v => typeof v === 'string' && v.length > 3 && !cjk(v)) || s.say.length !== 5
+        || s.say.some(([en, zh]) => !/[.?!]$/.test(en) || /…|___/.test(en) || cjk(en) || !cjk(zh))).map(s => s.k);
+      const topics = T.F432_TOPICS.filter(x => x.k !== 'custom');
+      const badTopic = topics.filter(x => !['work', 'life'].includes(x.g) || !cjk(x.zh) || !x.en || x.pts.length !== 3 || x.pts.some(q => !/[?.]$/.test(q) || cjk(q)) || (x.pz.match(/／/g) || []).length !== 2).map(x => x.k);
+      const badPack = [...T.STARTERS, ...T.MEETING].filter(([en, zh, use, say]) => !en || !cjk(zh) || !cjk(use) || (say !== undefined && (!/…/.test(en) || /…/.test(say)))).map(r => r[0]);
+      const role = k => ({ mode: 'role', level: 'B1', sceneK: k, sceneEn: 'A scene.', aiRole: 'someone', meRole: 'themself', turns: [{ r: 'm', t: 'Hi there, I am fine', at: 1 }] });
+      const norm = d => T.normChat(Object.assign({ active: true, turns: [] }, d)).sceneK;
+      return {
+        counts: [scenes.length, scenes.filter(s => s.g === 'work').length, scenes.filter(s => s.g === 'life').length, new Set(T.SCENES.map(s => s.k)).size === T.SCENES.length, T.SCENES[T.SCENES.length - 1].k],
+        badScene, badTopic, badPack,
+        topics: [topics.length, new Set(T.F432_TOPICS.map(x => x.k)).size === T.F432_TOPICS.length, T.F432_TOPICS[T.F432_TOPICS.length - 1].k],
+        packs: [T.STARTERS.length, T.MEETING.length],
+        rules: [T.rulesFor(role('standup')).includes("The learner's task: Report briefly what they did yesterday"), T.rulesFor(role('')).includes("The learner's task"), T.rulesFor(role('custom')).includes("The learner's task")],
+        review: [T.reviewPrompt(role('claim')).includes("The learner's task in this role-play: Disagree politely"), T.reviewPrompt(role('')).includes("learner's task")],
+        norm: [norm({ mode: 'role', sceneK: 'vendor' }), norm({ mode: 'free', sceneK: 'vendor' }), norm({ mode: 'role', sceneK: 'custom' }), norm({ mode: 'role', sceneK: 'nope' }), norm({ mode: 'role' })],
+        sceneOf: [!!T.sceneOf('news'), T.sceneOf('custom'), T.sceneOf('')],
+      };
+    });
+    check('情境、話題與救急包的內容：21 個情境（工作 13、生活 8）都有程度、任務和 5 句完整的說法；19 個話題都有三個要點；救急包 16 句、會議救急包 11 句', () => {
+      eq(pure.counts, [21, 13, 8, true, 'custom']);
+      eq([pure.badScene, pure.badTopic, pure.badPack], [[], [], []]);
+      eq(pure.topics, [19, true, 'custom']);
+      eq(pure.packs, [16, 11]);
+    });
+    check('角色扮演的任務寫進教練的規則和複習的要求；存下的對話只認得角色扮演裡真的有的情境', () => {
+      eq(pure.rules, [true, false, false]);
+      eq(pure.review, [true, false]);
+      eq(pure.norm, ['vendor', '', '', '', '']);
+      eq(pure.sceneOf, [true, null, null]);
+    });
+    await ctx.close();
+  }
+
+  if (want('11')) {
+    const seed = "window.__mockSeed = (store, P) => { store.delete(P('chat')); };";
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 400, height: 860 }, deviceScaleFactor: 2 }, 'scenes', { persist: true }, seed);
+    const T = (fn, arg) => page.evaluate(fn, arg);
+    await page.click('#t-coach');
+    await page.click('[data-fk="mode-role"]');
+    const groups = await T(() => [...document.querySelectorAll('#coach-dyn .chips')].map(g => [g.getAttribute('aria-label'), g.querySelectorAll('.chip').length]));
+    await page.click('[data-fk="chip-standup"]');
+    const card = await T(() => {
+      const c = document.querySelector('.scene-card');
+      return c && { top: c.querySelector('.scene-top').textContent, goal: c.querySelectorAll('p')[1].textContent, phrases: [...c.querySelectorAll('.phrase-en')].map(n => n.textContent).length, first: c.querySelector('.phrase-zh').textContent, stars: c.querySelectorAll('[aria-label="收藏"]').length };
+    });
+    await page.click('.scene-card [data-fk^="star:sc:"]');
+    await until(page, () => window.__kaikouTest.S.phrases.some(p => p.en === 'Yesterday I wrapped up the user survey.'));
+    const starred = await T(() => window.__kaikouTest.S.phrases.filter(p => p.en === 'Yesterday I wrapped up the user survey.').map(p => [p.zh, p.note, p.src]));
+    await page.click('[data-fk="chip-custom"]');
+    const custom = await T(() => [!!document.querySelector('.scene-card'), !!document.querySelector('#custom-input')]);
+    check('角色扮演的選單：情境分成工作和生活；選了情境會看到任務、建議程度和用得上的說法，可以收藏；自訂情境沒有', () => {
+      eq(groups, [['什麼情境・工作', 13], ['什麼情境・生活', 8], [null, 1]]);
+      eq(card, { top: '每日站會建議程度 A2–B1', goal: '你的任務：用三句話報告昨天做了什麼、今天要做什麼、卡在哪裡，再回答一個追問。', phrases: 5, first: '昨天我把使用者問卷收尾了。', stars: 5 });
+      eq(starred, [['昨天我把使用者問卷收尾了。', '每日站會', 'scene']]);
+      eq(custom, [false, true]);
+    });
+    await page.click('[data-fk="chip-standup"]');
+    await page.click('[data-fk="start"]');
+    await notBusy(page);
+    await until(page, () => !window.__kaikouTest.Store.busyDoc('chat'));
+    const started = await T(() => ({ label: document.querySelector('.chat-title b').textContent, rules: window.__lastRules.includes("The learner's task: Report briefly"), stored: window.__store.get('data/users/u_test/chat').sceneK, open: document.querySelector('.scene-help').open }));
+    await page.click('[data-fk="scene-help"]');
+    await page.fill('#msg-input', 'Yesterday I finish the survey');
+    await page.click('#send-btn');
+    await notBusy(page);
+    const kept = await T(() => { const d = document.querySelector('.scene-help'); return { open: d.open, goal: d.querySelector('p').textContent, phrases: d.querySelectorAll('.phrase').length }; });
+    await until(page, () => !window.__kaikouTest.Store.busyDoc('chat'));
+    await page.reload();
+    await page.waitForFunction(() => window.__kaikouTest && window.__kaikouTest.S && window.__kaikouTest.S.ready && window.__kaikouTest.S.started, null, { timeout: 10000 });
+    await page.click('#t-coach');
+    const reloaded = await T(() => ({ panel: !!document.querySelector('.scene-help'), sceneK: window.__kaikouTest.S.chat.sceneK, review: window.__kaikouTest.reviewPrompt(window.__kaikouTest.S.chat).includes("The learner's task in this role-play: Report briefly") }));
+    check('角色扮演對話：教練知道你的任務；任務和說法收在對話上方，打開後送出句子也還開著；重新打開頁面還在，複習也會看任務有沒有完成', () => {
+      eq(started, { label: '角色扮演・每日站會', rules: true, stored: 'standup', open: false });
+      eq(kept, { open: true, goal: '你的任務：用三句話報告昨天做了什麼、今天要做什麼、卡在哪裡，再回答一個追問。', phrases: 5 });
+      eq(reloaded, { panel: true, sceneK: 'standup', review: true });
+    });
+
+    // 4/3/2: a topic comes with its three points; the coach's points replace them; a custom topic has none.
+    await pressTwice(page, '[data-fk="discard"]');
+    await page.click('#t-today');
+    await page.click('[data-fk="go-f432"]');
+    const order = await T(() => [...document.querySelectorAll('#today-dyn .chip-group-name')].map(n => n.textContent));
+    await page.click('#today-dyn [data-fk="chip-app"]');
+    const pts = await T(() => ({ pts: [...document.querySelectorAll('#today-dyn .topic-pts li')].map(n => n.textContent), help: document.querySelector('#today-dyn .topic-pts').nextElementSibling.textContent, btn: document.querySelector('[data-fk="f432-points"]').textContent }));
+    await page.click('[data-fk="f432-points"]');
+    await until(page, () => document.querySelectorAll('#today-dyn .points li').length === 3);
+    const replaced = await T(() => document.querySelectorAll('#today-dyn .topic-pts').length);
+    await page.click('#today-dyn [data-fk="chip-custom"]');
+    const customT = await T(() => ({ pts: document.querySelectorAll('#today-dyn .topic-pts').length, btn: document.querySelector('[data-fk="f432-points"]').textContent }));
+    await page.click('#today-dyn [data-fk="chip-wfh"]');
+    await page.click('[data-fk="f432-go"]');
+    await until(page, () => window.__kaikouTest.S.f432.state === 'run');
+    const running = await T(() => [...document.querySelectorAll('#today-dyn .topic-pts li')].map(n => n.textContent));
+    await page.click('[data-fk="f432-pause"]');
+    check('4/3/2：生活的話題排前面；選了話題就有三個要點（英文問題加中文），教練給的重點會取代它；講的時候也看得到；自訂主題沒有', () => {
+      eq(order, ['生活', '工作']);
+      eq(pts, { pts: ['What does it do?', 'How do you use it?', 'Why would you recommend it?'], help: '它做什麼／你怎麼用／為什麼推薦', btn: '請教練給說法和重點' });
+      eq(replaced, 0);
+      eq(customT, { pts: 0, btn: '請教練給 3 個重點' });
+      eq(running, ['What are the good points of each?', 'What are the downsides?', 'Which do you prefer, and why?']);
+    });
+
+    // 收藏: the rescue pack has 16 sentences; 開會 switches to the meeting pack.
+    await page.click('#t-saved');
+    const basic = await T(() => ({ title: document.querySelector('#starters h2').textContent, rows: document.querySelectorAll('#starters .phrase').length, pressed: document.querySelector('[data-fk="starters-basic"]').getAttribute('aria-pressed') }));
+    await page.click('[data-fk="starters-meeting"]');
+    await page.click('#starters [data-fk="star:mt:' + await T(() => window.__kaikouTest.phraseId("I think you're on mute.")) + '"]');
+    await until(page, () => window.__kaikouTest.S.phrases.some(p => p.en === "I think you're on mute."));
+    const meeting = await T(() => ({
+      title: document.querySelector('#starters h2').textContent, rows: document.querySelectorAll('#starters .phrase').length,
+      saved: window.__kaikouTest.S.phrases.filter(p => p.en === "I think you're on mute.").map(p => [p.zh, p.note, p.src]),
+    }));
+    await page.click('[data-fk="starters-meeting"]');
+    const focus = await T(() => document.activeElement.dataset.fk);
+    check('收藏的救急包：日常 16 句，按「開會」換成會議救急包（11 句），一樣可以收藏', () => {
+      eq(basic, { title: '開口救急包', rows: 16, pressed: 'true' });
+      eq(meeting, { title: '會議救急包', rows: 11, saved: [['你好像靜音了。', '視訊', 'starter']] });
+      eq(focus, 'starters-meeting');
     });
     await ctx.close();
   }
