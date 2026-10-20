@@ -195,7 +195,7 @@ window.__kaikouTest = true;
       { en: 'It was a simple day, but I really needed it.', zh: '很簡單的一天，但我真的很需要。' },
     ] };
     if (/talk about one topic three times/.test(prompt)) return { points: ['What do you do at work?', 'Where do you live?', 'What do you enjoy on weekends?'], phrases: [{ en: 'I work in marketing.', zh: '我在做行銷。' }, { en: "I'm based in Taipei.", zh: '我住在台北。' }, { en: "In my free time, I'm into hiking.", zh: '有空的時候我喜歡爬山。' }] };
-    return { summary: '你能把週末的經過說得很完整，回答也越來越長。過去式還不穩，是下次的重點。', strengths: ['會主動補充細節', '敢用新的單字'], patterns: [{ issue: '過去的事常用現在式', example: 'I go to hiking', fix: 'I went hiking' }, { issue: '可數名詞忘了加 s', example: 'my friend', fix: 'my friends' }], phrases: [{ en: 'The view was breathtaking.', zh: '景色美得令人屏息。', example: 'The view from the top was breathtaking.' }, { en: 'We called it a day.', zh: '我們就收工了。', example: 'We got tired, so we called it a day.' }, { en: 'It was worth the climb.', zh: '爬上去很值得。', example: 'It was hard, but it was worth the climb.' }, { en: 'I could use a rest.', zh: '我需要休息一下。', example: 'After that hike, I could use a rest.' }, { en: 'Do you hike a lot?', zh: '你常爬山嗎？', example: 'Do you hike a lot on weekends?' }], next: '試著用過去式描述上一次出遊的完整經過' };
+    return { summary: '你能把週末的經過說得很完整，回答也越來越長。過去式還不穩，是下次的重點。', strengths: ['會主動補充細節', '敢用新的單字'], patterns: [{ code: 'A1', issue: '過去的事常用現在式', example: 'I go to hiking', fix: 'I went hiking' }, { code: 'a8', issue: '可數名詞忘了加 s', example: 'my friend', fix: 'my friends' }, { code: 'Z9', issue: '連接詞', example: 'and then and then', fix: 'After that,' }], phrases: [{ en: 'The view was breathtaking.', zh: '景色美得令人屏息。', example: 'The view from the top was breathtaking.' }, { en: 'We called it a day.', zh: '我們就收工了。', example: 'We got tired, so we called it a day.' }, { en: 'It was worth the climb.', zh: '爬上去很值得。', example: 'It was hard, but it was worth the climb.' }, { en: 'I could use a rest.', zh: '我需要休息一下。', example: 'After that hike, I could use a rest.' }, { en: 'Do you hike a lot?', zh: '你常爬山嗎？', example: 'Do you hike a lot on weekends?' }], next: '試著用過去式描述上一次出遊的完整經過' };
   }
   const sample = async (input, opts) => {
     const call = { kind: 'sample', n: Array.isArray(input) ? input.length : 1, roles: Array.isArray(input) ? input.map(t => t.role[0]).join('') : 's', tier: opts && opts.modelTier, cache: opts && opts.cache };
@@ -221,10 +221,18 @@ window.__kaikouTest = true;
     }
     const rules = input[0].content;
     const last = input[input.length - 1].content;
+    window.__lastRules = rules;
     if (cfg.refuse && last.includes(cfg.refuse)) { await new Promise(r => setTimeout(r, 30)); throw err('refused', 'declined'); }
+    // 中翻英 on one pattern: the coach gives a Chinese sentence to say ("say:"), then a polished version and the next one.
+    if (/SPEAKING DRILL/.test(rules)) {
+      if (/^Begin/.test(last)) return stream("Let's practise the past tense.\nsay: 我昨天把樣品寄給實驗室了。\n###\n{\"none\": true}", opts);
+      if (/[㐀-鿿]/.test(last)) return stream("Sure. Now try this one.\nsay: 我們上個月推出了新的精華液。\n###\n{\"none\": true}", opts);
+      return stream("Good, the meaning is clear.\nfinal: I sent the samples to the lab yesterday.\nsay: 我們上個月推出了新的精華液。\n###\n{\"you\": \"I send the samples\", \"better\": \"I sent the samples\", \"why\": \"已經發生的事用過去式\", \"code\": \"A1\", \"hint\": \"這是昨天的事，send 要怎麼改？\"}\n{\"you\": \"to lab\", \"better\": \"to the lab\", \"why\": \"特定的地方加 the\", \"code\": \"B2\"}\n{\"you\": \"samples\", \"better\": \"the samples\", \"why\": \"多的一項\", \"code\": \"B2\"}", opts);
+    }
     if (/CHINESE-TO-ENGLISH/.test(rules) && /[㐀-鿿]/.test(last)) return stream("casual: This feature won't be out until next week.\nneutral: This feature will launch next week.\nwork: We're scheduled to release this feature next week.\nPick one, say it out loud, then type what you said.\n###\n{\"none\": true}", opts);
     if (/^Begin/.test(last)) return stream("Hi! Let's talk about your weekend. What did you do on Saturday?\n###\n{\"none\": true}", opts);
-    return stream('That sounds fun! What was the best part of the day?\n###\n{"you": "I eat a big lunch", "better": "I had a big lunch", "why": "吃飯常用 have，過去式 had"}\n{"you": "it make me happy", "better": "it made me happy", "why": "過去式"}', opts);
+    // The first correction carries a pattern code and a hint (the page keeps the hint only for a pattern corrected before).
+    return stream('That sounds fun! What was the best part of the day?\n###\n{"you": "I eat a big lunch", "better": "I had a big lunch", "why": "吃飯常用 have，過去式 had", "code": "A1", "hint": "這是已經過去的事，eat 要怎麼改？"}\n{"you": "it make me happy", "better": "it made me happy", "why": "過去式"}', opts);
   };
   sample.limits = async () => ({ maxPromptBytes: 65536 });
   // permissions.d.ts: manage() opens Claude's Permissions panel; here the viewer switches the coach back on there

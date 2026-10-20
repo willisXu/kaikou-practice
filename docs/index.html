@@ -184,6 +184,7 @@ textarea.input{resize:vertical;line-height:1.5}
 .chip{min-height:38px;padding:6px 14px;border-radius:99px;border:1px solid var(--line);background:var(--surface);font-size:15px;cursor:pointer}
 .chip:hover{border-color:var(--accent)}
 .chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);font-weight:700}
+.chip-n{margin-left:6px;font-family:var(--font-mono);font-size:13px;font-weight:500;color:var(--muted)}
 .start-row{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
 .tips{display:grid;gap:8px;margin-top:10px;padding-left:20px;font-size:15px;color:var(--muted)}
 .tips b{color:var(--ink)}
@@ -226,6 +227,16 @@ textarea.input{resize:vertical;line-height:1.5}
 .fix-you{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--pen);text-decoration-thickness:1.5px}
 .fix-better{font-size:16px;font-weight:700}
 .fix-why{font-size:14px;color:var(--muted)}
+.fix-hint{font-size:15px;font-weight:700}
+/* the pattern of a correction: A can change the meaning, B is a common slip, C is a more natural way to say it */
+.err{display:inline-block;justify-self:start;padding:0 8px;border-radius:99px;font-size:12px;font-weight:700;line-height:1.75;letter-spacing:.04em;white-space:nowrap}
+.err.a{background:var(--pen-soft);color:var(--pen)}
+.err.b{background:var(--warn-soft);color:var(--warn)}
+.err.c{background:var(--accent-soft);color:var(--accent)}
+.fix-row .err{margin-bottom:4px}
+.cue{display:grid;gap:2px;padding:8px 12px;border-radius:10px;background:var(--accent-soft)}
+.cue-k{font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--accent)}
+.cue-zh{font-size:18px;font-weight:700;line-height:1.5}
 .ok-badge{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:700;color:var(--accent)}
 .ok-badge svg{width:14px;height:14px}
 .typing{display:inline-flex;align-items:center;gap:5px;padding:6px 2px}
@@ -263,6 +274,16 @@ textarea.input{resize:vertical;line-height:1.5}
 .pat{display:grid;gap:2px;padding:10px 0;border-top:1px solid var(--line)}
 .pat>*,.phrase-acts>span{min-width:0}
 .pat:first-of-type{border-top:0}
+.pat-head{display:flex;align-items:center;gap:4px 10px;flex-wrap:wrap}
+.err-group{border-top:1px solid var(--line)}
+.err-group:first-of-type{margin-top:10px}
+.err-group>summary{padding:10px 0;font-size:15px;line-height:1.6}
+.err-sum{margin-left:6px;font-weight:500;color:var(--muted)}
+.err-item{display:grid;gap:2px;padding:10px 0;border-top:1px dashed var(--line)}
+.err-item>*{min-width:0}
+.err-name{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.err-q{font-size:15px;color:var(--muted)}
+.err-item .btn{margin-top:6px}
 .phrase{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:10px 0;border-top:1px solid var(--line)}
 .phrase:first-child{border-top:0}
 .phrase>div:first-child{min-width:0}
@@ -506,6 +527,7 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
     <section id="tab-saved" class="tab panel" role="tabpanel" aria-labelledby="t-saved" hidden>
       <div id="drill"></div>
       <div id="pron"></div>
+      <div id="errs"></div>
       <div id="starters"></div>
       <section id="mine-card" class="card" aria-labelledby="mine-title">
         <div class="card-head">
@@ -778,8 +800,8 @@ const S = {
   settings: Object.assign({}, DEFAULTS),
   logs: {}, loaded: new Set(), editedDays: new Set(), editedMonthRec: new Set(), planWait: {}, planBlind: new Set(),
   sessions: {}, sessLoaded: new Set(), loadErrors: new Set(), readOnce: new Set(),
-  phrases: [], inbox: [], chat: null, review: null, endedChats: new Set(), endPending: null, openSess: new Set(),
-  setup: { mode: 'free', topic: 'weekend', scene: 'smalltalk', custom: '' },
+  phrases: [], inbox: [], chat: null, review: null, endedChats: new Set(), endPending: null, openSess: new Set(), openErr: new Set(),
+  setup: { mode: 'free', topic: 'weekend', scene: 'smalltalk', custom: '', pattern: '' },
   sample: null, sampleState: 'loading',
   busy: false, ctl: null, askStartedAt: 0, reviewing: false, reviewStart: 0,
   hints: null, hintSeq: 0, note: null, noteNoRetry: false, noteTask: false, unsavedReview: null, held: null, uploading: false, settingsRead: false, settingsLost: false,
@@ -1590,13 +1612,14 @@ function finishDrill(early) {
   renderSaved(); renderToday();
   focusHeading('#drill .card-title');
 }
-function renderSaved() { renderDrill(); renderPron(); renderStarters(); renderSavedList(); }
+function renderSaved() { renderDrill(); renderPron(); renderErrs(); renderStarters(); renderSavedList(); }
 // The 收藏 tab shows a running review alone, an open pronunciation lesson alone, or everything.
 function savedView() {
   const m = S.drill && !S.drill.done ? 'drill' : S.pron ? 'pron' : 'list';
   $('#drill').hidden = m === 'pron';
   $('#pron').hidden = m === 'drill';
   $('#starters').hidden = m !== 'list';
+  $('#errs').hidden = m !== 'list';
   $('#mine-card').hidden = m !== 'list';
   return m;
 }
@@ -2239,6 +2262,111 @@ function sayCheck(text, key, opt) {
   updateSay(key);
 }
 
+/* ================= coach: correction patterns ================= */
+// Patterns that Mandarin speakers from Taiwan often show, in three tiers: A can change or hide the meaning, B is
+// understood but not right, C is a more natural or more polite way to say it (never called a mistake). The coach tags
+// each correction with one, so a review can count them, a pattern corrected before is first hinted at (the learner
+// tries before seeing the answer), and 中翻英 can practise one. hint: a question that leads to the fix without
+// giving it away; en: how the coach is told what the pattern is; bad, good, why: the example and explanation the
+// learner sees in the list of common mistakes (收藏).
+const ERR_TYPES = {
+  A1: { zh: '過去式', en: 'past tense not marked (Yesterday I send -> sent)', hint: '這是已經發生的事，動詞要用什麼形式？',
+    bad: 'Yesterday I send the samples to the lab.', good: 'Yesterday I sent the samples to the lab.', why: '英文要在動詞上表示過去（send → sent）；少了它，聽的人不確定事情做完了沒。' },
+  A2: { zh: '未來式', en: "future not marked (Next week I talk -> I'll talk / I'm going to talk)", hint: '這是還沒發生的事，要怎麼說出「未來」？',
+    bad: 'Next week I talk to the regulatory team.', good: "Next week I'm going to talk to the regulatory team.", why: '中文說「下週」就夠，英文還要用 will 或 be going to 表示未來。' },
+  A3: { zh: '完成式', en: "present perfect vs past (I work here for 3 years -> I've worked; I have finished it yesterday -> I finished)", hint: '是從過去一直到現在，還是已經說了過去的時間點？該用哪個時態？',
+    bad: 'I work here for three years.', good: "I've worked here for three years.", why: '從過去一直到現在用 have + 過去分詞；說出過去的時間點（yesterday）就用過去式。' },
+  A4: { zh: 'be 動詞', en: "be missing or extra (I very busy -> I'm really busy; I'm agree -> I agree)", hint: '這句的 be 動詞（am、is、are）是少了，還是多了？',
+    bad: 'I very busy this week.', good: "I'm really busy this week.", why: '形容詞前面要有 be 動詞；agree、like 這類動詞前面不加 be（I agree）。' },
+  A5: { zh: '回答 yes／no', en: 'yes/no following Chinese logic, e.g. answering a negative question (You didn\'t get it? "Yes" meaning not received)', hint: '英文的 yes／no 跟著事實走：事實是有，還是沒有？',
+    bad: "You didn't get my email? / Yes, I didn't get it.", good: "You didn't get my email? / No, I didn't.", why: 'yes／no 跟著事實走：沒收到就說 No。中文的「對」是同意對方的話，英文不是這樣用。' },
+  A6: { zh: '問句的語序', en: "question word order, direct or inside a sentence (Why you didn't -> Why didn't you; where is the room -> where the room is)", hint: '問句裡，疑問詞和助動詞要放在哪裡？',
+    bad: "Why you didn't tell me?", good: "Why didn't you tell me?", why: '問句的助動詞要放到主詞前面；Can you tell me… 後面的問句則用一般句子的語序。' },
+  A7: { zh: '用錯動詞', en: 'a verb that changes the meaning (borrow/lend, bring/take, open/close the AC -> turn on/off)', hint: '這個動詞的方向對嗎？想想是誰給誰、往哪裡去。',
+    bad: 'Can you borrow me your charger?', good: 'Can you lend me your charger?', why: '借出去是 lend，借進來是 borrow；帶過去是 take，帶過來是 bring；電器的開關用 turn on／off。' },
+  A8: { zh: '單複數', en: 'plural and countability (two new product -> products; many feedbacks -> a lot of feedback)', hint: '這個名詞可以數嗎？是一個，還是好幾個？',
+    bad: 'We got many feedbacks from users.', good: 'We got a lot of feedback from users.', why: '可數名詞的複數要加 -s；feedback、advice、information 不可數，不加 -s。' },
+  A9: { zh: 'he／she', en: 'he/she or his/her mixed up', hint: '你說的這個人是男生還是女生？',
+    bad: 'My manager Amy said he will approve it.', good: 'My manager Amy said she will approve it.', why: '他和她中文同音，說快時容易混用；英文聽的人會以為你在說另一個人。' },
+  B1: { zh: '第三人稱 -s', en: "third-person -s and agreement (The formula contain -> contains; She don't -> doesn't)", hint: '主詞是他、她或它，現在式的動詞要怎麼變？',
+    bad: 'The new formula contain retinol.', good: 'The new formula contains retinol.', why: '主詞是第三人稱單數（it、she、the formula）時，現在式的動詞要加 -s。' },
+  B2: { zh: '冠詞', en: "articles a/an/the (I'm in meeting -> in a meeting)", hint: '這個名詞前面要不要加 a、an 或 the？',
+    bad: "I'm in meeting.", good: "I'm in a meeting.", why: '單數的可數名詞前面要有 a／an 或 the：第一次提到用 a，雙方都知道是哪一個用 the。' },
+  B3: { zh: 'There is／are', en: 'there is/are vs have (There have three projects -> There are)', hint: '說「某個地方有某樣東西」，英文用什麼句型？',
+    bad: 'There have three projects this quarter.', good: 'There are three projects this quarter.', why: '說「某個地方有某樣東西」用 there is／are；「擁有」才用 have（We have three projects）。' },
+  B4: { zh: '雖然…但是', en: 'paired conjunctions (Although…, but… / Because…, so…)', hint: '英文一句只用一個連接詞，這句可以拿掉哪一個？',
+    bad: 'Although the data is good, but the sample is small.', good: 'Although the data is good, the sample is small.', why: '中文的「雖然…但是」「因為…所以」成對用，英文一句只留一個連接詞。' },
+  B5: { zh: 'very + 動詞', en: 'very + verb (I very like -> I really like)', hint: 'very 不能直接放在動詞前面，要怎麼加強語氣？',
+    bad: 'I very like this idea.', good: 'I really like this idea.', why: 'very 不修飾動詞：用 really like，或在句尾加 a lot。' },
+  B6: { zh: '介系詞', en: 'prepositions (in the bus -> on the bus; discuss about -> discuss)', hint: '這裡的介系詞要用哪一個？還是根本不用？',
+    bad: "Let's discuss about the timeline.", good: "Let's discuss the timeline.", why: 'discuss 後面直接接要討論的事；中文的「在…上、在…裡」也不一定是 on、in。' },
+  B7: { zh: '詞性', en: 'word class (The economic -> The economy; I want succeed -> to succeed)', hint: '這裡要的是名詞、動詞，還是形容詞？',
+    bad: 'I want succeed in this role.', good: 'I want to succeed in this role.', why: '中文一個詞可以當名詞、動詞或形容詞，英文要換成對的詞形（succeed、success、successful）。' },
+  B8: { zh: '-ed／-ing', en: "-ed vs -ing adjectives (I'm boring -> I'm bored)", hint: '說人的感受用 -ed，說讓人有這種感受的事用 -ing：這裡是哪一種？',
+    bad: "I'm boring in long meetings.", good: 'I get bored in long meetings.', why: "人的感受用 -ed（bored），讓人有這種感受的事用 -ing（boring）；I'm boring 是說自己很無趣。" },
+  B9: { zh: '容易混的動詞', en: 'verbs that are easy to mix up (say/tell, remember/remind, give a presentation)', hint: '這個動詞後面可以直接接人嗎？有沒有更貼切的動詞？',
+    bad: 'He said me the deadline changed.', good: 'He told me the deadline changed.', why: 'say 後面不直接接人，tell 才接人；提醒別人是 remind，做簡報用 give a presentation。' },
+  B10: { zh: '中文直翻', en: "word-for-word Chinese (open the computer -> turn on; How to say… -> How do you say…; Add oil -> You've got this)", hint: '這是中文直翻的說法，英文母語的人會怎麼說？',
+    bad: 'Please open the computer.', good: 'Please turn on the computer.', why: '照中文直翻的搭配，英文不這樣說：開電腦是 turn on，吃藥是 take medicine。' },
+  B11: { zh: '句子連在一起', en: 'run-on or chained sentences (The test passed, we can release -> …passed, so we can…)', hint: '兩個完整的句子中間，要加連接詞，還是分開說？',
+    bad: 'The test passed, we can release tomorrow.', good: 'The test passed, so we can release tomorrow.', why: '兩個完整的句子之間要有連接詞，或分成兩句說。' },
+  B12: { zh: '漏了主詞或受詞', en: "subject or object left out (Is very useful -> It's very useful; I like -> I like it)", hint: '這句少了誰？要補上主詞或受詞嗎？',
+    bad: 'Is very useful for our team.', good: "It's very useful for our team.", why: '中文常省略主詞和受詞；英文的句子要有主詞，like 這類動詞後面也要有受詞。' },
+  C1: { zh: '問會不會說', en: 'asking about languages (Can you speak English? -> Do you speak English?)', hint: '用 can 問，聽起來像在懷疑對方的能力，可以怎麼問？',
+    bad: 'Can you speak English?', good: 'Do you speak English?', why: '用 can 問像在懷疑對方的能力；問對方有沒有在說，用 do。' },
+  C2: { zh: 'Do you mind', en: 'answering Do you mind…? (Yes, please -> No, not at all, go ahead)', hint: 'mind 是「介意」：不介意的話，要回答 yes 還是 no？',
+    bad: 'Do you mind if I record this? / Yes, please.', good: 'Do you mind if I record this? / No, not at all. Go ahead.', why: 'mind 是「介意」：不介意的話要說 No。' },
+  C3: { zh: '客氣地請求', en: 'direct requests at work (Send me the report today -> Could you send me the report by end of day?)', hint: '直接用命令句聽起來像下指令，可以怎麼請對方幫忙？',
+    bad: 'Send me the report today.', good: 'Could you send me the report by end of day?', why: '命令句就算加了 please，聽起來還是像下指令；用 Could you… 請對方幫忙。' },
+  C4: { zh: '委婉地不同意', en: 'blunt disagreement (No, this is wrong -> I see it a bit differently, because…)', hint: '先緩一下，再說理由：可以怎麼開頭？',
+    bad: 'No, this is wrong.', good: 'I see it a bit differently, because the data is from last year.', why: '先緩一下、再說理由，對方比較不會覺得被否定。' },
+  C5: { zh: '換掉 I think', en: "I think in every sentence (vary it: I'd say / In my view, or leave it out for facts)", hint: '除了 I think，還可以怎麼開頭？',
+    bad: 'I think the price is high. I think we should wait.', good: "I'd say the price is a bit high, so it makes sense to wait.", why: '每句都用 I think 聽起來沒把握：換個說法，說事實時直接說。' },
+  C6: { zh: '不必為英文道歉', en: "apologizing for one's English (Sorry, my English is poor -> Let me put it another way)", hint: '不用道歉：可以用哪句話爭取時間，或換個方式說？',
+    bad: 'Sorry, my English is poor.', good: 'Let me put it another way.', why: '不用一直道歉，換個說法或爭取一點時間，就能繼續說下去。' },
+  C7: { zh: '回應道謝', en: "always You're welcome (-> No problem / Anytime / Sure thing)", hint: '同事或朋友道謝時，可以怎麼回得輕鬆一點？',
+    bad: "Thanks! / You're welcome.", good: 'Thanks! / No problem. Anytime.', why: "You're welcome 沒有錯，只是比較正式；同事之間可以輕鬆一點。" },
+  C8: { zh: '閒聊的回答', en: "small-talk answers (I'm fine, thank you, and you? -> Good, thanks, busy week… How about you?)", hint: '簡短回答、多加一個細節、再把問題丟回去：可以怎麼說？',
+    bad: "How are you? / I'm fine, thank you. And you?", good: "How are you? / Good, thanks. It's a busy week, we're launching a new product. How about you?", why: '簡短回答、多說一個細節，再把問題丟回去，話題才接得下去。' },
+  C9: { zh: '確認對方聽懂', en: 'checking understanding (Do you understand? -> Does that make sense?)', hint: 'Do you understand? 聽起來像在懷疑對方，可以怎麼問？',
+    bad: 'Do you understand?', good: 'Does that make sense?', why: 'Do you understand? 聽起來像在懷疑對方聽不懂；問自己有沒有說清楚比較客氣。' },
+  C10: { zh: '名字的順序', en: 'name order (Wang Amy -> Amy Wang)', hint: '英文的名和姓，哪個放前面？',
+    bad: 'Hi, I am Wang Amy.', good: "Hi, I'm Amy Wang.", why: '英文的名字通常名在前、姓在後。' },
+};
+const ERR_TIER = { A: '重要', B: '常見', C: '更自然' };
+const errCode = v => { const k = String(v || '').trim().toUpperCase(); return Object.prototype.hasOwnProperty.call(ERR_TYPES, k) ? k : ''; };
+const ERR_LIST = [['A', 'can change or hide the meaning'], ['B', 'understood, but not right'], ['C', 'more natural or more polite; not a mistake']]
+  .map(([t, d]) => t + ' (' + d + '): ' + Object.keys(ERR_TYPES).filter(k => k[0] === t).map(k => k + ' ' + ERR_TYPES[k].en).join('; ')).join('\n');
+// Patterns offered for practice when the reviews have not shown which ones the learner needs.
+const PATTERN_DEFAULT = ['A1', 'A6', 'A8', 'B1', 'B2', 'B6', 'A7', 'C3'];
+// How often each pattern was corrected in chat c (not counting the learner's message skip, whose corrections are being
+// decided).
+function chatErrs(c, skip) {
+  const n = {};
+  for (const t of c.turns) if (t !== skip && t.r === 'm' && !t.ex) for (const f of (t.fx || [])) { const k = errCode(f && f.code); if (k) n[k] = (n[k] || 0) + 1; }
+  return n;
+}
+// ... and in the reviews of the last 30 days as well.
+function errCounts(c, skip) {
+  const n = c ? chatErrs(c, skip) : {}, since = dkey(addDays(parseD(todayKey()), -30));
+  for (const list of Object.values(S.sessions)) for (const s of (list || [])) {
+    if (!s || !s.errs || typeof s.errs !== 'object' || !(String(s.date) >= since) || (c && s.id === c.id)) continue;
+    for (const [k, v] of Object.entries(s.errs)) { const code = errCode(k), x = clamp(Math.round(Number(v) || 0), 0, 99); if (code && x) n[code] = (n[code] || 0) + x; }
+  }
+  return n;
+}
+// Patterns corrected at least twice, most frequent first: the coach hints at these before showing the answer.
+function knownErrs(c, skip) { const n = errCounts(c, skip); return Object.keys(n).filter(k => n[k] >= 2).sort((a, b) => n[b] - n[a]); }
+function normErrs(v) {
+  const out = {};
+  if (v && typeof v === 'object' && !Array.isArray(v)) for (const [k, x] of Object.entries(v)) { const code = errCode(k), n = clamp(Math.round(Number(x) || 0), 0, 99); if (code && n) out[code] = n; }
+  return out;
+}
+function errChip(code) {
+  const ty = ERR_TYPES[code]; if (!ty) return null;
+  return el('span', { class: 'err ' + code[0].toLowerCase(), lang: 'zh-Hant-TW', text: ERR_TIER[code[0]] + '・' + ty.zh });
+}
+
 /* ================= coach: prompts & parsing ================= */
 function rulesFor(c) {
   const lv = LEVELS[c.level] || LEVELS.B1;
@@ -2248,12 +2376,20 @@ function rulesFor(c) {
     mode = 'FREE CONVERSATION about ' + c.topicEn + '. Be a warm, curious conversation partner: react to what they say, sometimes add a short opinion or experience of your own, and keep the topic going. If it runs dry, move to a related topic.';
   } else if (c.mode === 'role') {
     mode = 'ROLE-PLAY. Scenario: ' + c.sceneEn + ' You play ' + c.aiRole + '; the learner plays ' + c.meRole + '. Stay in character in your reply and keep it realistic, adding a small complication now and then. When the scene reaches a natural end, close it in character and offer to replay it with a different twist.';
+  } else if (c.pattern) {
+    mode = 'CHINESE-TO-ENGLISH SPEAKING DRILL on one pattern: ' + c.pattern + ', ' + ERR_TYPES[c.pattern].en + '.\n'
+      + '- Give the learner one short sentence in Traditional Chinese as used in Taiwan to say in English, on its own line starting with "say:". Saying it in English must need this pattern. Make it fit their everyday life or work (see About the learner), and vary the sentences.\n'
+      + '- When they answer in English: say in one short sentence what was good, give one polished version on a line starting with "final:", then give the next sentence on a "say:" line. Correct their attempt in the fix part.\n'
+      + '- If they write in Chinese or ask something, answer briefly, then give a "say:" line again.';
   } else {
     mode = 'CHINESE-TO-ENGLISH SPEAKING PRACTICE. The learner types something they want to be able to say, usually in Chinese.\n'
       + '- If their last message is mostly Chinese: give 2 or 3 natural spoken English ways to say it, one per line, each line starting with "casual:", "neutral:" or "work:" (leave out a style that does not fit), then one last line asking them to say one version out loud and type what they said. The fix part is {"none": true}.\n'
       + '- If their last message is mostly English (an attempt at saying it): say in one short sentence what was good, give one polished version on a line starting with "final:", then ask what else they want to learn to say. Correct the attempt in the fix part.';
   }
   const len = c.mode === 'zh' ? 'Keep it short.' : 'Use 1 to 3 short sentences (at most 45 words) and end with exactly one question.';
+  // The patterns this learner was corrected on at least twice (not counting the message being answered).
+  const me = c.turns.filter(t => t.r === 'm').pop();
+  const known = knownErrs(c, me).slice(0, 6);
   return 'You are a friendly English speaking coach inside a practice app.\n'
     + 'About the learner: ' + about + '\n'
     + 'Goal: speak English fluently in everyday and work conversations. They tend to freeze when speaking, so keep the pressure low and be encouraging.\n'
@@ -2261,17 +2397,24 @@ function rulesFor(c) {
     + 'They speak out loud and usually type with voice dictation, so ignore punctuation, capital letters and obvious dictation glitches.\n\n'
     + 'MODE: ' + mode + '\n\n'
     + 'FORMAT. Follow it exactly every time:\n'
-    + '1. Your reply in natural spoken English. ' + len + ' Plain text only: no Markdown, no emoji, no Chinese.\n'
+    + '1. Your reply in natural spoken English. ' + len + ' Plain text only: no Markdown, no emoji, ' + (c.pattern ? 'no Chinese except on "say:" lines' : 'no Chinese') + '.\n'
     + '2. A line with only ###\n'
-    + '3. Up to 3 lines, each a JSON object on one line that corrects the learner\'s LAST message: {"you": "<their exact words>", "better": "<a more natural way to say it>", "why": "<reason in Traditional Chinese as used in Taiwan, at most 20 characters>"}. Fix mistakes that block understanding first, then unnatural or Chinglish phrasing; skip tiny slips. If their last message was already natural, or the learner has not said anything yet, write exactly {"none": true}.\n'
-    + 'Write nothing after the JSON lines.';
+    + '3. At most 2 lines, each a JSON object on one line that corrects the learner\'s LAST message: {"you": "<their exact words>", "better": "<a more natural way to say it>", "why": "<reason in Traditional Chinese as used in Taiwan, at most 20 characters>", "code": "<its pattern code from the list below, or empty>"}. At most one A item and at most one B or C item, the A item first; leave out the rest. If their last message was already natural, or the learner has not said anything yet, write exactly {"none": true}.\n'
+    + 'Write nothing after the JSON lines.\n\n'
+    + 'CORRECTING:\n'
+    + '- Do not correct: a missing -s or -ed ending that dictation may have dropped, unless the sentence makes the mistake clear (as in "Yesterday I send"); short forms that are fine in casual chat ("Already sent!"); choices that are also correct (US or UK usage, "The meeting starts at 3").\n'
+    + '- C items are more natural or more polite ways to say it, not mistakes: never call them wrong.\n'
+    + '- When you correct an A item, also use the right form naturally in your reply (like "Oh, you sent them yesterday?"), without pointing it out.\n'
+    + (known.length ? '- The learner keeps working on ' + known.join(', ') + '. When you correct one of these, add "hint": a short question in Traditional Chinese as used in Taiwan that leads them to the fix without giving it away (like "這是昨天的事，send 要怎麼改？").\n' : '')
+    + 'Pattern codes:\n' + ERR_LIST;
 }
 const OPEN_FREE = 'Begin now: greet the learner briefly and ask your first question about the topic.';
 const OPEN_ROLE = 'Begin the role-play now: set the scene in one short sentence, then say your first line in character.';
+const OPEN_PATTERN = 'Begin now: say in one short sentence what this drill practises, then give the first sentence on a "say:" line.';
 const usable = t => !t.sys && !t.pending && !t.streaming && !t.ex;
 function buildTurns(c) {
   const out = [{ role: 'user', content: rulesFor(c) }];
-  if (c.mode !== 'zh') out.push({ role: 'user', content: c.mode === 'role' ? OPEN_ROLE : OPEN_FREE });
+  if (c.mode !== 'zh' || c.pattern) out.push({ role: 'user', content: c.mode === 'role' ? OPEN_ROLE : c.mode === 'zh' ? OPEN_PATTERN : OPEN_FREE });
   const hist = c.turns.filter(t => usable(t) && String(t.r === 'm' ? t.t : (t.raw || t.t) || '').trim());
   for (const t of hist.slice(-24)) out.push({ role: t.r === 'm' ? 'user' : 'assistant', content: t.r === 'm' ? t.t : (t.raw || t.t) });
   while (out.length > 1 && out[out.length - 1].role !== 'user') out.pop();
@@ -2327,6 +2470,8 @@ function streamPart(text) {
   else t = t.replace(/(^|\n)[ \t]*(#{1,2}|`{1,2})[ \t]*$/, ''); // a separator still arriving
   return dropLabelTail(t).trim();
 }
+// A sentence the coach asks the learner to say in English (practising one pattern in 中翻英).
+const SAY_RE = /^\s*say\s*[:：]\s*(.*)$/i;
 function parseCoach(text) {
   const t = String(text || '').replace(/```[a-zA-Z]*/g, '');
   let a = t, b = '';
@@ -2347,7 +2492,9 @@ function parseCoach(text) {
       for (const o of (Array.isArray(v) ? v : [v])) {
         if (!o || typeof o !== 'object') continue;
         if (o.none) none = true;
-        else if (typeof o.better === 'string' && o.better.trim()) fixes.push({ you: String(o.you || '').trim(), better: o.better.trim(), why: String(o.why || '').trim() });
+        else if (typeof o.better === 'string' && o.better.trim()) {
+          fixes.push({ you: String(o.you || '').trim(), better: o.better.trim(), why: String(o.why || '').trim(), code: errCode(o.code), hint: typeof o.hint === 'string' ? o.hint.trim().slice(0, 80) : '' });
+        }
       }
     }
     const open = rest.search(/[[{]/); // an unfinished JSON fragment (the reply was cut) is never shown
@@ -2362,18 +2509,21 @@ function parseCoach(text) {
   }
   let reply = a.replace(/[ \t]+\n/g, '\n').trim();
   if (tail) reply = reply ? reply + '\n' + tail : tail;
-  const speakText = reply.replace(/^\s*(casual|neutral|work|final)\s*[:：]\s*/gim, '');
-  return { reply, fixes: fixes.slice(0, 3), none, speakText };
+  // A Chinese sentence to say in English ("say: …") is not read out by the English voice.
+  const speakText = reply.split('\n').filter(l => !(SAY_RE.test(l) && cjkRatio(l) >= 0.3)).join('\n').replace(/^\s*(casual|neutral|work|final)\s*[:：]\s*/gim, '');
+  // At most two corrections a turn: one that can change the meaning (A) first, then one other.
+  const a1 = fixes.find(f => f.code[0] === 'A');
+  return { reply, fixes: (a1 ? [a1] : []).concat(fixes.filter(f => f.code[0] !== 'A')).slice(0, 2), none, speakText };
 }
 function chatLabel(c) {
   if (c.mode === 'free') return '自由聊天・' + (c.topicZh || '');
   if (c.mode === 'role') return '角色扮演・' + (c.sceneZh || '');
-  return '中翻英口說';
+  return c.pattern ? '中翻英口說・練「' + ERR_TYPES[c.pattern].zh + '」' : '中翻英口說';
 }
 function chatLabelEn(c) {
   if (c.mode === 'free') return 'free conversation about ' + c.topicEn;
   if (c.mode === 'role') return 'role-play: ' + c.sceneEn;
-  return 'Chinese-to-English speaking practice';
+  return c.pattern ? 'Chinese-to-English speaking drill on ' + c.pattern + ' (' + ERR_TYPES[c.pattern].en + ')' : 'Chinese-to-English speaking practice';
 }
 function hintPrompt(c) {
   const lines = c.turns.filter(t => usable(t) && t.t).slice(-6).map(t => (t.r === 'm' ? 'Learner: ' : 'Coach: ') + t.t).join('\n');
@@ -2389,15 +2539,16 @@ function reviewPrompt(c) {
     if (!usable(t) || !t.t) continue;
     if (t.r === 'm') {
       lines.push('Learner: ' + t.t);
-      for (const f of (t.fx || [])) lines.push('  Fix: "' + f.you + '" -> "' + f.better + '"');
+      for (const f of (t.fx || [])) lines.push('  Fix' + (f.code ? ' [' + f.code + ']' : '') + ': "' + f.you + '" -> "' + f.better + '"');
     } else lines.push('Coach: ' + t.t);
   }
   const transcript = lines.join('\n').slice(-24000);
   return 'Review this English speaking practice session. The learner is a Mandarin speaker from Taiwan practising at level ' + c.level + '. Session: ' + chatLabelEn(c) + '.\n'
-    + 'Transcript ("Learner" lines are what they said; "Fix" lines are corrections the coach already gave):\n' + transcript + '\n\n'
+    + 'Transcript ("Learner" lines are what they said; "Fix" lines are corrections the coach already gave, with their pattern code):\n' + transcript + '\n\n'
     + 'Write in Traditional Chinese as used in Taiwan, except for English examples. Be specific and encouraging. Reply with only one JSON object:\n'
-    + '{"summary": "2 sentences of overall feedback", "strengths": ["up to 2 specific things they did well"], "patterns": [{"issue": "a recurring mistake or habit", "example": "their exact words", "fix": "a better way in English"}], "phrases": [{"en": "a useful spoken chunk for this kind of conversation", "zh": "its meaning", "example": "a short English example sentence"}], "next": "one concrete suggestion for what to practise next time"}\n'
-    + 'Give at most 3 patterns, most important first, and exactly 5 phrases.';
+    + '{"summary": "2 sentences of overall feedback", "strengths": ["up to 2 specific things they did well"], "patterns": [{"code": "its pattern code from the list below, or empty", "issue": "a recurring mistake or habit", "example": "their exact words", "fix": "a better way in English"}], "phrases": [{"en": "a useful spoken chunk for this kind of conversation", "zh": "its meaning", "example": "a short English example sentence"}], "next": "one concrete suggestion for what to practise next time"}\n'
+    + 'Give at most 3 patterns, the ones that came up most and A patterns first, and exactly 5 phrases.\n'
+    + 'Pattern codes:\n' + ERR_LIST;
 }
 // Field lengths are capped so a month of reviews stays far below the document size limit.
 function normReview(r) {
@@ -2407,9 +2558,11 @@ function normReview(r) {
   return {
     summary: str(o.summary, 400),
     strengths: arr(o.strengths).map(v => str(v, 160)).filter(Boolean).slice(0, 2),
-    patterns: arr(o.patterns).filter(x => x && typeof x === 'object').map(x => ({ issue: str(x.issue, 160), example: str(x.example, 200), fix: str(x.fix, 200) })).filter(x => x.issue || x.fix).slice(0, 3),
+    patterns: arr(o.patterns).filter(x => x && typeof x === 'object')
+      .map(x => Object.assign(errCode(x.code) ? { code: errCode(x.code) } : {}, { issue: str(x.issue, 160), example: str(x.example, 200), fix: str(x.fix, 200) })).filter(x => x.issue || x.fix).slice(0, 3),
     phrases: arr(o.phrases).filter(x => x && typeof x === 'object').map(x => ({ en: str(x.en, 160), zh: str(x.zh, 120), example: str(x.example, 240) })).filter(x => x.en).slice(0, 5),
     next: str(o.next, 200),
+    errs: normErrs(o.errs), // how often each pattern was corrected in the session (counted by the page, see review)
   };
 }
 // JSON answers go through plain sample() with cache off, so an unusable answer is never replayed.
@@ -2540,7 +2693,7 @@ function keyChanged() {
   useApiKeyIfAny();
   if (S.note) { S.note = null; S.noteNoRetry = false; }
   if ($('#settings').hasAttribute('open')) fillSettings();
-  renderCoach(); renderToday(); renderInbox(); updateStartBtn(); // an open shadowing or 4/3/2 tool offers the coach or not
+  renderCoach(); renderToday(); renderInbox(); renderErrs(); updateStartBtn(); // an open shadowing or 4/3/2 tool offers the coach or not
 }
 function openKeySettings() {
   $('#btn-settings').click();
@@ -2627,7 +2780,7 @@ function newChat(setup) {
     c.sceneZh = s.k === 'custom' ? custom : s.zh;
     c.sceneEn = s.k === 'custom' ? 'The learner described this scene (it may be in Chinese; play it in English): "' + custom + '".' : s.en;
     c.aiRole = s.ai; c.meRole = s.me;
-  }
+  } else if (errCode(setup.pattern)) c.pattern = errCode(setup.pattern); // 中翻英 on one pattern: the coach gives the sentences
   return c;
 }
 // Sentences the learner said that the coach accepted (0 is a real count, not "unknown").
@@ -2680,6 +2833,13 @@ async function startSession(setup, firstMessage, voice) {
   S.review = null; S.hints = null; S.hintSeq++; S.note = null; S.noteNoRetry = false; S.armed = null; S.micZh = null;
   const c = newChat(setup);
   S.chat = c;
+  if (c.pattern) {
+    c.turns.push({ r: 'c', t: "Let's practise one pattern. I'll give you a sentence in Chinese; say it in English.", zhNote: '這次練「' + ERR_TYPES[c.pattern].zh + '」：教練每次出一句中文，你用英文說出來（打字或按麥克風），教練會給精修版，也會幫你改。', sys: true, at: Date.now() });
+    saveChat(); renderCoach(); renderToday();
+    ask();
+    focusComposer();
+    return true;
+  }
   if (c.mode === 'zh') {
     c.turns.push({ r: 'c', t: 'Tell me something you want to say. Chinese is fine. I will show you two or three natural ways to say it in English.', zhNote: '把想說的話打出來（中文也可以），我會給你 2–3 種英文說法，再請你唸一次。', sys: true, at: Date.now() });
     saveChat(); renderCoach(); renderToday();
@@ -2717,6 +2877,7 @@ function chatDoc() {
     sceneZh: c.sceneZh || '', sceneEn: c.sceneEn || '', aiRole: c.aiRole || '', meRole: c.meRole || '',
     startedAt: c.startedAt, updatedAt: c.updatedAt, lastAt: c.lastAt, activeMs: c.activeMs || 0, meCount: c.meCount || 0, turns,
   };
+  if (c.pattern) doc.pattern = c.pattern;
   if (docBytes(doc) > DOC_LIMIT * 0.8) {
     const size = turns.map(docBytes);
     let total = docBytes(doc);
@@ -3307,7 +3468,8 @@ function normChat(d) {
   const str = v => (typeof v === 'string' ? v : '');
   const turns = d.turns.filter(t => t && (t.r === 'm' || t.r === 'c') && typeof t.t === 'string').map(t => ({
     r: t.r, t: t.t, at: Number(t.at) || 0, raw: str(t.raw),
-    fx: Array.isArray(t.fx) ? t.fx.filter(f => f && typeof f.better === 'string').map(f => ({ you: str(f.you), better: f.better, why: str(f.why) })) : [],
+    fx: Array.isArray(t.fx) ? t.fx.filter(f => f && typeof f.better === 'string')
+      .map(f => Object.assign({ you: str(f.you), better: f.better, why: str(f.why) }, errCode(f.code) ? { code: errCode(f.code) } : {}, str(f.hint) ? { hint: str(f.hint).slice(0, 80) } : {}, f.open ? { open: true } : {})) : [],
     ok: !!t.ok, zh: str(t.zh), cut: !!t.cut, ex: !!t.ex, sys: !!t.sys, zhNote: str(t.zhNote),
   }));
   let activeMs = Number(d.activeMs) || 0;
@@ -3321,6 +3483,7 @@ function normChat(d) {
     aiRole: str(d.aiRole) || 'the other person', meRole: str(d.meRole) || 'themself',
     startedAt: Number(d.startedAt) || Date.now(), updatedAt: Number(d.updatedAt) || Date.now(), lastAt: Number(d.lastAt) || Number(d.updatedAt) || Date.now(),
     activeMs, meCount: Number.isFinite(Number(d.meCount)) && d.meCount !== null && d.meCount !== undefined && d.meCount !== '' ? Number(d.meCount) : turns.filter(t => t.r === 'm' && !t.ex).length, turns,
+    pattern: d.mode === 'zh' ? errCode(d.pattern) : '',
   };
 }
 // A chat that ends (discarded or reviewed) or a new one: nothing typed or being said for the old chat is carried over
@@ -3417,7 +3580,10 @@ function finishTurn(c, turn, raw, cut) {
   if (cut) turn.cut = true;
   const prev = c.turns[c.turns.indexOf(turn) - 1];
   if (prev && prev.r === 'm' && !cut) {
-    prev.fx = p.fixes;
+    // A pattern corrected at least twice before is first only hinted at: the learner tries, then opens the answer.
+    const known = knownErrs(c, prev);
+    prev.fx = p.fixes.map(f => Object.assign({ you: f.you, better: f.better, why: f.why }, f.code ? { code: f.code } : {},
+      f.code && known.includes(f.code) ? { hint: f.hint || ERR_TYPES[f.code].hint } : {}));
     prev.ok = !p.fixes.length && p.none && isEnglish(prev.t);
   }
   if (Voice.on && Voice.phase === 'waiting') {
@@ -3500,7 +3666,7 @@ async function review() {
     if (!rv.summary && !rv.phrases.length && !rv.patterns.length) throw { code: 'invalid_json', message: 'empty review' };
     if (S.chat !== c) return;
     const minutes = Math.max(1, Math.round((c.activeMs || 0) / 60000));
-    const sess = Object.assign({ id: c.id, date: k, at: Date.now(), mode: c.mode, label: chatLabel(c), level: c.level, minutes, count }, rv);
+    const sess = Object.assign({ id: c.id, date: k, at: Date.now(), mode: c.mode, label: chatLabel(c), level: c.level, minutes, count }, rv, { errs: chatErrs(c) });
     const m = k.slice(0, 7);
     S.review = sess; S.chat = null; S.endedChats.add(c.id);
     clearComposer();
@@ -3832,14 +3998,14 @@ async function askCoachAbout(it) {
   if (!S.ready || S.sampleState !== 'ok') return;
   ttsUnlock();
   if (S.busy || S.reviewing) { toast('教練正在回覆，稍等一下再試'); return; }
-  if (S.chat && S.chat.mode !== 'zh' && S.chat.turns.some(t => t.r === 'm')) {
+  if (S.chat && (S.chat.mode !== 'zh' || S.chat.pattern) && S.chat.turns.some(t => t.r === 'm')) {
     switchTab('coach');
     toast('先結束目前的對話，再把句子帶過來');
     return;
   }
   switchTab('coach');
   let sent;
-  if (S.chat && S.chat.mode === 'zh') { sent = send(it.text); focusInput(); }
+  if (S.chat && S.chat.mode === 'zh' && !S.chat.pattern) { sent = send(it.text); focusInput(); }
   else sent = await startSession({ mode: 'zh' }, it.text);
   // The sentence leaves the list only once it has really been sent to the coach.
   if (sent) { removeInbox(it.id); renderInbox(); }
@@ -3902,7 +4068,7 @@ function unavailableView() {
 }
 function startView() {
   const s = S.setup;
-  const modes = [['free', '自由聊天', '想到什麼聊什麼，練習把話接下去。'], ['role', '情境角色扮演', '開會、閒聊、出國，練臨場反應。'], ['zh', '中翻英口說', '打出想說的中文，學 2–3 種英文說法再唸回來。']];
+  const modes = [['free', '自由聊天', '想到什麼聊什麼，練習把話接下去。'], ['role', '情境角色扮演', '開會、閒聊、出國，練臨場反應。'], ['zh', '中翻英口說', '打出想說的中文，學 2–3 種英文說法再唸回來；也可以挑一個句型，讓教練出題。']];
   const pickMode = k => { s.mode = k; s.custom = ''; renderCoach(); };
   const parts = [
     el('section', { class: 'card' },
@@ -3921,8 +4087,22 @@ function startView() {
       el('input', { id: 'custom-input', class: 'input', maxlength: '160', value: s.custom, 'data-fk': 'custom', placeholder: s.mode === 'free' ? '例如：最近在追的劇' : '例如：跟房東說冷氣壞了', oninput: e => { s.custom = e.target.value; updateStartBtn(); } })));
   }
   if (s.mode === 'zh') {
-    opts.append(el('p', { class: 'help', text: '開始後，把你想說的話打出來（或用聽寫說中文），教練會給 2–3 種說法（口語、一般、職場），再請你唸一次。' }));
-    if (S.inbox.length) {
+    // A pattern to practise: the ones corrected most in the last 30 days first (with how often), then common ones.
+    const n = errCounts(null);
+    const recent = Object.keys(n).sort((a, b) => n[b] - n[a]).slice(0, 5);
+    const list = recent.concat(PATTERN_DEFAULT.filter(k => !recent.includes(k))).slice(0, 8);
+    if (!errCode(s.pattern)) s.pattern = '';
+    if (s.pattern && !list.includes(s.pattern)) list.push(s.pattern);
+    const pick = k => el('button', { type: 'button', class: 'chip', 'aria-pressed': String(s.pattern === k), 'data-fk': 'pat-pick-' + (k || 'none'), onclick: () => { s.pattern = k; renderCoach(); } },
+      k ? ERR_TYPES[k].zh : '不指定', n[k] ? el('small', { class: 'chip-n', text: n[k] + ' 次' }) : null);
+    opts.append(el('div', { class: 'field' },
+      el('span', { class: 'label', text: '練一個句型' }),
+      el('div', { class: 'chips', role: 'group', 'aria-label': '練一個句型' }, pick(''), list.map(pick)),
+      recent.length ? el('p', { class: 'help', text: '次數是最近 30 天的複習裡，教練幫你改過幾次。' }) : null));
+    opts.append(el('p', { class: 'help', text: s.pattern
+      ? '開始後，教練每次出一句中文（會用到「' + ERR_TYPES[s.pattern].zh + '」），你用英文說出來（打字或按麥克風），教練會給精修版，也會幫你改。'
+      : '開始後，把你想說的話打出來（或用聽寫說中文），教練會給 2–3 種說法（口語、一般、職場），再請你唸一次。' }));
+    if (S.inbox.length && !s.pattern) {
       opts.append(el('div', { class: 'field' },
         el('span', { class: 'label', text: '從「說不出口的句子」挑一句' }),
         el('div', { class: 'pick-list' }, S.inbox.slice(0, 5).map(it =>
@@ -4011,11 +4191,27 @@ function coachMsg(t, c, i) {
   }
   return node;
 }
+// The Chinese sentence the coach gave the learner to say before turn i (what a polished version saved from it means).
+function cueSource(c, i) {
+  for (let j = i - 1; j >= 0; j--) {
+    const t = c.turns[j];
+    if (t.r !== 'c' || t.sys) continue;
+    const said = String(t.t || '').split('\n').map(l => SAY_RE.exec(l)).filter(Boolean).pop();
+    if (said) return said[1].trim();
+  }
+  return '';
+}
 function fillZhReply(bubble, t, c, i) {
   let source = '';
-  for (let j = i - 1; j >= 0; j--) if (c.turns[j].r === 'm' && cjkRatio(c.turns[j].t) >= 0.3) { source = c.turns[j].t; break; }
+  if (c.pattern) source = cueSource(c, i);
+  else for (let j = i - 1; j >= 0; j--) if (c.turns[j].r === 'm' && cjkRatio(c.turns[j].t) >= 0.3) { source = c.turns[j].t; break; }
   const zhSource = cjkRatio(source) >= 0.3 ? source : '';
   for (const line of String(t.t || '').split('\n')) {
+    const said = SAY_RE.exec(line);
+    if (said) { // (still empty while the reply is arriving)
+      if (said[1].trim()) bubble.append(el('div', { class: 'cue', lang: 'zh-Hant-TW' }, el('span', { class: 'cue-k', text: '用英文說說看' }), el('span', { class: 'cue-zh', text: said[1].trim() })));
+      continue;
+    }
     const mm = OPT_RE.exec(line);
     if (mm) {
       const key = mm[1].toLowerCase(), en = mm[2].trim();
@@ -4034,17 +4230,41 @@ function meMsg(t, i) {
   else if (t.fx && t.fx.length) {
     node.append(el('div', { class: 'fixes', lang: 'en' },
       el('div', { class: 'fix-head', lang: 'zh-Hant-TW', text: '更自然的說法' }),
-      t.fx.map(f => el('div', { class: 'fix-row' },
-        el('div', null,
-          f.you ? el('div', { class: 'fix-you', text: f.you }) : null,
-          el('div', { class: 'fix-better', text: f.better }),
-          f.why ? el('div', { class: 'fix-why', lang: 'zh-Hant-TW', text: f.why }) : null),
-        el('div', { class: 'fix-acts', lang: 'zh-Hant-TW' }, speakBtn(f.better, 'sm', 'fx' + i), sayBtn(f.better, 'fx' + i), starBtn({ en: f.better, note: f.why, was: f.you, src: 'fix' }, 'sm', 'fx')),
-        sayBox(f.better, 'fx' + i)))));
+      t.fx.map((f, j) => {
+        const chip = errChip(errCode(f.code));
+        // A pattern corrected before: a hint first; the learner tries to say it, then opens the answer.
+        if (f.hint && !f.open) {
+          return el('div', { class: 'fix-row', 'data-fx': i + '-' + j },
+            el('div', null,
+              chip,
+              f.you ? el('div', { class: 'fix-you', text: f.you }) : null,
+              el('div', { class: 'fix-hint', lang: 'zh-Hant-TW', text: '小提示：' + f.hint }),
+              el('div', { class: 'fix-why', lang: 'zh-Hant-TW', text: '先自己說說看正確的說法，再看答案。' })),
+            el('div', { class: 'fix-acts', lang: 'zh-Hant-TW' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'reveal-' + i + '-' + j, onclick: () => revealFix(t, f, i, j) }, '看答案')));
+        }
+        return el('div', { class: 'fix-row', 'data-fx': i + '-' + j },
+          el('div', null,
+            chip,
+            f.you ? el('div', { class: 'fix-you', text: f.you }) : null,
+            el('div', { class: 'fix-better', text: f.better }),
+            f.why ? el('div', { class: 'fix-why', lang: 'zh-Hant-TW', text: f.why }) : null),
+          el('div', { class: 'fix-acts', lang: 'zh-Hant-TW' }, speakBtn(f.better, 'sm', 'fx' + i), sayBtn(f.better, 'fx' + i), starBtn({ en: f.better, note: f.why, was: f.you, src: 'fix' }, 'sm', 'fx')),
+          sayBox(f.better, 'fx' + i));
+      })));
   } else if (t.ok) {
     node.append(el('span', { class: 'ok-badge' }, el('span', { class: 'ico', html: ICON.check }), '說得很自然'));
   }
   return node;
+}
+// 看答案: the answer stays open (also after a reload), and the focus moves to its buttons.
+function revealFix(t, f, i, j) {
+  f.open = true;
+  if (S.chat && S.chat.turns.includes(t)) saveChat();
+  renderMessages();
+  announce('答案：' + f.better);
+  const row = $('[data-fx="' + i + '-' + j + '"]');
+  const b = row && row.querySelector('button');
+  if (b) b.focus({ preventScroll: true });
 }
 function updateStreaming(t, c) {
   if (!t._el || !t._el.isConnected) return;
@@ -4082,7 +4302,7 @@ function chatNeeds(c) {
   if (!c) return null;
   const real = c.turns.filter(t => !t.sys && !t.ex && !t.pending);
   const last = real[real.length - 1];
-  if (!last) return c.mode === 'zh' ? null : 'open';
+  if (!last) return c.mode === 'zh' && !c.pattern ? null : 'open';
   if (last.r === 'm') return 'reply';
   if (last.r === 'c' && last.cut) return 'cut';
   return null;
@@ -4122,6 +4342,7 @@ function updateComposer() {
   hint.hidden = zh;
   const mic = Mic.ok && !Mic.blocked;
   ta.placeholder = Voice.on ? '說英文，說完停一下就會送出…'
+    : zh && S.chat.pattern ? (mic ? '按麥克風用英文說出上面那句，或打出來…' : '用英文打出上面那句…')
     : zh ? (mic ? '按麥克風用說的，或打出想說的話，中文也可以…' : '打出想說的話，中文也可以…') : (mic ? '按麥克風用說的，說完確認再送出…' : '先大聲說，再用聽寫打進來…');
   const tip = $('#composer-tip-text');
   if (Voice.on) tip.textContent = '語音對話中：說完停一下就會自動送出。要改字就點輸入框，會先暫停。';
@@ -4139,12 +4360,13 @@ function sendFromComposer() {
   if (send(v)) { ta.value = ''; autosize(ta); micMsg(''); S.hintFill = ''; }
 }
 /* ---- dictation into the composer ---- */
-// In 中翻英 the learner types Chinese, then says one of the offered English versions out loud.
+// In 中翻英 the learner types Chinese, then says one of the offered English versions out loud (when practising a
+// pattern, the sentence the coach gave).
 function expectEnglish(c) {
   for (let i = c.turns.length - 1; i >= 0; i--) {
     const t = c.turns[i];
     if (t.r !== 'c' || t.pending) continue;
-    return !t.sys && /^\s*(casual|neutral|work)\s*[:：]/im.test(t.t || '');
+    return !t.sys && /^\s*(casual|neutral|work|say)\s*[:：]/im.test(t.t || '');
   }
   return false;
 }
@@ -4461,6 +4683,12 @@ function reviewingView() {
     el('p', null, '教練正在整理這次的複習，通常要 10–60 秒（已過 ', secs, ' 秒）'),
     el('button', { type: 'button', class: 'btn', 'data-fk': 'stop-review', onclick: () => { if (S.ctl) S.ctl.abort(); } }, '停止，回到對話'));
 }
+// 用中翻英練這個: 中翻英 on that pattern (the practice menu keeps it chosen).
+function practisePattern(code) {
+  ttsUnlock();
+  S.setup = Object.assign({}, S.setup, { mode: 'zh', pattern: code });
+  startSession({ mode: 'zh', pattern: code });
+}
 function reviewView(r) {
   const parts = [
     el('section', { class: 'card' },
@@ -4473,11 +4701,16 @@ function reviewView(r) {
   if (r.patterns.length) {
     parts.push(el('section', { class: 'card' },
       el('h3', { class: 'card-title', text: '要注意的地方' }),
-      el('div', { class: 'mt6' }, r.patterns.map(p => el('div', { class: 'pat' },
-        el('p', { text: p.issue }),
-        p.example ? el('p', { class: 'fix-you', lang: 'en', text: p.example }) : null,
-        p.fix ? el('div', { class: 'phrase-acts' }, el('span', { class: 'fix-better', lang: 'en', text: p.fix }), speakBtn(p.fix, 'sm'), sayBtn(p.fix, 'rp'), starBtn({ en: p.fix, note: p.issue, was: p.example, src: 'review' }, 'sm', 'rp')) : null,
-        p.fix ? sayBox(p.fix, 'rp') : null)))));
+      el('div', { class: 'mt6' }, r.patterns.map((p, k) => {
+        const code = errCode(p.code), times = code && r.errs ? Number(r.errs[code]) || 0 : 0;
+        return el('div', { class: 'pat' },
+          code ? el('div', { class: 'pat-head' }, errChip(code), times ? el('span', { class: 'help', text: '這次改了 ' + times + ' 次' }) : null) : null,
+          el('p', { text: p.issue }),
+          p.example ? el('p', { class: 'fix-you', lang: 'en', text: p.example }) : null,
+          p.fix ? el('div', { class: 'phrase-acts' }, el('span', { class: 'fix-better', lang: 'en', text: p.fix }), speakBtn(p.fix, 'sm'), sayBtn(p.fix, 'rp'), starBtn({ en: p.fix, note: p.issue, was: p.example, src: 'review' }, 'sm', 'rp')) : null,
+          p.fix ? sayBox(p.fix, 'rp') : null,
+          code ? el('div', null, el('button', { type: 'button', class: 'btn small', disabled: S.sampleState !== 'ok', 'data-fk': 'pat-practice-' + k, onclick: () => practisePattern(code) }, '用中翻英練這個')) : null);
+      }))));
   }
   if (r.phrases.length) {
     parts.push(el('section', { class: 'card' },
@@ -5201,6 +5434,7 @@ function sessionCard(s) {
     pats.length || phr.length ? el('details', { open: S.openSess.has(s.id), ontoggle: e => { if (e.currentTarget.open) S.openSess.add(s.id); else S.openSess.delete(s.id); } },
       el('summary', null, '看重點與說法'),
       pats.map(p => el('div', { class: 'pat' },
+        errChip(errCode(p.code)),
         el('p', { text: str(p.issue) }),
         str(p.fix) ? el('p', { class: 'fix-better', lang: 'en', text: str(p.fix) }) : null)),
       phr.filter(p => str(p.en)).map(p => el('div', { class: 'phrase' },
@@ -5220,6 +5454,42 @@ function renderStarters() {
         el('div', { class: 'phrase-zh' }, zh, el('span', { class: 'use', text: use }))),
       el('div', { class: 'phrase-acts' }, speakBtn(say || en, 'sm'), sayBtn(say || en, 'st'), starBtn({ en, zh, note: use, src: 'starter' }, 'sm', 'st')),
       sayBox(say || en, 'st'))))));
+}
+// The list of common mistakes (ERR_TYPES), by tier: each with an example, why, how often the coach corrected it lately,
+// and 用中翻英練這個.
+const ERR_TIER_HELP = { A: '會影響意思', B: '聽得懂但不對', C: '不是錯，是更自然或更有禮貌的說法' };
+function renderErrs() {
+  const box = $('#errs'); if (!box || S.tab !== 'saved') return;
+  const n = errCounts(null), can = S.ready && S.sampleState === 'ok';
+  // A short exchange ("question / answer"): the question is shown once, the answers are compared.
+  const two = v => { const i = v.indexOf(' / '); return i < 0 ? ['', v] : [v.slice(0, i), v.slice(i + 3)]; };
+  fill(box, el('section', { class: 'card' },
+    el('h2', { class: 'card-title', text: '說英文的常見錯誤' }),
+    el('p', { class: 'help mt6', text: '說中文的人說英文時常見的 ' + Object.keys(ERR_TYPES).length + ' 種情況。教練改你的句子時會標出是哪一種；最近改過的會標出次數，可以直接用中翻英練。' }),
+    ['A', 'B', 'C'].map(t => {
+      const codes = Object.keys(ERR_TYPES).filter(k => k[0] === t);
+      const seen = codes.filter(k => n[k]).length;
+      return el('details', { class: 'err-group', open: S.openErr.has(t), ontoggle: e => { if (e.currentTarget.open) S.openErr.add(t); else S.openErr.delete(t); } },
+        el('summary', { 'data-fk': 'err-group-' + t }, el('span', { class: 'err ' + t.toLowerCase(), text: ERR_TIER[t] }), el('span', { class: 'err-sum', text: ERR_TIER_HELP[t] + '（' + codes.length + ' 種' + (seen ? '，最近改過 ' + seen + ' 種' : '') + '）' })),
+        codes.map(k => {
+          const ty = ERR_TYPES[k], [q, bad] = two(ty.bad), good = two(ty.good)[1];
+          return el('div', { class: 'err-item' },
+            el('div', { class: 'err-name' }, el('b', { text: ty.zh }), n[k] ? el('span', { class: 'tag', text: '最近 30 天改過 ' + n[k] + ' 次' }) : null),
+            q ? el('p', { class: 'err-q', lang: 'en', text: q }) : null,
+            el('p', { class: 'fix-you', lang: 'en', text: bad }),
+            el('div', { class: 'phrase-acts' }, el('span', { class: 'fix-better', lang: 'en', text: good }), speakBtn(good, 'sm', 'er')),
+            el('p', { class: 'fix-why', text: ty.why }),
+            el('div', null, el('button', { type: 'button', class: 'btn small', disabled: !can, 'data-fk': 'err-practice-' + k, onclick: () => practiseFromList(k) }, '用中翻英練這個')));
+        }));
+    })));
+}
+// 用中翻英練這個 from the list: a chat the learner has already talked in is never replaced.
+function practiseFromList(code) {
+  if (!S.ready || S.sampleState !== 'ok') return;
+  if (S.busy || S.reviewing) { toast('教練正在回覆，稍等一下再試'); return; }
+  switchTab('coach');
+  if (S.chat && S.chat.turns.some(t => t.r === 'm')) { toast('先結束目前的對話，再開始練這個句型'); return; }
+  practisePattern(code);
 }
 function renderSavedList() {
   const box = $('#saved-list'); if (!box || S.tab !== 'saved') return;
@@ -6035,7 +6305,7 @@ async function boot(data) {
   if (c && typeof c.use === 'function') {
     // The answer may come after the page is ready (Claude may first ask the viewer): every view that offers the coach
     // is drawn again (today's tools among them).
-    const ready = () => redrawLater(() => { renderCoach(); renderInbox(); renderToday(); updateStartBtn(); });
+    const ready = () => redrawLater(() => { renderCoach(); renderInbox(); renderToday(); renderErrs(); updateStartBtn(); });
     c.use('sample').then(fn => { S.sample = fn || null; S.sampleState = fn ? 'ok' : 'none'; ready(); }, () => { S.sampleState = 'none'; ready(); });
   } else if (c) { S.sampleState = 'none'; } else {
     if (!KEY_HERE && lsGet(API_KEY_LS)) { lsDel(API_KEY_LS); lsSet(KEY_GONE_LS, '1'); } // see keyGoneNotice
@@ -6073,7 +6343,7 @@ async function boot(data) {
   if (data && typeof data.draft === 'string' && data.draft && S.chat) { const ta = $('#msg-input'); if (ta && !ta.value) { ta.value = data.draft; autosize(ta); } }
   if (S.tab === 'coach' && S.chat) scrollToEnd(true);
 }
-if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats, leaves, timeAt, stampTimes, mergeTimes, heldOver, takeHeld, recordHeld, heldSuperseded, stillHeld };
+if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats, leaves, timeAt, stampTimes, mergeTimes, heldOver, takeHeld, recordHeld, heldSuperseded, stillHeld, ERR_TYPES, errCode, chatErrs, errCounts, knownErrs, normErrs, normChat, reviewPrompt };
 
 boot(viewSaved()).catch(err => { console.error(err); setSync('error'); });
 })();

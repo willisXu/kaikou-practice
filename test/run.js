@@ -41,7 +41,7 @@ function check(name, fn) {
 const eq = (actual, expected) => assert.deepStrictEqual(actual, expected);
 // npm test -- 3b,6 (or ONLY=3b,6) runs just those sections (each section's blocks are wrapped in want()). The argument
 // works in every shell, Windows' too.
-const SECTIONS = ['1', '2', '3', '3b', '4', '5', '6', '6b', '6c', '7', '8', '9'];
+const SECTIONS = ['1', '2', '3', '3b', '4', '5', '6', '6b', '6c', '7', '8', '9', '10'];
 const ONLY = String(process.argv[2] || process.env.ONLY || '').split(',').map(s => s.trim()).filter(Boolean);
 if (ONLY.some(s => !SECTIONS.includes(s))) {
   console.error('ONLY: unknown section ' + ONLY.filter(s => !SECTIONS.includes(s)).join(', ') + ' (sections: ' + SECTIONS.join(', ') + ')');
@@ -4440,6 +4440,283 @@ function serve(root) {
     try { await page.waitForFunction(() => [...document.querySelectorAll('link[data-font]')].every(l => l.media === 'all'), null, { timeout: 5000 }); } catch (_) { switched = false; }
     await ctx.close();
     check('字型很慢或連不上時，頁面照常打開；字型到了才套用', () => eq([booted, before, held.length, switched], [true, ['print', 'print'], 2, true]));
+  }
+
+  // ---------- 10. Corrections by pattern: tiers, a hint before the answer, counts in the review, practising one ----------
+  if (want('10')) {
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 400, height: 860 } }, 'patterns-unit');
+    const pure = await page.evaluate(() => {
+      const T = window.__kaikouTest;
+      const fx = s => T.parseCoach(s).fixes.map(f => [f.better, f.code, f.hint]);
+      return {
+        order: fx('Nice!\n###\n{"you":"a","better":"b","why":"c","code":"b2"}\n{"you":"d","better":"e","why":"f","code":"A1","hint":"提示"}\n{"you":"g","better":"h","why":"i","code":"C3"}'),
+        twoA: fx('Hi!\n###\n{"you":"1","better":"x","code":"A1"}\n{"you":"2","better":"y","code":"A6"}\n{"you":"3","better":"z","code":"B1"}'),
+        plain: fx('Hi!\n###\n{"you":"1","better":"p","code":"Z9","hint":' + JSON.stringify('很長'.repeat(50)) + '}\n{"you":"2","better":"q"}\n{"you":"3","better":"r"}'),
+        speak: [T.parseCoach('Good.\nfinal: I sent it.\nsay: 我們上個月推出了新的精華液。\n###\n{"none": true}').speakText, T.parseCoach('Say: Could you repeat that?\n###\n{"none": true}').speakText],
+        codes: [' c10 ', 'a1', 'constructor', '__proto__', 'A10', 7, null].map(T.errCode),
+        review: (r => [r.patterns.map(p => p.code || ''), r.errs])(T.normReview({ patterns: [{ code: 'a8', issue: 'x' }, { code: 'Z9', issue: 'y' }, { issue: 'z' }], errs: { A1: 2, a8: '3', Z9: 4, B2: 0, C3: 500, toString: 1 } })),
+        chat: (c => [c.pattern, c.turns[0].fx])(T.normChat({ active: true, mode: 'zh', pattern: 'b2', turns: [{ r: 'm', t: 'x', fx: [{ you: 'a', better: 'b', why: 'c', code: 'a1', hint: 'h', open: 1 }, { better: 'z', code: 'nope' }] }] })),
+        notZh: T.normChat({ active: true, mode: 'free', pattern: 'A1', turns: [] }).pattern,
+        none: [T.knownErrs(null), T.errCounts(null)],
+        // Every pattern has a name, a description for the coach and a hint that does not give the answer away.
+        catalogue: Object.entries(T.ERR_TYPES).filter(([k, v]) => !/^[ABC]\d{1,2}$/.test(k) || !v.zh || !v.en || !/[？?]/.test(v.hint)).map(([k]) => k),
+        size: Object.keys(T.ERR_TYPES).length,
+        // The review is told the pattern of each correction the coach gave.
+        reviewFix: T.reviewPrompt({ mode: 'free', level: 'B1', topicEn: 'work', turns: [{ r: 'm', t: 'I go there yesterday', fx: [{ you: 'I go', better: 'I went', why: '過去式', code: 'A1' }, { you: 'there', better: 'over there', why: '' }] }] }).split('\n').filter(l => /^\s+Fix/.test(l)),
+      };
+    });
+    check('教練的更正：每輪最多 2 個，會影響意思的（A）放第一個，同一級只留一個；句型代碼不認得就不用', () => {
+      eq(pure.order, [['e', 'A1', '提示'], ['b', 'B2', '']]);
+      eq(pure.twoA, [['x', 'A1', ''], ['z', 'B1', '']]);
+      eq(pure.plain, [['p', '', '很長'.repeat(40)], ['q', '', '']]);
+      eq(pure.codes, ['C10', 'A1', '', '', '', '', '']);
+    });
+    check('練句型時教練給的中文句子（say:）不會被英文的聲音唸出來；英文的 Say: 照唸', () => eq(pure.speak, ['Good.\nI sent it.', 'Say: Could you repeat that?']));
+    check('複習的句型代碼與次數、存下的更正（代碼、提示、看過答案）照規則整理', () => {
+      eq(pure.review, [['A8', '', ''], { A1: 2, A8: 3, C3: 99 }]);
+      eq(pure.chat, ['B2', [{ you: 'a', better: 'b', why: 'c', code: 'A1', hint: 'h', open: true }, { you: '', better: 'z', why: '' }]]);
+      eq(pure.notZh, '');
+      eq(pure.none, [[], {}]);
+      eq([pure.catalogue, pure.size], [[], 31]);
+      eq(pure.reviewFix, ['  Fix [A1]: "I go" -> "I went"', '  Fix: "there" -> "over there"']);
+    });
+    await ctx.close();
+  }
+
+  if (want('10')) {
+    // Reviews of the last 30 days corrected 過去式 twice and 冠詞 once (one older review does not count). The chat is
+    // stored only in the mock's store, so it is still there after a reload.
+    const seed = "window.__mockSeed = (store, P, dk, back) => { store.delete(P('chat'));"
+      + " const add = (n, s) => { const k = P('sessions-' + dk(back(n)).slice(0, 7)); const d = store.get(k) || {}; d.map = Object.assign({}, d.map, { [s.id]: Object.assign({ date: dk(back(n)), at: back(n).getTime(), mode: 'free', label: '舊的', level: 'B1', minutes: 5, count: 3, summary: '舊的複習', strengths: [], patterns: [], phrases: [], next: '' }, s) }); store.set(k, d); };"
+      + " add(3, { id: 'e1', errs: { A1: 2, B2: 1 } }); add(40, { id: 'e2', errs: { C3: 5, A1: 9 } }); };";
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 400, height: 860 }, deviceScaleFactor: 2 }, 'patterns', { persist: true }, seed);
+    const T = (fn, arg) => page.evaluate(fn, arg);
+    await page.click('#t-coach');
+    await page.click('[data-fk="mode-zh"]');
+    const menu = await T(() => ({
+      counts: window.__kaikouTest.errCounts(null), known: window.__kaikouTest.knownErrs(null),
+      chips: [...document.querySelectorAll('.chips[aria-label="練一個句型"] .chip')].map(b => b.textContent),
+      pressed: [...document.querySelectorAll('.chips[aria-label="練一個句型"] .chip[aria-pressed="true"]')].map(b => b.textContent),
+      inbox: document.querySelectorAll('.pick').length,
+    }));
+    check('中翻英的選單：最近 30 天改過的句型排前面並標出次數，再列常見的；預設不指定', () => {
+      eq(menu.counts, { A1: 2, B2: 1 });
+      eq(menu.known, ['A1']);
+      eq(menu.chips, ['不指定', '過去式2 次', '冠詞1 次', '問句的語序', '單複數', '第三人稱 -s', '介系詞', '用錯動詞', '客氣地請求']);
+      eq([menu.pressed, menu.inbox], [['不指定'], 2]);
+    });
+    await page.click('[data-fk="pat-pick-B2"]');
+    const picked = await T(() => ({ pressed: [...document.querySelectorAll('.chips[aria-label="練一個句型"] .chip[aria-pressed="true"]')].map(b => b.textContent), inbox: document.querySelectorAll('.pick').length, focus: document.activeElement.dataset.fk, help: [...document.querySelectorAll('#coach-dyn .help')].some(p => p.textContent.includes('會用到「冠詞」')) }));
+    check('選了句型：說明跟著換，「說不出口的句子」先收起來，焦點留在選的那個', () => eq(picked, { pressed: ['冠詞1 次'], inbox: 0, focus: 'pat-pick-B2', help: true }));
+
+    // A free chat: the coach's first correction is a pattern corrected twice before, so it comes as a hint first.
+    await page.click('[data-fk="mode-free"]');
+    await page.click('[data-fk="start"]');
+    await notBusy(page);
+    await page.fill('#msg-input', 'I eat a big lunch and it make me happy');
+    await page.click('#send-btn');
+    await notBusy(page);
+    await shot(page, '10-hint-phone.png');
+    const hinted = await T(() => {
+      const c = window.__kaikouTest.S.chat, me = c.turns.filter(t => t.r === 'm').pop();
+      const rows = [...document.querySelectorAll('#msgs .msg.m')].pop().querySelectorAll('.fix-row');
+      return {
+        fx: me.fx,
+        rows: [...rows].map(r => [r.querySelector('.err') && r.querySelector('.err').textContent, r.querySelector('.fix-hint') && r.querySelector('.fix-hint').textContent, r.querySelector('.fix-better') && r.querySelector('.fix-better').textContent, [...r.querySelectorAll('button')].map(b => b.textContent).filter(Boolean)]),
+        hintButtons: rows[0].querySelectorAll('button').length, starred: !!rows[1].querySelector('[aria-label="收藏"]'),
+        rules: [window.__lastRules.includes('keeps working on A1. '), /keeps working on[^.]*B2/.test(window.__lastRules), window.__lastRules.includes('C3 direct requests at work')],
+      };
+    });
+    check('改過兩次以上的句型先給提示：先自己說說看，再按「看答案」；其他的照常直接給更好的說法', () => {
+      eq(hinted.fx, [{ you: 'I eat a big lunch', better: 'I had a big lunch', why: '吃飯常用 have，過去式 had', code: 'A1', hint: '這是已經過去的事，eat 要怎麼改？' }, { you: 'it make me happy', better: 'it made me happy', why: '過去式' }]);
+      eq(hinted.rows, [['重要・過去式', '小提示：這是已經過去的事，eat 要怎麼改？', null, ['看答案']], [null, null, 'it made me happy', []]]);
+      eq([hinted.hintButtons, hinted.starred], [1, true]);
+      eq(hinted.rules, [true, false, true]);
+    });
+    const wideHint = await horiz(page);
+    await page.click('#msgs button:has-text("看答案")');
+    await until(page, () => { const d = window.__store.get('data/users/u_test/chat'); const me = d && d.turns.filter(t => t.r === 'm').pop(); return !!(me && me.fx && me.fx[0].open); });
+    await until(page, () => document.querySelector('#sr-live').textContent.includes('答案：I had a big lunch'));
+    const opened = await T(() => {
+      const row = [...document.querySelectorAll('#msgs .msg.m')].pop().querySelector('.fix-row');
+      const a = document.activeElement;
+      return { better: row.querySelector('.fix-better') && row.querySelector('.fix-better').textContent, hint: !!row.querySelector('.fix-hint'), focusInRow: !!(a && a.closest('.fix-row') === row && a.tagName === 'BUTTON') };
+    });
+    check('按「看答案」：顯示更好的說法（記在對話裡、唸給螢幕閱讀器），焦點移到那一列的按鈕；手機上沒有左右捲動', () => eq([opened, wideHint], [{ better: 'I had a big lunch', hint: false, focusInRow: true }, false]));
+    await page.reload();
+    await page.waitForFunction(() => window.__kaikouTest && window.__kaikouTest.S && window.__kaikouTest.S.ready && window.__kaikouTest.S.started, null, { timeout: 10000 });
+    await page.click('#t-coach');
+    const after = await T(() => {
+      const row = [...document.querySelectorAll('#msgs .msg.m')].pop().querySelector('.fix-row');
+      return { better: row.querySelector('.fix-better') && row.querySelector('.fix-better').textContent, chip: row.querySelector('.err').textContent, fx: window.__kaikouTest.S.chat.turns.filter(t => t.r === 'm').pop().fx[0] };
+    });
+    check('重新打開頁面後，看過的答案還是打開的', () => eq(after, { better: 'I had a big lunch', chip: '重要・過去式', fx: { you: 'I eat a big lunch', better: 'I had a big lunch', why: '吃飯常用 have，過去式 had', code: 'A1', hint: '這是已經過去的事，eat 要怎麼改？', open: true } }));
+
+    // Two more sentences, then the review counts the patterns of this chat.
+    for (const s of ['I go to the park', 'I see many people there']) {
+      await page.fill('#msg-input', s);
+      await page.click('#send-btn');
+      await notBusy(page);
+    }
+    await page.click('[data-fk="review"]');
+    await until(page, () => !!window.__kaikouTest.S.review && !window.__kaikouTest.S.reviewing, null, 10000);
+    await shot(page, '10-review-phone.png', true);
+    const wideReview = await horiz(page);
+    const rv = await T(() => {
+      const S = window.__kaikouTest.S, r = S.review;
+      return {
+        errs: r.errs, codes: r.patterns.map(p => p.code || ''),
+        chips: [...document.querySelectorAll('#coach-dyn .pat')].map(p => [p.querySelector('.err') && p.querySelector('.err').textContent, p.querySelector('.pat-head .help') && p.querySelector('.pat-head .help').textContent, !!p.querySelector('[data-fk^="pat-practice-"]')]),
+      };
+    });
+    await until(page, id => { const d = window.__store.get('data/users/u_test/sessions-' + window.__mockToday.slice(0, 7)); return !!(d && d.map && d.map[id]); }, await T(() => window.__kaikouTest.S.review.id));
+    const stored = await T(() => { const S = window.__kaikouTest.S; return window.__store.get('data/users/u_test/sessions-' + S.review.date.slice(0, 7)).map[S.review.id].errs; });
+    check('複習：記下這次每個句型被改了幾次，要注意的地方標出句型和次數，可以直接用中翻英練', () => {
+      eq(rv.errs, { A1: 3 });
+      eq(stored, { A1: 3 });
+      eq(rv.codes, ['A1', 'A8', '']);
+      eq(rv.chips, [['重要・過去式', '這次改了 3 次', true], ['重要・單複數', null, true], [null, null, false]]);
+      eq(wideReview, false);
+    });
+
+    // 用中翻英練這個: the coach gives a Chinese sentence to say in English.
+    await page.click('[data-fk="pat-practice-0"]');
+    await notBusy(page);
+    await until(page, () => !!document.querySelector('#msgs .cue'));
+    await shot(page, '10-cue-phone.png');
+    await until(page, () => !window.__kaikouTest.Store.busyDoc('chat')); // the chat is written once its changes pause
+    const cue = await T(() => {
+      const S = window.__kaikouTest.S, c = S.chat;
+      const sent = window.__calls.filter(x => x.kind === 'sample' && x.roles !== 's');
+      return {
+        pattern: c.pattern, label: document.querySelector('.chat-title b').textContent, note: c.turns[0].zhNote,
+        cue: [...document.querySelectorAll('#msgs .cue')].map(n => [n.querySelector('.cue-k').textContent, n.querySelector('.cue-zh').textContent]),
+        roles: sent[sent.length - 1].roles, rules: [window.__lastRules.includes('SPEAKING DRILL on one pattern: A1, past tense'), window.__lastRules.includes('no Chinese except on "say:" lines')],
+        mic: document.querySelector('#mic-lang').textContent, placeholder: document.querySelector('#msg-input').placeholder === (window.__kaikouTest.Mic.ok && !window.__kaikouTest.Mic.blocked ? '按麥克風用英文說出上面那句，或打出來…' : '用英文打出上面那句…'),
+        stored: window.__store.get('data/users/u_test/chat').pattern, hintBtn: document.querySelector('#hint-btn').hidden,
+      };
+    });
+    check('從複習按「用中翻英練這個」：教練出一句中文請你用英文說，聽寫改成英文', () => eq(cue, {
+      pattern: 'A1', label: '中翻英口說・練「過去式」', note: '這次練「過去式」：教練每次出一句中文，你用英文說出來（打字或按麥克風），教練會給精修版，也會幫你改。',
+      cue: [['用英文說說看', '我昨天把樣品寄給實驗室了。']], roles: 'uu', rules: [true, true], mic: 'EN', placeholder: true, stored: 'A1', hintBtn: true,
+    }));
+    await page.fill('#msg-input', 'I send the samples to lab yesterday');
+    await page.click('#send-btn');
+    await notBusy(page);
+    await page.locator('#msgs .msg.c').last().locator('.opt button[aria-label="收藏"]').click();
+    await until(page, () => window.__kaikouTest.S.phrases.some(p => p.en === 'I sent the samples to the lab yesterday.'));
+    const tried = await T(() => {
+      const S = window.__kaikouTest.S, c = S.chat, last = c.turns[c.turns.length - 1], me = c.turns.filter(t => t.r === 'm').pop();
+      const box = document.querySelectorAll('#msgs .msg.c');
+      const node = box[box.length - 1];
+      return {
+        fx: me.fx.map(f => [f.better, f.code || '', !!f.hint]),
+        opt: [...node.querySelectorAll('.opt')].map(o => [o.querySelector('.opt-k').textContent, o.querySelector('.opt-en').textContent]),
+        cue: [...node.querySelectorAll('.cue-zh')].map(n => n.textContent),
+        speak: window.__kaikouTest.parseCoach(last.raw).speakText,
+        saved: S.phrases.filter(p => p.en === 'I sent the samples to the lab yesterday.').map(p => [p.zh, p.src]),
+        chips: [...[...document.querySelectorAll('#msgs .msg.m')].pop().querySelectorAll('.err')].map(n => n.textContent),
+      };
+    });
+    check('練句型：說完給精修版和下一句；更正最多 2 個；收藏的精修版帶著那句中文', () => eq(tried, {
+      fx: [['I sent the samples', 'A1', true], ['to the lab', 'B2', false]],
+      opt: [['精修版', 'I sent the samples to the lab yesterday.']], cue: ['我們上個月推出了新的精華液。'],
+      speak: 'Good, the meaning is clear.\nI sent the samples to the lab yesterday.',
+      saved: [['我昨天把樣品寄給實驗室了。', 'zh']], chips: ['重要・過去式', '常見・冠詞'],
+    }));
+    // A sentence from 說不出口的句子 does not go into a pattern practice that has started.
+    await page.click('#t-today');
+    await page.click('[data-fk="ask-i1"]');
+    await until(page, () => document.querySelector('#toast').textContent === '先結束目前的對話，再把句子帶過來');
+    const kept = await T(() => ({ pattern: window.__kaikouTest.S.chat.pattern, inbox: window.__kaikouTest.S.inbox.map(i => i.id), me: window.__kaikouTest.S.chat.turns.filter(t => t.r === 'm').length }));
+    check('練句型時，「說不出口的句子」不會塞進這次練習', () => eq(kept, { pattern: 'A1', inbox: ['i1', 'i2'], me: 1 }));
+    // 冠詞 was corrected once in the reviews and once in this practice: now it is hinted at too (the coach gave no hint
+    // for it, so the page's own is used).
+    await page.fill('#msg-input', 'We launch new serum last month');
+    await page.click('#send-btn');
+    await notBusy(page);
+    const second = await T(() => {
+      const me = window.__kaikouTest.S.chat.turns.filter(t => t.r === 'm').pop();
+      const rows = [...document.querySelectorAll('#msgs .msg.m')].pop().querySelectorAll('.fix-row');
+      return { fx: me.fx.map(f => [f.code, f.hint]), hints: [...rows].map(r => r.querySelector('.fix-hint') && r.querySelector('.fix-hint').textContent) };
+    });
+    check('這次練習裡又改到同一個句型時也先給提示；教練沒給提示時用句型本身的', () => eq(second, {
+      fx: [['A1', '這是昨天的事，send 要怎麼改？'], ['B2', '這個名詞前面要不要加 a、an 或 the？']],
+      hints: ['小提示：這是昨天的事，send 要怎麼改？', '小提示：這個名詞前面要不要加 a、an 或 the？'],
+    }));
+
+    // A practice whose opening fails offers 請教練開場; the menu then counts this review too.
+    await pressTwice(page, '[data-fk="discard"]');
+    await until(page, () => !window.__kaikouTest.S.chat);
+    await page.click('[data-fk="mode-zh"]');
+    const again = await T(() => [...document.querySelectorAll('.chips[aria-label="練一個句型"] .chip')].slice(0, 3).map(b => [b.textContent, b.getAttribute('aria-pressed')]));
+    await page.click('[data-fk="pat-pick-B2"]');
+    await T(() => { window.__mockCfg.sampleCode = 'overloaded'; });
+    await page.click('[data-fk="start"]');
+    await until(page, () => !!document.querySelector('[data-fk="retry"]'));
+    const failed = await T(() => ({ note: document.querySelector('#coach-note').textContent, retry: document.querySelector('[data-fk="retry"]').textContent, label: document.querySelector('.chat-title b').textContent }));
+    await T(() => { window.__mockCfg.sampleCode = ''; });
+    await page.click('[data-fk="retry"]');
+    await notBusy(page);
+    await until(page, () => !!document.querySelector('#msgs .cue'));
+    const retried = await T(() => ({ cue: document.querySelector('#msgs .cue-zh').textContent, rules: window.__lastRules.includes('SPEAKING DRILL on one pattern: B2, articles') }));
+    check('回到選單：剛才的複習也算進次數，選過的句型還選著；開場失敗時可以請教練開場', () => {
+      eq(again, [['不指定', 'false'], ['過去式5 次', 'true'], ['冠詞1 次', 'false']]);
+      assert.ok(failed.note.startsWith('Claude 現在太忙了'), failed.note);
+      eq([failed.retry, failed.label], ['請教練開場', '中翻英口說・練「冠詞」']);
+      eq(retried, { cue: '我昨天把樣品寄給實驗室了。', rules: true });
+    });
+    // The 紀錄 tab shows the patterns of each review.
+    await page.click('#t-log');
+    await until(page, () => document.querySelectorAll('#log-dyn .sess').length > 0);
+    const log = await T(() => [...document.querySelectorAll('#log-dyn .sess .err')].map(n => n.textContent));
+    check('紀錄頁的對話複習也標出句型', () => eq(log, ['重要・過去式', '重要・單複數']));
+
+    // 收藏 → 說英文的常見錯誤: every pattern with an example; the ones corrected lately say how often; practise one from there.
+    await page.click('#t-saved');
+    await page.click('[data-fk="err-group-A"]');
+    await shot(page, '10-errs-phone.png', true);
+    const list = await T(() => {
+      const groups = [...document.querySelectorAll('#errs .err-group')];
+      const item = name => [...document.querySelectorAll('#errs .err-item')].find(n => n.querySelector('.err-name b').textContent === name);
+      const a1 = item('過去式'), a5 = item('回答 yes／no');
+      return {
+        sums: groups.map(g => g.querySelector('summary').textContent), open: groups.map(g => g.open), items: document.querySelectorAll('#errs .err-item').length,
+        a1: [a1.querySelector('.tag').textContent, a1.querySelector('.fix-you').textContent, a1.querySelector('.fix-better').textContent, !!a1.querySelector('.err-q')],
+        a5: [a5.querySelector('.err-q').textContent, a5.querySelector('.fix-you').textContent, a5.querySelector('.fix-better').textContent, !!a5.querySelector('.tag')],
+        focus: document.activeElement.dataset.fk, wide: document.documentElement.scrollWidth > window.innerWidth,
+      };
+    });
+    check('收藏的「說英文的常見錯誤」：31 種分三級，最近改過的標出次數，問答的例子先列出問句', () => eq(list, {
+      sums: ['重要會影響意思（9 種，最近改過 1 種）', '常見聽得懂但不對（12 種，最近改過 1 種）', '更自然不是錯，是更自然或更有禮貌的說法（10 種）'], open: [true, false, false], items: 31,
+      a1: ['最近 30 天改過 5 次', 'Yesterday I send the samples to the lab.', 'Yesterday I sent the samples to the lab.', false],
+      a5: ["You didn't get my email?", "Yes, I didn't get it.", "No, I didn't.", false], focus: 'err-group-A', wide: false,
+    }));
+    // The practice started above has no sentence of the learner yet: it is replaced. One with a sentence is not.
+    await page.click('[data-fk="err-practice-A6"]');
+    await notBusy(page);
+    const fromList = await T(() => ({ tab: window.__kaikouTest.S.tab, pattern: window.__kaikouTest.S.chat.pattern, label: document.querySelector('.chat-title b').textContent }));
+    await page.fill('#msg-input', 'Why you did not come?');
+    await page.click('#send-btn');
+    await notBusy(page);
+    await page.click('#t-saved');
+    const stillOpen = await T(() => [...document.querySelectorAll('#errs .err-group')].map(g => g.open));
+    await page.click('[data-fk="err-practice-A7"]');
+    await until(page, () => document.querySelector('#toast').textContent === '先結束目前的對話，再開始練這個句型');
+    const guarded = await T(() => ({ tab: window.__kaikouTest.S.tab, pattern: window.__kaikouTest.S.chat.pattern, me: window.__kaikouTest.S.chat.turns.filter(t => t.r === 'm').length }));
+    // A pronunciation lesson is shown alone, as before.
+    await page.click('#t-saved');
+    await page.click('#pron .lesson');
+    const inLesson = await T(() => [document.querySelector('#errs').hidden, document.querySelector('#starters').hidden]);
+    await page.click('[data-fk="pron-back"]');
+    const afterLesson = await T(() => document.querySelector('#errs').hidden);
+    check('發音課打開時，常見錯誤清單和救急包一起收起來', () => eq([inLesson, afterLesson], [[true, true], false]));
+    check('從清單用中翻英練：換掉還沒開口的練習；已經說過話的對話不會被換掉；展開的分組記得', () => {
+      eq(fromList, { tab: 'coach', pattern: 'A6', label: '中翻英口說・練「問句的語序」' });
+      eq(stillOpen, [true, false, false]);
+      eq(guarded, { tab: 'coach', pattern: 'A6', me: 1 });
+    });
+    await ctx.close();
   }
 
   srv.close();
