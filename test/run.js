@@ -3162,6 +3162,9 @@ function serve(root) {
         same: c("I'll get back to you on that.", 'I will get back to you on that'),
         miss: c('Could you speak a bit more slowly?', 'could you speak more slowly'),
         nums: c('I have two kids.', 'I have 2 kids'),
+        // British and American spellings of the same word; words that only look alike stay apart.
+        spell: [c('Could I ask you a favour?', 'could I ask you a favor'), c('We organised the travelling programme.', 'we organized the traveling program'),
+          c('How would you prioritize this?', 'how would you prioritise this'), c('I practise every day.', 'I practice every day'), X.sayTokens('our hour four your tour realism finalist promise')],
         // Numbers said in words are one number, as a recogniser writes them; a list of digits stays a list.
         more: [c("I'm twenty-five.", "I'm 25"), c('It costs two hundred and fifty dollars.', 'it costs 250 dollars'), c('It was two thousand twenty six.', 'it was 2026'),
           c('Okay, see you then.', 'ok see you then'), c('Press one two three.', 'press 1 2 3'), c('We sold 1,000 cups.', 'we sold one thousand cups'), c('I am twenty five.', 'I am 20')],
@@ -3174,11 +3177,12 @@ function serve(root) {
         stats: (() => { localStorage.setItem('kaikou:pron', '{"th":{"said":"01x1","quiz":[7,6],"t":"bad"},"zz":{"said":"1"},"v":5}'); const s = X.pronStats(); localStorage.removeItem('kaikou:pron'); return s; })(),
       };
     });
-    check('唸一次的比對：不分大小寫、標點，縮寫和數字寫法不同也算對', () => {
+    check('唸一次的比對：不分大小寫、標點，縮寫、數字和英式美式拼法不同也算對', () => {
       eq(pure.tokens, ['i', 'am', 'sure', 'it', 'is', '2', 'oclock', 'can', 'not', 'wait', 'let', 'us', 'go']);
       eq(pure.same, [7, 7, []]);
       eq(pure.miss, [5, 7, ['a', 'bit']]);
       eq(pure.nums, [4, 4, []]);
+      eq(pure.spell, [[6, 6, []], [5, 5, []], [5, 5, []], [4, 4, []], ['our', 'hour', '4', 'your', 'tour', 'realism', 'finalist', 'promise']]);
     });
     check('唸一次的比對：用字唸的數字（twenty-five、two hundred and fifty、a hundred、年份）和辨識寫的數字算一樣，okay = ok，算的是句子裡的字數', () => {
       eq(pure.more, [[2, 2, []], [7, 7, []], [6, 6, []], [4, 4, []], [4, 4, []], [4, 4, []], [2, 4, ['twenty', 'five.']]]);
@@ -4728,7 +4732,7 @@ function serve(root) {
       const T = window.__kaikouTest;
       const cjk = s => /[㐀-鿿]/.test(s);
       const scenes = T.SCENES.filter(s => s.k !== 'custom');
-      const badScene = scenes.filter(s => !['work', 'life'].includes(s.g) || !/^(A2|B1|B2)(–(B1|B2))?$/.test(s.lv) || ![s.zh, s.dz, s.goal, s.aiZh].every(cjk)
+      const badScene = scenes.filter(s => !['client', 'work', 'life'].includes(s.g) || !/^(A2|B1|B2)(–(B1|B2))?$/.test(s.lv) || ![s.zh, s.dz, s.goal, s.aiZh].every(cjk)
         || ![s.en, s.ai, s.me, s.task].every(v => typeof v === 'string' && v.length > 3 && !cjk(v)) || s.say.length !== 5
         || s.say.some(([en, zh]) => !/[.?!]$/.test(en) || /…|___/.test(en) || cjk(en) || !cjk(zh))).map(s => s.k);
       const topics = T.F432_TOPICS.filter(x => x.k !== 'custom');
@@ -4737,18 +4741,22 @@ function serve(root) {
       const role = k => ({ mode: 'role', level: 'B1', sceneK: k, sceneEn: 'A scene.', aiRole: 'someone', meRole: 'themself', turns: [{ r: 'm', t: 'Hi there, I am fine', at: 1 }] });
       const norm = d => T.normChat(Object.assign({ active: true, turns: [] }, d)).sceneK;
       return {
-        counts: [scenes.length, scenes.filter(s => s.g === 'work').length, scenes.filter(s => s.g === 'life').length, new Set(T.SCENES.map(s => s.k)).size === T.SCENES.length, T.SCENES[T.SCENES.length - 1].k],
+        counts: [scenes.length, ...['client', 'work', 'life'].map(g => scenes.filter(s => s.g === g).length), new Set(T.SCENES.map(s => s.k)).size === T.SCENES.length, T.SCENES[T.SCENES.length - 1].k],
+        // In a client scene the learner is the forward deployed engineer (the new job).
+        fde: scenes.filter(s => s.g === 'client' && !/^the forward deployed engineer\b/.test(s.me)).map(s => s.k),
         badScene, badTopic, badPack,
         topics: [topics.length, new Set(T.F432_TOPICS.map(x => x.k)).size === T.F432_TOPICS.length, T.F432_TOPICS[T.F432_TOPICS.length - 1].k],
         packs: [T.STARTERS.length, T.MEETING.length],
         rules: [T.rulesFor(role('standup')).includes("The learner's task: Report briefly what they did yesterday"), T.rulesFor(role('')).includes("The learner's task"), T.rulesFor(role('custom')).includes("The learner's task")],
-        review: [T.reviewPrompt(role('claim')).includes("The learner's task in this role-play: Disagree politely"), T.reviewPrompt(role('')).includes("learner's task")],
-        norm: [norm({ mode: 'role', sceneK: 'vendor' }), norm({ mode: 'free', sceneK: 'vendor' }), norm({ mode: 'role', sceneK: 'custom' }), norm({ mode: 'role', sceneK: 'nope' }), norm({ mode: 'role' })],
+        review: [T.reviewPrompt(role('overclaim')).includes("The learner's task in this role-play: Disagree politely"), T.reviewPrompt(role('')).includes("learner's task")],
+        // 'vendor' was a scene before the FDE scenes replaced it: a chat saved with it goes on without a task.
+        norm: [norm({ mode: 'role', sceneK: 'provider' }), norm({ mode: 'free', sceneK: 'provider' }), norm({ mode: 'role', sceneK: 'custom' }), norm({ mode: 'role', sceneK: 'nope' }), norm({ mode: 'role' }), norm({ mode: 'role', sceneK: 'vendor' })],
         sceneOf: [!!T.sceneOf('news'), T.sceneOf('custom'), T.sceneOf('')],
       };
     });
-    check('情境、話題與救急包的內容：21 個情境（工作 13、生活 8）都有程度、任務和 5 句完整的說法；19 個話題都有三個要點；救急包 16 句、會議救急包 11 句', () => {
-      eq(pure.counts, [21, 13, 8, true, 'custom']);
+    check('情境、話題與救急包的內容：26 個情境（客戶專案 9、工作 9、生活 8）都有程度、任務和 5 句完整的說法，客戶專案裡你是 FDE；19 個話題都有三個要點；救急包 16 句、會議救急包 11 句', () => {
+      eq(pure.counts, [26, 9, 9, 8, true, 'custom']);
+      eq(pure.fde, []);
       eq([pure.badScene, pure.badTopic, pure.badPack], [[], [], []]);
       eq(pure.topics, [19, true, 'custom']);
       eq(pure.packs, [16, 11]);
@@ -4756,7 +4764,7 @@ function serve(root) {
     check('角色扮演的任務寫進教練的規則和複習的要求；存下的對話只認得角色扮演裡真的有的情境', () => {
       eq(pure.rules, [true, false, false]);
       eq(pure.review, [true, false]);
-      eq(pure.norm, ['vendor', '', '', '', '']);
+      eq(pure.norm, ['provider', '', '', '', '', '']);
       eq(pure.sceneOf, [true, null, null]);
     });
     await ctx.close();
@@ -4769,21 +4777,32 @@ function serve(root) {
     await page.click('#t-coach');
     await page.click('[data-fk="mode-role"]');
     const groups = await T(() => [...document.querySelectorAll('#coach-dyn .chips')].map(g => [g.getAttribute('aria-label'), g.querySelectorAll('.chip').length]));
+    const names = await T(() => [...document.querySelectorAll('#coach-dyn .chip-group-name')].map(n => n.textContent));
+    await page.click('[data-fk="chip-discovery"]');
+    const client = await T(() => { const c = document.querySelector('.scene-card'); return [c.querySelector('.scene-top').textContent, c.querySelector('.help').textContent.endsWith('教練扮演客戶的售後服務主管。'), c.querySelector('.phrase-en').textContent]; });
     await page.click('[data-fk="chip-standup"]');
     const card = await T(() => {
       const c = document.querySelector('.scene-card');
       return c && { top: c.querySelector('.scene-top').textContent, goal: c.querySelectorAll('p')[1].textContent, phrases: [...c.querySelectorAll('.phrase-en')].map(n => n.textContent).length, first: c.querySelector('.phrase-zh').textContent, stars: c.querySelectorAll('[aria-label="收藏"]').length };
     });
     await page.click('.scene-card [data-fk^="star:sc:"]');
-    await until(page, () => window.__kaikouTest.S.phrases.some(p => p.en === 'Yesterday I wrapped up the user survey.'));
-    const starred = await T(() => window.__kaikouTest.S.phrases.filter(p => p.en === 'Yesterday I wrapped up the user survey.').map(p => [p.zh, p.note, p.src]));
+    await until(page, () => window.__kaikouTest.S.phrases.some(p => p.en === 'Yesterday I finished the first round of testing.'));
+    const starred = await T(() => window.__kaikouTest.S.phrases.filter(p => p.en === 'Yesterday I finished the first round of testing.').map(p => [p.zh, p.note, p.src]));
     await page.click('[data-fk="chip-custom"]');
-    const custom = await T(() => [!!document.querySelector('.scene-card'), !!document.querySelector('#custom-input')]);
-    check('角色扮演的選單：情境分成工作和生活；選了情境會看到任務、建議程度和用得上的說法，可以收藏；自訂情境沒有', () => {
-      eq(groups, [['什麼情境・工作', 13], ['什麼情境・生活', 8], [null, 1]]);
-      eq(card, { top: '每日站會建議程度 A2–B1', goal: '你的任務：用三句話報告昨天做了什麼、今天要做什麼、卡在哪裡，再回答一個追問。', phrases: 5, first: '昨天我把使用者問卷收尾了。', stars: 5 });
-      eq(starred, [['昨天我把使用者問卷收尾了。', '每日站會', 'scene']]);
-      eq(custom, [false, true]);
+    const helpOf = () => { const i = document.querySelector('#custom-input'), h = document.querySelector('#custom-help'); return [!!document.querySelector('.scene-card'), i.placeholder, i.getAttribute('aria-describedby'), h && h.textContent]; };
+    const custom = await T(helpOf);
+    await page.click('[data-fk="mode-free"]');
+    await page.click('[data-fk="chip-custom"]');
+    const customFree = await T(helpOf);
+    await page.click('[data-fk="mode-role"]');
+    check('角色扮演的選單：情境分成客戶專案、工作和生活；選了情境會看到任務、建議程度和用得上的說法，可以收藏；自訂情境沒有，但提醒可以拿來做會前演練', () => {
+      eq(groups, [['什麼情境・客戶專案', 9], ['什麼情境・工作', 9], ['什麼情境・生活', 8], [null, 1]]);
+      eq(names, ['客戶專案', '工作', '生活']);
+      eq(client, ['客戶需求訪談建議程度 B1–B2', true, 'Could you walk me through how your team finds answers today?']);
+      eq(card, { top: '每日站會建議程度 A2–B1', goal: '你的任務：用三句話報告昨天做了什麼、今天要做什麼、卡在哪裡，再回答一個追問。', phrases: 5, first: '昨天我完成了第一輪測試。', stars: 5 });
+      eq(starred, [['昨天我完成了第一輪測試。', '每日站會', 'scene']]);
+      eq(custom, [false, '例如：明天要跟客戶報告測試結果', 'custom-help', '重要的英文會議前，可以把會議的情況寫在這裡先演練一次。用真實的內容時，先拿掉客戶名稱和數字。']);
+      eq(customFree, [false, '例如：最近在追的劇', null, null]);
     });
     await page.click('[data-fk="chip-standup"]');
     await page.click('[data-fk="start"]');

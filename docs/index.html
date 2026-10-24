@@ -774,6 +774,60 @@ const TOPICS = [
   { k: 'custom', zh: '自訂話題', en: '' },
 ];
 const SCENES = [
+  { k: 'discovery', g: 'client', lv: 'B1–B2', zh: '客戶需求訪談', dz: '第一次跟新客戶開視訊會議：一家工業設備公司想用 AI 幫客服人員和維修技師從手冊和過去的維修紀錄裡找答案，但需求還很模糊。',
+    en: 'A first video call with a new client, an industrial equipment maker. They want an AI assistant that helps their support agents and field technicians find answers in repair manuals and past service tickets, but the request is still vague. The client is keen but only gives details when asked.',
+    ai: "the client's head of service, who is keen but vague", aiZh: '客戶的售後服務主管', me: 'the forward deployed engineer leading the project',
+    goal: '問清楚要解決什麼問題、誰會用、有哪些資料、怎樣算成功、有什麼限制，最後總結重點，一起確認下一步。',
+    task: 'Run a discovery conversation: ask about the problem, who will use the assistant, what data there is, how success will be measured and any constraints, then sum up and agree on next steps.',
+    say: [['Could you walk me through how your team finds answers today?', '可以跟我說明一下，你們的團隊現在是怎麼找答案的嗎？'], ['What data do you have that we could use?', '你們有哪些資料是我們可以用的？'], ['What would success look like in three months?', '三個月後，怎樣算成功？'], ['Are there any constraints we should know about, like security or budget?', '有沒有什麼限制是我們該知道的，例如資安或預算？'], ["Let me sum up what I've heard, and please correct me if I'm wrong.", '我整理一下我聽到的，有不對的地方請指正。']] },
+  { k: 'explain', g: 'client', lv: 'B2', zh: '向非技術主管解釋', dz: '客戶的財務長不懂技術，想知道 AI 助理怎麼用公司的文件回答問題、資料安不安全；聽到術語就會打斷你。',
+    en: "A meeting with the client's finance director, who is not technical. They want to know how the new AI assistant uses the company's internal documents to answer questions, and whether the company's data is safe. They stop the learner whenever something sounds like jargon.",
+    ai: "the client's finance director, who is not technical", aiZh: '不懂技術的客戶財務長', me: 'the forward deployed engineer',
+    goal: '用白話說明它怎麼從文件裡找答案、資料會怎麼處理；對方聽不懂就換個說法，最後確認對方聽懂了。',
+    task: "Explain in plain words how the assistant finds answers in the company's documents and what happens to their data, rephrase when the director does not follow, and check they understood.",
+    say: [['In simple terms, it searches your documents first, then writes the answer.', '簡單來說，它會先搜尋你們的文件，再寫出答案。'], ['Think of it as a new employee with a really good search tool.', '你可以把它想成一個有超好用搜尋工具的新員工。'], ["Under our contract, your data isn't used to train the model.", '依照合約，你們的資料不會被拿去訓練模型。'], ['Let me put it another way.', '我換個方式說。'], ['Does that make sense so far?', '到這裡都清楚嗎？']] },
+  { k: 'demo', g: 'client', lv: 'B1–B2', zh: '展示方案與問答', dz: '視訊會議：向客戶的售後服務主管和團隊展示試行版的 AI 助理。大家會提問，其中有一題你當場答不出來。',
+    en: "A video call where the learner demos the pilot version of the AI assistant, which answers service questions using the client's manuals and past tickets, to the client's head of service and their team. The learner shares their screen and describes what it shows. The team asks practical questions, including one the learner cannot answer on the spot, such as whether it can read handwritten notes in old tickets.",
+    ai: "the client's head of service, asking questions for the team", aiZh: '客戶的售後服務主管', me: 'the forward deployed engineer giving the demo',
+    goal: '開場說明要展示什麼，邊操作邊說明一個實際的例子，回答問題；答不出來的就說會再回覆，最後問大家還有沒有問題。',
+    task: 'Give the demo: say what they will show, walk through one real example while describing the screen, answer questions, promise a follow-up for the one they cannot answer, and close by asking for more questions.',
+    say: [["Today I'll show you how it handles a real question from last week.", '今天我會示範它怎麼處理上週的一個真實問題。'], ['As you can see, it shows where each answer comes from.', '你們可以看到，它會顯示每個答案的出處。'], ["If it can't find the answer, it says so and passes the question to a person.", '如果找不到答案，它會直接說找不到，並把問題轉給真人。'], ['Let me check and get back to you by Friday.', '我確認一下，週五前回覆你。'], ['Before we wrap up, are there any other questions?', '結束之前，還有其他問題嗎？']] },
+  { k: 'scope', g: 'client', lv: 'B2', zh: '客戶要加需求', dz: '離上線只剩兩週，客戶的售後服務主管想在試行版再加兩個功能：技師用的語音輸入，和給主管看的每週報表。',
+    en: "Two weeks before go-live, the client's head of service asks to add two new features to the pilot: voice input for technicians and a weekly report for managers. They push for both: technicians often have their hands full, and their boss wants the report. The team only has time to finish what was already agreed.",
+    ai: "the client's head of service", aiZh: '客戶的售後服務主管', me: 'the forward deployed engineer',
+    goal: '先了解為什麼需要，說明現在加會怎麼影響上線日期，提出選項（例如第二階段再做），最後一起做決定。',
+    task: 'Handle the change request: ask why the features matter, explain how adding them now would affect the go-live date, offer options such as moving them to phase two, and agree on a decision.',
+    say: [["Thanks for raising this. Can I ask what's driving it?", '謝謝你提出來。可以問一下背後的原因嗎？'], ['If we add both now, the go-live date will slip by about three weeks.', '如果現在兩個都加，上線日期會延後大約三週。'], ['What matters more to you, the date or the features?', '對你們來說，日期和功能哪個比較重要？'], ["That's outside the scope of this pilot, but we can plan it for phase two.", '這不在這次試行的範圍內，不過我們可以排進第二階段。'], ["I'll send you a short summary of what we decided.", '我會把我們的決定整理一下寄給你。']] },
+  { k: 'golive', g: 'client', lv: 'B2', zh: '上線延期', dz: '跟客戶的專案負責人開視訊會議：正式環境的維修紀錄還沒開放存取，測試進度落後，上線要晚兩週。對方還不知道，而且已經跟老闆報告過日期了。',
+    en: "A video call with the client's project sponsor: the go-live will be two weeks late because access to the past service tickets in production still has not been approved, so testing is behind. The manuals are ready. The sponsor does not know about the delay yet and has already promised the date to their own boss.",
+    ai: "the client's project sponsor, who has already promised the date to their boss", aiZh: '客戶的專案負責人', me: 'the forward deployed engineer',
+    goal: '說出壞消息，說明原因但不怪任何人，承認對對方的影響，提出兩個選項，並約好下次更新的時間。',
+    task: 'Break the bad news: explain the reason without blaming anyone, acknowledge the impact, offer two options and agree when they will give the next update.',
+    say: [["I'm afraid I have some bad news about the go-live date.", '上線日期這邊，恐怕有個壞消息。'], ["We're still waiting for access to the production data.", '我們還在等正式環境資料的存取權限。'], ['I know this puts you in a difficult position.', '我知道這讓你很為難。'], ['We could start with the manuals only, or move the launch back two weeks.', '我們可以先只用手冊上線，或是整個延後兩週。'], ["I'll send you an update by Friday.", '我會在週五前給你最新進度。']] },
+  { k: 'training', g: 'client', lv: 'B1', zh: '教客戶團隊使用', dz: '線上教育訓練：教客戶的客服人員使用新的 AI 助理。有一位資深客服習慣舊方法，對新工具還不太買單。',
+    en: "An online training session for the client's support agents, who will start using the new AI assistant next week. The learner explains how to use it step by step. One senior agent is used to the old way of doing things and is not convinced yet.",
+    ai: 'a senior support agent who is used to the old way', aiZh: '習慣舊方法的資深客服', me: 'the forward deployed engineer running the training',
+    goal: '分步驟說明怎麼用，請對方當場試一次，確認他們聽懂，回答一個疑慮，最後說卡住時找誰。',
+    task: 'Teach the tool: explain how to use it in a few clear steps, ask the agent to try it, check they understood, answer one concern and say where to get help.',
+    say: [["First, type the customer's question. Then check the sources it shows.", '首先輸入客戶的問題，再看一下它列出的出處。'], ["If an answer looks wrong, click 'Report' so we can fix it.", '如果答案看起來不對，就按「回報」，我們才能修正。'], ['Could you try it now with a real question?', '可以現在用一個真實的問題試試看嗎？'], ['Fair point. You still make the final call on every answer.', '有道理。每個回答最後還是由你決定。'], ['If you get stuck, just send me a message.', '卡住的話，直接傳訊息給我。']] },
+  { k: 'incident', g: 'client', lv: 'B1–B2', zh: '線上排查問題', dz: '客戶的 IT 經理打來：從早上開始，AI 助理一直照舊版的手冊回答。他沒掛斷，在線上看你查原因。',
+    en: "The client's IT manager calls: since this morning, the AI assistant has been answering from old versions of the manuals. They stay on the video call and watch while the learner looks into it. If the learner asks what changed recently, mention that new versions of the manuals were uploaded last night, but leave the diagnosis to them.",
+    ai: "the client's IT manager, who is worried", aiZh: '很擔心的客戶 IT 經理', me: 'the forward deployed engineer',
+    goal: '先穩住對方，問清楚發生什麼事；邊查邊說你在做什麼、可能的原因，最後說好多久後更新進度。',
+    task: 'Handle the live problem calmly and reassure the IT manager: ask what they are seeing, say what they are checking and what the likely cause is as they go, and give a time for the next update.',
+    say: [['Thanks for flagging this. Let me take a look.', '謝謝你通知我，我來看一下。'], ['Could you share an example of a wrong answer?', '可以給我一個答錯的例子嗎？'], ["Right now I'm checking the logs from this morning.", '我現在在看今天早上的系統紀錄。'], ["I think I know what's causing it, but let me double-check.", '我大概知道原因了，不過讓我再確認一下。'], ["I'll give you an update in 30 minutes, even if it's not fixed yet.", '30 分鐘後我會跟你更新進度，就算還沒修好也會說。']] },
+  { k: 'results', g: 'client', lv: 'B1–B2', zh: '報告試行成效', dz: '每月跟客戶的總經理檢討試行成效：AI 自己解決的比例、平均處理時間和客戶滿意度。總經理會一直追問原因。',
+    en: "A monthly review with the client's general manager about the results of the AI assistant pilot: the share of questions it resolves on its own, the average handling time and customer satisfaction. Let the learner present the numbers first. The general manager keeps asking why.",
+    ai: "the client's general manager", aiZh: '客戶的總經理', me: 'the forward deployed engineer presenting the results',
+    goal: '報告三個數字的變化和原因，回答總經理的追問，最後建議下一步。',
+    task: 'Present how three numbers changed and why, answer the follow-up questions, and recommend one next step.',
+    say: [['Let me start with a quick overview of the pilot results.', '我先快速說明一下試行的成果。'], ['The assistant now resolves 38% of questions on its own.', '現在有 38% 的問題，AI 助理自己就能解決。'], ['Average handling time went down from 9 minutes to 6.', '平均處理時間從 9 分鐘降到 6 分鐘。'], ['Satisfaction dipped slightly, mainly because some answers were too long.', '滿意度小幅下滑，主要是因為有些回答太長了。'], ["Based on these results, we'd recommend rolling it out to the second team.", '根據這些結果，我們建議推廣到第二個團隊。']] },
+  { k: 'overclaim', g: 'client', lv: 'B2', zh: '質疑誇大的宣傳', dz: '客戶的業務副總想對外宣傳新的 AI 助理「百分之百正確」，但測試時大約 94% 的答案是對的。',
+    en: "The client's VP of sales wants to tell their customers that the new AI assistant is \"100% accurate\". In testing, it answered about 94% of questions correctly. The VP is excited and does not like being slowed down.",
+    ai: "the client's VP of sales, who is excited", aiZh: '很興奮的客戶業務副總', me: 'the forward deployed engineer',
+    goal: '先肯定對方的方向，再說出你的疑慮，提出另一種說法或下一步。',
+    task: 'Disagree politely: agree with part of the idea, explain the concern about the claim, and suggest another way to say it or a next step.',
+    say: [['I like the idea, but I have one concern.', '我喜歡這個想法，但我有一個疑慮。'], ["Our test results don't quite support that yet.", '我們的測試結果還不太能支持這個說法。'], ['My worry is what happens when it gets one wrong.', '我擔心的是它答錯的時候會怎樣。'], ['What if we say it answers most common questions in seconds?', '如果改成「大部分常見問題幾秒內就能回答」呢？'], ['Could we have someone check warranty answers for the first month?', '第一個月可以先請人檢查保固相關的回答嗎？']] },
   { k: 'smalltalk', g: 'work', lv: 'A2–B1', zh: '和外國同事閒聊', dz: '在茶水間遇到剛從加拿大來的新同事，聊幾句。',
     en: 'Small talk by the coffee machine with a friendly new colleague from Canada.',
     ai: 'the Canadian colleague', aiZh: '加拿大來的新同事', me: 'themself',
@@ -782,58 +836,34 @@ const SCENES = [
     say: [['How was your weekend?', '你週末過得怎麼樣？'], ['Pretty good, thanks. I went hiking with some friends.', '還不錯，謝謝。我跟幾個朋友去爬山。'], ['How are you settling in?', '你適應得還好嗎？'], ['You should try the beef noodles near the office.', '你應該試試公司附近的牛肉麵。'], ["Anyway, I'd better get back to work.", '好啦，我該回去工作了。']] },
   { k: 'standup', g: 'work', lv: 'A2–B1', zh: '每日站會', dz: '視訊站會：每個人說昨天做了什麼、今天要做什麼、有沒有卡住。',
     en: 'A daily stand-up on a video call: each person says what they did yesterday, what they will do today and whether anything is blocking them.',
-    ai: 'the engineering lead running the stand-up', aiZh: '主持站會的工程主管', me: 'the product manager',
+    ai: 'the engineering lead running the stand-up', aiZh: '主持站會的工程主管', me: 'the forward deployed engineer',
     goal: '用三句話報告昨天做了什麼、今天要做什麼、卡在哪裡，再回答一個追問。',
     task: 'Report briefly what they did yesterday, what they will do today and one blocker, then answer a short follow-up question.',
-    say: [['Yesterday I wrapped up the user survey.', '昨天我把使用者問卷收尾了。'], ["Today I'm going to focus on the release notes.", '今天我會專心寫版本說明。'], ["I'm blocked on the API key. I need it from IT.", '我卡在 API 金鑰，需要 IT 給我。'], ['No blockers on my side.', '我這邊沒有卡關。'], ["Let's take that offline.", '這個我們會後再聊。']] },
+    say: [['Yesterday I finished the first round of testing.', '昨天我完成了第一輪測試。'], ["Today I'm going to work on the login bug.", '今天我會處理登入的 bug。'], ["I'm blocked on database access. I'm waiting on the client's IT team.", '我卡在資料庫權限，還在等客戶的 IT 開。'], ['No blockers on my side.', '我這邊沒有卡關。'], ["Let's take that offline.", '這個我們會後再聊。']] },
   { k: 'boss', g: 'work', lv: 'B1', zh: '向主管報告進度', dz: '每週一對一，向主管報告專案的進度、風險和下一步。',
     en: "A weekly one-on-one: the learner updates their manager on a project's progress, risks and next steps.",
     ai: 'the manager', aiZh: '主管', me: 'the team member',
     goal: '報告進度、說出一個風險和你的處理方式，最後確認主管要你做什麼。',
     task: 'Give a clear update: progress, one risk and how they will handle it, then confirm what the manager wants them to do next.',
     say: [["We're on track for the launch next month.", '我們照進度，下個月可以上線。'], ["One risk is that the test data isn't ready yet.", '有一個風險是測試資料還沒準備好。'], ["To handle that, I'll ask the data team for help this week.", '為了處理這件事，我這週會請資料團隊幫忙。'], ['Do you want me to loop in the engineering team?', '要我把工程團隊拉進來嗎？'], ["I'll keep you posted.", '我會隨時跟你更新。']] },
-  { k: 'requirement', g: 'work', lv: 'B1–B2', zh: '需求釐清', dz: '品牌行銷經理想在官網加一個「AI 膚質檢測問卷」，你要先把需求問清楚。',
-    en: 'A meeting with a brand marketing manager who wants to add an AI skin analysis quiz to the website.',
-    ai: 'the brand marketing manager', aiZh: '品牌行銷經理', me: 'the product manager',
-    goal: '問清楚要解決什麼問題、給誰用、怎樣算成功、哪些是必要功能，最後整理共識。',
-    task: 'Ask questions to clarify the problem, the main users, how success will be measured and which features are must-haves, then sum up what was agreed.',
-    say: [['What problem are we trying to solve here?', '我們要解決的是什麼問題？'], ["Who's the main user for this?", '這主要是給誰用的？'], ["How will we know it's working?", '我們怎麼知道它有效？'], ['Is this a must-have or a nice-to-have?', '這是一定要有的，還是有了更好？'], ["Let me sum up what we've agreed.", '我整理一下我們的共識。']] },
-  { k: 'priority', g: 'work', lv: 'B2', zh: '優先順序會議', dz: '有三個功能需求，但這個 sprint 只做得完一個；業務總監很想先做他的。',
-    en: 'A planning meeting: there are three feature requests, but the team only has time for one this sprint. The sales director is pushing hard for their own request.',
-    ai: 'the sales director', aiZh: '業務總監', me: 'the product manager',
-    goal: '比較三個需求的效益和工作量、說明理由、回應反對意見，最後讓大家同意先做哪一個。',
-    task: 'Compare the three requests by impact and effort, explain their reasoning, respond to pushback and reach a decision everyone can accept.',
-    say: [["What's the impact compared with the effort?", '效益跟投入相比怎麼樣？'], ["Given the timeline, I'd suggest we start with the checkout fix.", '考量時程，我建議先修結帳流程。'], ['If we add this, something else has to move.', '如果加這個，就得有別的往後挪。'], ["I see where you're coming from, but the data says otherwise.", '我懂你的考量，不過數據顯示的不一樣。'], ['Can we agree to revisit this next sprint?', '我們可以說好下個 sprint 再討論這個嗎？']] },
-  { k: 'metrics', g: 'work', lv: 'B1–B2', zh: '每月指標檢討', dz: '每月跟總經理檢討官網的數字：轉換率、回購率和客單價。',
-    en: 'A monthly review with the general manager about the online store: conversion rate, repeat purchase rate and average order value.',
-    ai: 'the general manager', aiZh: '總經理', me: 'the product manager presenting the numbers',
-    goal: '報告三個指標的變化和原因，回答總經理的追問，最後提出一個行動。',
-    task: 'Present how three metrics changed and why, answer the follow-up "why" questions, and propose one action.',
-    say: [["First, a quick overview of this month's numbers.", '首先，快速看一下這個月的數字。'], ['Conversion went up from 2.1% to 3.4%.', '轉換率從 2.1% 升到 3.4%。'], ['This is mainly because of the new landing page.', '這主要是因為新的到達頁。'], ["Repeat purchases dipped slightly, so we're looking into it.", '回購率小幅下滑，我們正在了解原因。'], ['The key takeaway is that more new customers are coming in.', '重點是新客人變多了。']] },
-  { k: 'vendor', g: 'work', lv: 'B1–B2', zh: 'AI 客服機器人廠商', dz: '跟賣 AI 客服機器人的廠商開視訊會議：報價不清楚，你們也很在意客戶資料的隱私。',
-    en: "A video call with a vendor selling an AI customer-service chatbot. The quote is unclear, and the learner's company cares a lot about customer data privacy.",
-    ai: "the vendor's sales manager", aiZh: '廠商的業務經理', me: 'the product manager',
-    goal: '問清楚報價包含什麼、多久能上線、客戶資料怎麼處理，試著談價格，最後請對方書面確認。',
-    task: 'Clarify what the quote includes, the lead time and how customer data is handled, try to negotiate the price, and ask for written confirmation.',
-    say: [['Could you walk us through the quote?', '可以帶我們看一下報價嗎？'], ["What's included in this price?", '這個價格包含哪些項目？'], ["Where is our customers' data stored?", '我們客戶的資料存在哪裡？'], ['Is there any flexibility on the price?', '價格有彈性嗎？'], ['Could you put that in writing?', '可以用書面確認嗎？']] },
-  { k: 'supplier', g: 'work', lv: 'B1', zh: '跟供應商確認交期', dz: '視訊會議：供應商的出貨延誤了，你要問清楚原因和新的交期。',
-    en: 'A video call: the learner, a product manager, checks a delivery date with a supplier whose shipment is running late.',
-    ai: "the supplier's account manager", aiZh: '供應商的業務窗口', me: 'the product manager',
+  { k: 'productfb', g: 'work', lv: 'B1–B2', zh: '回報產品團隊', dz: '跟總部的產品團隊開視訊會議：把客戶一再遇到的問題和最想要的功能，帶著證據回報給他們。',
+    en: 'A video call with the product team at headquarters. The learner shares what they are hearing from a client: one problem that keeps coming up and one feature the client really wants, with evidence. The product manager is friendly but busy with many other requests, and asks for data.',
+    ai: 'the product manager at headquarters, who has many other requests', aiZh: '總部的產品經理', me: 'the forward deployed engineer working with the client',
+    goal: '說明一個一再發生的問題和一個功能需求，拿出證據（多常發生、一個例子、對客戶的影響），最後請對方給優先順序和大概的時程。',
+    task: 'Report from the field: describe one recurring problem and one feature request with evidence (how often, an example, the impact on the client), then ask for a priority and a rough timeline.',
+    say: [["I'd like to share what we're hearing from the client.", '我想分享一下客戶那邊的回饋。'], ['This has come up five times in the last two weeks.', '過去兩週，這個已經出現五次了。'], ["Here's a typical example.", '舉一個典型的例子。'], ["It's blocking their rollout to the second team.", '這讓他們沒辦法推廣到第二個團隊。'], ['How would you prioritize this, and is there a rough timeline?', '這個你們會怎麼排優先順序？大概的時程呢？']] },
+  { k: 'provider', g: 'work', lv: 'B2', zh: '跟模型廠商談用量', dz: '跟模型廠商的業務開視訊會議：客戶上線後用量會大增，你要問清楚速率上限（rate limit）、價格，還有資料在哪裡處理和存放。',
+    en: "A video call with the account manager of the company that provides the AI model through an API. The client's go-live will bring much more traffic, peaking at around 300 requests a minute, so the learner needs a higher rate limit, a clear price at that volume and confirmation of where the data is processed and stored. The account manager only offers a discount with a 12-month commitment.",
+    ai: "the model provider's account manager", aiZh: '模型廠商的業務經理', me: 'the forward deployed engineer',
+    goal: '說明預估的用量，問清楚速率上限、價格和資料在哪裡處理和存放，試著談價格，最後請對方書面確認。',
+    task: 'Explain the expected volume, ask about rate limits, pricing and where data is processed and stored, try to negotiate the price, and ask for written confirmation.',
+    say: [["We're expecting about two million requests a month after go-live.", '上線後，我們預計每個月大約有兩百萬次請求。'], ['Can we get a higher rate limit before the launch?', '上線前可以把 rate limit 調高嗎？'], ['Where exactly is the data processed and stored?', '資料實際上是在哪裡處理和存放的？'], ['Is there any flexibility on the price at that volume?', '這個用量的話，價格有彈性嗎？'], ['Could you put that in writing?', '可以用書面確認嗎？']] },
+  { k: 'supplier', g: 'work', lv: 'B1', zh: '跟供應商確認交期', dz: '視訊會議：要裝在客戶機房的 GPU 伺服器延遲出貨，你要問清楚原因和新的交期。',
+    en: "A video call with a hardware supplier: the GPU servers for a client's on-premises deployment are running late, and the learner needs a firm delivery date. The supplier blames a GPU shortage and avoids committing to a date.",
+    ai: "the supplier's account manager", aiZh: '供應商的業務窗口', me: 'the forward deployed engineer',
     goal: '問清楚延誤的原因和新的交期，試著請對方加快，並請對方用 email 確認。',
     task: 'Find out why the shipment is late and the new delivery date, ask whether it can be sped up, and ask for written confirmation.',
-    say: [["I'm calling about our order from last month.", '我打來是想問上個月的訂單。'], ["Could you tell me what's causing the delay?", '可以告訴我延誤的原因嗎？'], ['When can we expect the shipment?', '我們什麼時候可以收到貨？'], ['Is there any way to speed it up?', '有沒有辦法加快？'], ['Could you confirm that by email?', '可以用 email 確認嗎？']] },
-  { k: 'claim', g: 'work', lv: 'B2', zh: '質疑過度的功效宣稱', dz: '資深研發同事想在上市活動說新精華液「3 天修復肌膚」，但臨床數據撐不起這句話。',
-    en: 'A senior R&D colleague wants the launch campaign to say a new serum "repairs skin in 3 days". The clinical data does not clearly support it.',
-    ai: 'the senior R&D colleague', aiZh: '資深研發同事', me: 'the product manager',
-    goal: '先部分同意，再說出你對宣稱的疑慮，並提出另一種說法或下一步。',
-    task: 'Disagree politely: agree in part, explain the concern about the claim, and propose another wording or a next step.',
-    say: [['I like the direction, but I have one concern.', '我喜歡這個方向，但我有一個疑慮。'], ["I could be wrong, but the data doesn't quite support that claim.", '我可能說錯，但數據不太支持這個宣稱。'], ['My worry is the regulatory review.', '我擔心的是法規審查。'], ['What if we say it helps improve skin texture instead?', '如果改成「幫助改善膚質」呢？'], ['Could we run a small patch test first?', '我們可以先做一個小規模的貼膚測試嗎？']] },
-  { k: 'delay', g: 'work', lv: 'B2', zh: '上市延期', dz: '跟海外經銷商開視訊會議：新產品因為包材出問題，要晚三週上市。',
-    en: 'A video call with an overseas distributor: the launch of a new product will be three weeks late because of a packaging problem.',
-    ai: 'the overseas distributor, who is not happy', aiZh: '不太高興的海外經銷商', me: 'the product manager',
-    goal: '道歉、說明原因，提出兩個選項，並約好下次更新的時間。',
-    task: 'Apologise, explain the reason, offer two options and agree when they will give the next update.',
-    say: [["I'm afraid I have some bad news about the launch.", '恐怕我有一個關於上市的壞消息。'], ["We've had a problem with our packaging supplier.", '我們的包材供應商出了問題。'], ["I'm sorry for the trouble this causes.", '很抱歉造成你們的困擾。'], ['We could ship a smaller first batch, or move the launch to May.', '我們可以先出一小批，或把上市改到五月。'], ["I'll update you by Friday.", '我會在週五前跟你更新。']] },
+    say: [["I'm calling about the servers we ordered last month.", '我打來是想問上個月訂的伺服器。'], ["Could you tell me what's causing the delay?", '可以告訴我延誤的原因嗎？'], ['Can you give me a firm delivery date?', '可以給我一個確定的交期嗎？'], ['Is there any way to speed it up?', '有沒有辦法加快？'], ['Could you confirm that by email?', '可以用 email 確認嗎？']] },
   { k: 'feedback', g: 'work', lv: 'B1–B2', zh: '一對一回饋', dz: '一對一會議：主管說你上次的簡報太長，重點不見了。',
     en: 'A one-on-one where the manager gives critical feedback: their last presentation was too long and the main point got lost.',
     ai: 'the manager', aiZh: '主管', me: 'the team member',
@@ -845,7 +875,7 @@ const SCENES = [
     ai: 'another attendee who works in tech', aiZh: '在科技業工作的參加者', me: 'themself',
     goal: '介紹你和你的工作，問對方兩個問題，最後交換聯絡方式。',
     task: 'Introduce themself and their work, ask the other person two questions, and end by exchanging contact details.',
-    say: [['Hi, nice to meet you. I work on AI products at a skincare company.', '嗨，很高興認識你。我在一家保養品公司做 AI 產品。'], ['What brings you here today?', '你今天怎麼會來這裡？'], ['How did you get into that?', '你是怎麼開始做這個的？'], ['It was great talking to you.', '很高興跟你聊天。'], ['Are you on LinkedIn?', '你有用 LinkedIn 嗎？']] },
+    say: [["Hi, nice to meet you. I'm a forward deployed engineer at an AI company.", '嗨，很高興認識你。我在一家 AI 公司當前線部署工程師。'], ['Basically, I help companies get AI working in their day-to-day business.', '簡單說，我幫企業把 AI 真正用在日常的工作上。'], ['What brings you here today?', '你今天怎麼會來這裡？'], ['How did you get into that?', '你是怎麼開始做這個的？'], ['It was great talking to you. Shall we connect on LinkedIn?', '很高興跟你聊天。要不要加個 LinkedIn？']] },
   { k: 'interview', g: 'work', lv: 'B1–B2', zh: '產品經理面試', dz: '應徵國際公司的產品經理職位，面試官請你舉例說明。',
     en: 'A job interview for a product manager role at an international company.',
     ai: 'the interviewer', aiZh: '面試官', me: 'the candidate',
@@ -2266,14 +2296,26 @@ function micErrMsg(err) {
 
 /* ---- the read-aloud check: say a sentence, see which words were recognised ---- */
 const NUM_WORDS = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
-// Words compared without case, punctuation or contractions ("I'm" = "I am"), "okay" = "ok", numbers as digits.
+// British spellings count as the American ones ("favour" = "favor", "organised" = "organized"): a recogniser may write either.
+const US_SPELL = { programme: 'program', programmes: 'programs', catalogue: 'catalog', catalogues: 'catalogs', dialogue: 'dialog', dialogues: 'dialogs',
+  licence: 'license', licences: 'licenses', defence: 'defense', offence: 'offense', grey: 'gray', judgement: 'judgment', ageing: 'aging', tyre: 'tire', tyres: 'tires',
+  centre: 'center', centres: 'centers', centred: 'centered', theatre: 'theater', theatres: 'theaters', metre: 'meter', metres: 'meters', litre: 'liter', litres: 'liters', fibre: 'fiber' };
+function usWord(w) {
+  if (Object.prototype.hasOwnProperty.call(US_SPELL, w)) return US_SPELL[w];
+  return w.replace(/^(favo|colo|neighbo|flavo|humo|behavio|hono|labo|harbo|rumo|savo|endeavo)ur(s|ed|ing|ite|ites|able|hood|ful)?$/, '$1r$2')
+    .replace(/^(organ|real|apolog|recogn|priorit|summar|custom|optim|minim|maxim|emphas|personal|final|util|standard|author|visual|special|categor|critic|memor|modern|normal|stabil)is(e|es|ed|ing|ation|ations|er|ers)$/, '$1iz$2')
+    .replace(/^(anal|paral|catal)ys(e|es|ed|ing)$/, '$1yz$2')
+    .replace(/^practis(e|es|ed|ing)$/, 'practic$1')
+    .replace(/^(travel|cancel|model|label|level|signal|fuel|channel|dial|total|equal|counsel|marvel|quarrel|tunnel)l(ed|ing|er|ers|or|ors)$/, '$1$2');
+}
+// Words compared without case, punctuation or contractions ("I'm" = "I am"), "okay" = "ok", British or American spelling, numbers as digits.
 function sayWords(s) {
   const t = String(s || '').toLowerCase().replace(/[‘’`´]/g, "'")
     .replace(/\bcan't\b/g, 'can not').replace(/\bcannot\b/g, 'can not').replace(/\bwon't\b/g, 'will not').replace(/\bshan't\b/g, 'shall not')
     .replace(/\blet's\b/g, 'let us').replace(/\bain't\b/g, 'is not').replace(/n't\b/g, ' not')
     .replace(/'re\b/g, ' are').replace(/'m\b/g, ' am').replace(/'ll\b/g, ' will').replace(/'ve\b/g, ' have').replace(/'d\b/g, ' would')
     .replace(/\b(it|that|there|here|what|who|where|how|he|she)'s\b/g, '$1 is');
-  return t.replace(/'/g, '').replace(/(\d),(?=\d{3}\b)/g, '$1').replace(/[^a-z0-9\s]+/g, ' ').split(/\s+/).filter(Boolean).map(w => (w === 'okay' ? 'ok' : w));
+  return t.replace(/'/g, '').replace(/(\d),(?=\d{3}\b)/g, '$1').replace(/[^a-z0-9\s]+/g, ' ').split(/\s+/).filter(Boolean).map(w => (w === 'okay' ? 'ok' : usWord(w)));
 }
 // A number said in words becomes one token, as a recogniser writes it ("twenty-five" = "25", "two hundred" = "200",
 // "two thousand twenty six" = "2026"); "one two three" stays three numbers. Items are { w, o: [word indexes] }.
@@ -4227,7 +4269,7 @@ function unavailableView() {
 }
 function startView() {
   const s = S.setup;
-  const modes = [['free', '自由聊天', '想到什麼聊什麼，練習把話接下去。'], ['role', '情境角色扮演', '開會、閒聊、出國，每個情境都有任務和用得上的說法。'], ['zh', '中翻英口說', '打出想說的中文，學 2–3 種英文說法再唸回來；也可以挑一個句型，讓教練出題。']];
+  const modes = [['free', '自由聊天', '想到什麼聊什麼，練習把話接下去。'], ['role', '情境角色扮演', '客戶會議、開會、閒聊、出國，每個情境都有任務和用得上的說法。'], ['zh', '中翻英口說', '打出想說的中文，學 2–3 種英文說法再唸回來；也可以挑一個句型，讓教練出題。']];
   const pickMode = k => { s.mode = k; s.custom = ''; renderCoach(); };
   const parts = [
     el('section', { class: 'card' },
@@ -4247,7 +4289,8 @@ function startView() {
   if (needCustom) {
     opts.append(el('div', { class: 'field' },
       el('label', { class: 'label', for: 'custom-input', text: s.mode === 'free' ? '自訂話題（中英文都可以）' : '自訂情境（中英文都可以）' }),
-      el('input', { id: 'custom-input', class: 'input', maxlength: '160', value: s.custom, 'data-fk': 'custom', placeholder: s.mode === 'free' ? '例如：最近在追的劇' : '例如：跟房東說冷氣壞了', oninput: e => { s.custom = e.target.value; updateStartBtn(); } })));
+      el('input', { id: 'custom-input', class: 'input', maxlength: '160', value: s.custom, 'data-fk': 'custom', placeholder: s.mode === 'free' ? '例如：最近在追的劇' : '例如：明天要跟客戶報告測試結果', 'aria-describedby': s.mode === 'role' ? 'custom-help' : null, oninput: e => { s.custom = e.target.value; updateStartBtn(); } }),
+      s.mode === 'role' ? el('p', { id: 'custom-help', class: 'help', text: '重要的英文會議前，可以把會議的情況寫在這裡先演練一次。用真實的內容時，先拿掉客戶名稱和數字。' }) : null));
   }
   if (s.mode === 'zh') {
     // A pattern to practise: the ones corrected most in the last 30 days first (with how often), then common ones.
@@ -4303,8 +4346,8 @@ function chipGroup(label, list, current, onPick) {
     el('span', { class: 'label', text: label }),
     el('div', { class: 'chips' }, list.map(x => el('button', { type: 'button', class: 'chip', 'aria-pressed': String(x.k === current), 'data-fk': 'chip-' + x.k, onclick: () => onPick(x.k) }, x.zh))));
 }
-// Chips in two groups (工作, 生活; lifeFirst puts 生活 first), with the custom one last on its own.
-const CHIP_GROUPS = [['work', '工作'], ['life', '生活']];
+// Chips in groups (客戶專案, 工作, 生活; lifeFirst puts 生活 first), with the custom one last on its own.
+const CHIP_GROUPS = [['client', '客戶專案'], ['work', '工作'], ['life', '生活']];
 function groupedChips(label, list, current, onPick, lifeFirst) {
   const chip = x => el('button', { type: 'button', class: 'chip', 'aria-pressed': String(x.k === current), 'data-fk': 'chip-' + x.k, onclick: () => onPick(x.k) }, x.zh);
   const own = list.filter(x => x.g === 'custom');
@@ -5310,8 +5353,8 @@ const F432_TOPICS = [
     pts: ['What was the goal?', 'Who was involved?', 'How did you solve a problem together?'], pz: '目標是什麼／有誰參與／怎麼一起解決問題' },
   { k: 'challenge', g: 'work', zh: '工作上的挑戰', en: 'a challenge you faced at work',
     pts: ['What happened?', 'How did you handle it?', 'What would you do differently?'], pz: '發生什麼事／你怎麼處理／下次會怎麼做' },
-  { k: 'aiskin', g: 'work', zh: 'AI 如何改變保養品', en: 'how AI is changing skincare',
-    pts: ['Can you give one example?', 'How does it help customers?', 'What are the risks?'], pz: '舉一個例子／對顧客的好處／有什麼風險' },
+  { k: 'aiterm', g: 'work', zh: '用白話解釋一個 AI 名詞', en: 'one AI term, such as RAG or fine-tuning, explained in plain words for someone who is not technical',
+    pts: ['What does it mean, in one sentence?', 'What can you compare it to in everyday life?', 'When is it useful, and what are its limits?'], pz: '用一句話說它是什麼／可以拿生活中的什麼來比喻／什麼時候有用、限制是什麼' },
   { k: 'metric', g: 'work', zh: '解釋一個儀表板指標', en: 'one metric on a dashboard you use at work',
     pts: ['What does it measure?', 'What is the recent trend?', 'What action did you take?'], pz: '量的是什麼／最近的趨勢／你們做了什麼' },
   { k: 'wfh', g: 'work', zh: '在家工作還是進辦公室', en: 'working from home compared with working in the office',
