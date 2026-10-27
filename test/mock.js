@@ -231,6 +231,10 @@ window.__kaikouTest = true;
     }
     if (/CHINESE-TO-ENGLISH/.test(rules) && /[㐀-鿿]/.test(last)) return stream("casual: This feature won't be out until next week.\nneutral: This feature will launch next week.\nwork: We're scheduled to release this feature next week.\nPick one, say it out loud, then type what you said.\n###\n{\"none\": true}", opts);
     if (/^Begin/.test(last)) return stream("Hi! Let's talk about your weekend. What did you do on Saturday?\n###\n{\"none\": true}", opts);
+    // Text that looks like HTML, in the reply, a correction and a hint (it must stay text; see section 12).
+    if (/XSS check/.test(last)) return stream('Sure <img src=x onerror="window.__xss=1"> <b>bold</b> What next?\n###\n{"you": "XSS check", "better": "<b>XSS</b> check", "why": "<i>x</i>", "code": "B2", "hint": "<img src=x onerror=window.__xss=2>"}', opts);
+    // A sentence about a serum: 過去式 (no hint from the coach) and 冠詞 (see section 10's free-talk hints).
+    if (/serum/i.test(last)) return stream('Nice! How are customers liking it?\n###\n{"you": "We launch", "better": "We launched", "why": "過去式", "code": "A1"}\n{"you": "new serum", "better": "a new serum", "why": "可數名詞前面加 a", "code": "B2"}', opts);
     // The first correction carries a pattern code and a hint (the page keeps the hint only for a pattern corrected before).
     return stream('That sounds fun! What was the best part of the day?\n###\n{"you": "I eat a big lunch", "better": "I had a big lunch", "why": "吃飯常用 have，過去式 had", "code": "A1", "hint": "這是已經過去的事，eat 要怎麼改？"}\n{"you": "it make me happy", "better": "it made me happy", "why": "過去式"}', opts);
   };

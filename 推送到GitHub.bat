@@ -43,7 +43,26 @@ echo.
 echo Lines starting with ?? are NOT published; they stay in this folder only.
 choice /c YN /m "Publish the other changes to the public GitHub repo"
 if errorlevel 2 goto cancelled
-git commit -m "Update kaikou practice room"
+rem The name and email on a commit are public on GitHub. When this computer has none set, ask once and keep them
+rem for this folder only (Git would otherwise refuse, or make them up from the computer's name).
+set "GNAME="
+for /f "delims=" %%n in ('git config user.name') do set "GNAME=%%n"
+if defined GNAME goto havename
+echo.
+echo First publish from this computer: set the name and email shown on your commits (public on GitHub).
+echo To keep your email private, use the noreply address on the Emails page of your GitHub settings.
+set /p "GNAME=Name: "
+if not defined GNAME goto noidentity
+git config user.name "%GNAME%"
+:havename
+set "GMAIL="
+for /f "delims=" %%m in ('git config user.email') do set "GMAIL=%%m"
+if defined GMAIL goto havemail
+set /p "GMAIL=Email: "
+if not defined GMAIL goto noidentity
+git config user.email "%GMAIL%"
+:havemail
+git -c user.useConfigOnly=true commit -m "Update kaikou practice room"
 if errorlevel 1 goto failed
 set "COMMITTED=1"
 rem Remember when this commit was written (a rebase keeps it), to recognise it later.
@@ -117,6 +136,12 @@ goto done
 :keptlocal
 echo.
 echo Not published. Those commits stay on this computer only.
+goto done
+
+:noidentity
+git reset -q
+echo.
+echo No name or email was entered, so nothing was published.
 goto done
 
 :cancelled

@@ -192,6 +192,7 @@ textarea.input{resize:vertical;line-height:1.5}
 .scene-card{display:grid;gap:6px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2)}
 .scene-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .scene-say{display:grid;gap:0;margin-top:4px}
+.scene-fold>summary{padding:6px 0}
 .scene-say>.label{padding-bottom:2px}
 .scene-say .label+.phrase{border-top:0}
 .scene-card .phrase-en{font-size:16px}
@@ -333,6 +334,8 @@ textarea.input{resize:vertical;line-height:1.5}
 .lg.s1::after{content:"";position:absolute;inset:5px;border-radius:50%;background:var(--accent)}
 .lg.s2{border:2px solid var(--accent);border-radius:50%}
 .sess{display:grid;gap:6px;padding:12px 0;border-top:1px solid var(--line)}
+/* Reviews and saved phrases far down the page are laid out only when they come near the screen. */
+.sess,#saved-list .phrase{content-visibility:auto;contain-intrinsic-size:auto 96px}
 .sess:first-child{border-top:0}
 .sess-top{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap}
 details summary{cursor:pointer;color:var(--accent);font-size:14px;font-weight:700}
@@ -636,6 +639,14 @@ const todayKey = () => dkey(new Date());
 const WD = ['日', '一', '二', '三', '四', '五', '六'];
 const fmtDate = d => (d.getMonth() + 1) + '月' + d.getDate() + '日 星期' + WD[d.getDay()];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// fn over the items, at most n at a time (reads go out together without flooding the cloud). Resolves to the results.
+async function mapLimit(items, n, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const run = async () => { while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); } };
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, run));
+  return out;
+}
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const newId = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-5);
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -666,7 +677,7 @@ function el(tag, props, ...kids) {
       if (v === null || v === undefined || v === false) continue;
       if (k === 'class') n.className = v;
       else if (k === 'text') n.textContent = v;
-      else if (k === 'html') n.innerHTML = v; // static icon markup only
+      else if (k === 'html') n.append(htmlNode(v)); // static icon markup only
       else if (k === 'value') n.value = v;
       else if (k === 'checked') n.checked = !!v;
       else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
@@ -679,6 +690,14 @@ function el(tag, props, ...kids) {
   }
   return n;
 }
+// Static markup (the icons) is parsed once and cloned after that: a list with hundreds of icon buttons parsed each one.
+const htmlCache = new Map();
+function htmlNode(v) {
+  let t = htmlCache.get(v);
+  if (!t) { t = document.createElement('template'); t.innerHTML = v; htmlCache.set(v, t); }
+  return t.content.cloneNode(true);
+}
+const setIcon = (b, v) => b.replaceChildren(htmlNode(v));
 // Replace a container's children and keep keyboard focus on the matching control (data-fk) when it is rebuilt.
 function fill(node, ...kids) {
   if (!node) return;
@@ -1479,7 +1498,9 @@ async function settleStreak() {
   for (let i = 0; i < 40; i++) {
     const r = streakInfo(todayKey());
     if (!r.need || !S.ready) return r.n;
-    await loadMonth(r.need);
+    // The month needed and the two before it are read together (a long streak needs them all, one after another).
+    const d0 = parseD(r.need + '-01');
+    await Promise.all([0, 1, 2].map(j => loadMonth(mkey(new Date(d0.getFullYear(), d0.getMonth() - j, 1)))));
   }
   return streakInfo(todayKey()).n;
 }
@@ -1490,20 +1511,24 @@ function refreshStreak() {
 /* ================= sessions ================= */
 function normSessions(d) {
   const byId = new Map();
-  if (d && Array.isArray(d.items)) for (const s of d.items) if (s && typeof s === 'object' && s.id) byId.set(String(s.id), s);
+  const one = (s, id) => Object.assign({}, s, { id }, 'errs' in s ? { errs: normErrs(s.errs) } : {});
+  if (d && Array.isArray(d.items)) for (const s of d.items) if (s && typeof s === 'object' && s.id) byId.set(String(s.id), one(s, String(s.id)));
   if (d && d.map && typeof d.map === 'object') {
     for (const [id, s] of Object.entries(d.map)) {
       if (s === null) byId.delete(id);
-      else if (s && typeof s === 'object') byId.set(id, Object.assign({}, s, { id }));
+      else if (s && typeof s === 'object') byId.set(id, one(s, id));
     }
   }
   return [...byId.values()];
 }
+// A review's pattern counts are stored as [code, n] pairs: writing a review again (the same chat reviewed on another
+// device) then replaces them as a whole, where the keys of an object would be merged with the older review's.
+const storedSess = s => (s && s.errs && typeof s.errs === 'object' && !Array.isArray(s.errs) ? Object.assign({}, s, { errs: Object.entries(s.errs) }) : s);
 function unionById(remote, local) {
   const ids = new Set(remote.map(x => x.id));
   return remote.concat((local || []).filter(x => !ids.has(x.id)));
 }
-function sessionsFull(m) { return { map: Object.fromEntries((S.sessions[m] || []).map(s => [s.id, s])) }; }
+function sessionsFull(m) { return { map: Object.fromEntries((S.sessions[m] || []).map(s => [s.id, storedSess(s)])) }; }
 const sessLoads = {};
 function loadSessions(m) {
   if (S.sessLoaded.has(m) || !S.ready) return Promise.resolve();
@@ -1521,16 +1546,19 @@ function loadSessions(m) {
   return sessLoads[m];
 }
 // A month keeps at most 150 reviews and stays under the size limit; the oldest reviews of that month go first. With
-// keep, none goes: a review that does not fit is not added. Returns whether it was added.
-function addSession(sess, keep) {
+// keep, none goes: a review that does not fit is not added. Returns whether it was added. size ({ n }, with keep): the
+// month's size so far, kept up to date here, so adding many reviews measures each month once (see applyBackup).
+function addSession(sess, keep, size) {
   const m = sess.date.slice(0, 7);
   const arr = (S.sessions[m] || []).filter(s => s.id !== sess.id);
   arr.push(sess);
   arr.sort((a, b) => (a.at || 0) - (b.at || 0));
-  const over = () => arr.length > 150 || docBytes({ map: Object.fromEntries(arr.map(s => [s.id, s])) }) > DOC_LIMIT * 0.8;
+  const own = keep && size ? docBytes({ [sess.id]: storedSess(sess) }) : 0;
+  const over = () => arr.length > 150 || (keep && size ? size.n + own : docBytes({ map: Object.fromEntries(arr.map(s => [s.id, storedSess(s)])) })) > DOC_LIMIT * 0.8;
   if (keep && over()) return false;
+  if (keep && size) size.n += own;
   S.sessions[m] = arr;
-  const patch = { map: { [sess.id]: sess } };
+  const patch = { map: { [sess.id]: storedSess(sess) } };
   while (arr.length > 1 && over()) patch.map[arr.shift().id] = null;
   Store.patch('sessions-' + m, sessionsFull(m), patch);
   return true;
@@ -2296,6 +2324,8 @@ function micErrMsg(err) {
 
 /* ---- the read-aloud check: say a sentence, see which words were recognised ---- */
 const NUM_WORDS = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+// Ordinals said in words ("May fifth") are their number, as a recogniser writes "5th" (see sayWords).
+const ORD_WORDS = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12, thirteenth: 13, fourteenth: 14, fifteenth: 15, sixteenth: 16, seventeenth: 17, eighteenth: 18, nineteenth: 19, twentieth: 20, thirtieth: 30 };
 // British spellings count as the American ones ("favour" = "favor", "organised" = "organized"): a recogniser may write either.
 const US_SPELL = { programme: 'program', programmes: 'programs', catalogue: 'catalog', catalogues: 'catalogs', dialogue: 'dialog', dialogues: 'dialogs',
   licence: 'license', licences: 'licenses', defence: 'defense', offence: 'offense', grey: 'gray', judgement: 'judgment', ageing: 'aging', tyre: 'tire', tyres: 'tires',
@@ -2308,14 +2338,15 @@ function usWord(w) {
     .replace(/^practis(e|es|ed|ing)$/, 'practic$1')
     .replace(/^(travel|cancel|model|label|level|signal|fuel|channel|dial|total|equal|counsel|marvel|quarrel|tunnel)l(ed|ing|er|ers|or|ors)$/, '$1$2');
 }
-// Words compared without case, punctuation or contractions ("I'm" = "I am"), "okay" = "ok", British or American spelling, numbers as digits.
+// Words compared without case, punctuation or contractions ("I'm" = "I am"), "okay" = "ok", British or American spelling, numbers
+// and ordinals as digits ("5th" = "fifth" = 5).
 function sayWords(s) {
   const t = String(s || '').toLowerCase().replace(/[‘’`´]/g, "'")
     .replace(/\bcan't\b/g, 'can not').replace(/\bcannot\b/g, 'can not').replace(/\bwon't\b/g, 'will not').replace(/\bshan't\b/g, 'shall not')
     .replace(/\blet's\b/g, 'let us').replace(/\bain't\b/g, 'is not').replace(/n't\b/g, ' not')
     .replace(/'re\b/g, ' are').replace(/'m\b/g, ' am').replace(/'ll\b/g, ' will').replace(/'ve\b/g, ' have').replace(/'d\b/g, ' would')
     .replace(/\b(it|that|there|here|what|who|where|how|he|she)'s\b/g, '$1 is');
-  return t.replace(/'/g, '').replace(/(\d),(?=\d{3}\b)/g, '$1').replace(/[^a-z0-9\s]+/g, ' ').split(/\s+/).filter(Boolean).map(w => (w === 'okay' ? 'ok' : usWord(w)));
+  return t.replace(/'/g, '').replace(/(\d),(?=\d{3}\b)/g, '$1').replace(/[^a-z0-9\s]+/g, ' ').split(/\s+/).filter(Boolean).map(w => (w === 'okay' ? 'ok' : usWord(w.replace(/^(\d+)(?:st|nd|rd|th)$/, '$1'))));
 }
 // A number said in words becomes one token, as a recogniser writes it ("twenty-five" = "25", "two hundred" = "200",
 // "two thousand twenty six" = "2026"); "one two three" stays three numbers. Items are { w, o: [word indexes] }.
@@ -2323,9 +2354,11 @@ function joinNumbers(list) {
   const out = [];
   for (let i = 0; i < list.length; i++) {
     let total = 0, cur = 0, last = '', j = i, o = [];
-    while (j < list.length) {
+    let ord = false;
+    while (j < list.length && !ord) {
       const w = list[j].w, next = j + 1 < list.length ? list[j + 1].w : '';
-      const v = w === 'a' && last === '' && (next === 'hundred' || next === 'thousand') ? 1 : NUM_WORDS[w]; // "a hundred" = 100
+      ord = NUM_WORDS[w] === undefined && ORD_WORDS[w] !== undefined; // "twenty-first" = 21, and the number ends there
+      const v = w === 'a' && last === '' && (next === 'hundred' || next === 'thousand') ? 1 : ord ? ORD_WORDS[w] : NUM_WORDS[w]; // "a hundred" = 100
       if (v !== undefined) {
         const kind = v >= 20 ? 'tens' : v >= 10 ? 'teen' : 'unit';
         if (!(last === '' || last === 'hundred' || last === 'thousand' || (last === 'tens' && kind === 'unit' && v > 0))) break;
@@ -2378,7 +2411,7 @@ function setSayBtn(b, key) {
   b.setAttribute('aria-pressed', String(on));
   b.setAttribute('aria-label', on ? '停止' : '唸一次，看看有沒有唸清楚');
   b.title = on ? '停止' : '唸一次';
-  b.innerHTML = on ? ICON.stop : ICON.mic;
+  setIcon(b, on ? ICON.stop : ICON.mic);
 }
 function sayBox(text, ctx) {
   if (!Mic.ok) return null;
@@ -2520,7 +2553,7 @@ const ERR_TYPES = {
   C7: { zh: '回應道謝', en: "always You're welcome (-> No problem / Anytime / Sure thing)", hint: '同事或朋友道謝時，可以怎麼回得輕鬆一點？',
     bad: "Thanks! / You're welcome.", good: 'Thanks! / No problem. Anytime.', why: "You're welcome 沒有錯，只是比較正式；同事之間可以輕鬆一點。" },
   C8: { zh: '閒聊的回答', en: "small-talk answers (I'm fine, thank you, and you? -> Good, thanks, busy week… How about you?)", hint: '簡短回答、多加一個細節、再把問題丟回去：可以怎麼說？',
-    bad: "How are you? / I'm fine, thank you. And you?", good: "How are you? / Good, thanks. It's a busy week, we're launching a new product. How about you?", why: '簡短回答、多說一個細節，再把問題丟回去，話題才接得下去。' },
+    bad: "How are you? / I'm fine, thank you. And you?", good: "How are you? / Good, thanks. It's been a busy week. We're launching a new product. How about you?", why: '簡短回答、多說一個細節，再把問題丟回去，話題才接得下去。' },
   C9: { zh: '確認對方聽懂', en: 'checking understanding (Do you understand? -> Does that make sense?)', hint: 'Do you understand? 聽起來像在懷疑對方，可以怎麼問？',
     bad: 'Do you understand?', good: 'Does that make sense?', why: 'Do you understand? 聽起來像在懷疑對方聽不懂；問自己有沒有說清楚比較客氣。' },
   C10: { zh: '名字的順序', en: 'name order (Wang Amy -> Amy Wang)', hint: '英文的名和姓，哪個放前面？',
@@ -2535,7 +2568,7 @@ const PATTERN_DEFAULT = ['A1', 'A6', 'A8', 'B1', 'B2', 'B6', 'A7', 'C3'];
 // How often each pattern was corrected in chat c (not counting the learner's message skip, whose corrections are being
 // decided).
 function chatErrs(c, skip) {
-  const n = {};
+  const n = Object.assign({}, c.errsBase); // the turns a long chat no longer keeps (see chatDoc)
   for (const t of c.turns) if (t !== skip && t.r === 'm' && !t.ex) for (const f of (t.fx || [])) { const k = errCode(f && f.code); if (k) n[k] = (n[k] || 0) + 1; }
   return n;
 }
@@ -2544,15 +2577,20 @@ function errCounts(c, skip) {
   const n = c ? chatErrs(c, skip) : {}, since = dkey(addDays(parseD(todayKey()), -30));
   for (const list of Object.values(S.sessions)) for (const s of (list || [])) {
     if (!s || !s.errs || typeof s.errs !== 'object' || !(String(s.date) >= since) || (c && s.id === c.id)) continue;
-    for (const [k, v] of Object.entries(s.errs)) { const code = errCode(k), x = clamp(Math.round(Number(v) || 0), 0, 99); if (code && x) n[code] = (n[code] || 0) + x; }
+    for (const [k, x] of Object.entries(normErrs(s.errs))) n[k] = (n[k] || 0) + x;
   }
   return n;
 }
 // Patterns corrected at least twice, most frequent first: the coach hints at these before showing the answer.
 function knownErrs(c, skip) { const n = errCounts(c, skip); return Object.keys(n).filter(k => n[k] >= 2).sort((a, b) => n[b] - n[a]); }
+// Hints come only in free talk and role-play outside a voice conversation: 中翻英 shows the polished version anyway, and in
+// a voice conversation the learner would say the answer into the open microphone.
+const hinting = c => c.mode !== 'zh' && !Voice.on;
+// { A1: 3 }, or [['A1', 3]] as a review stores it (see storedSess).
 function normErrs(v) {
   const out = {};
-  if (v && typeof v === 'object' && !Array.isArray(v)) for (const [k, x] of Object.entries(v)) { const code = errCode(k), n = clamp(Math.round(Number(x) || 0), 0, 99); if (code && n) out[code] = n; }
+  const list = Array.isArray(v) ? v.filter(p => Array.isArray(p) && p.length === 2) : v && typeof v === 'object' ? Object.entries(v) : [];
+  for (const [k, x] of list) { const code = errCode(k), n = clamp(Math.round(Number(x) || 0), 0, 99); if (code && n) out[code] = n; }
   return out;
 }
 function errChip(code) {
@@ -2574,8 +2612,9 @@ function rulesFor(c) {
       + 'Stay in character in your reply and keep it realistic, adding a small complication now and then. When the scene reaches a natural end, close it in character and offer to replay it with a different twist.';
   } else if (c.pattern) {
     mode = 'CHINESE-TO-ENGLISH SPEAKING DRILL on one pattern: ' + c.pattern + ', ' + ERR_TYPES[c.pattern].en + '.\n'
-      + '- Give the learner one short sentence in Traditional Chinese as used in Taiwan to say in English, on its own line starting with "say:". Saying it in English must need this pattern. Make it fit their everyday life or work (see About the learner), and vary the sentences.\n'
+      + '- Give the learner one short sentence in Traditional Chinese as used in Taiwan to say in English, on its own line starting with "say:" (the sentence on the same line). Saying it in English must need this pattern. Make it fit their everyday life or work (see About the learner), and vary the sentences. Never give its English before they have tried.\n'
       + '- When they answer in English: say in one short sentence what was good, give one polished version on a line starting with "final:", then give the next sentence on a "say:" line. Correct their attempt in the fix part.\n'
+      + '- If their answer gets ' + c.pattern + ' wrong, always correct it, even a missing -s or -ed ending: that correction is the one A item or the one B or C item you keep.\n'
       + '- If they write in Chinese or ask something, answer briefly, then give a "say:" line again.';
   } else {
     mode = 'CHINESE-TO-ENGLISH SPEAKING PRACTICE. The learner types something they want to be able to say, usually in Chinese.\n'
@@ -2585,8 +2624,8 @@ function rulesFor(c) {
   const len = c.mode === 'zh' ? 'Keep it short.' : 'Use 1 to 3 short sentences (at most 45 words) and end with exactly one question.';
   // The patterns this learner was corrected on at least twice (not counting the message being answered).
   const me = c.turns.filter(t => t.r === 'm').pop();
-  const known = knownErrs(c, me).slice(0, 6);
-  return 'You are a friendly English speaking coach inside a practice app.\n'
+  const known = hinting(c) ? knownErrs(c, me).slice(0, 6) : [];
+  const head = 'You are a friendly English speaking coach inside a practice app.\n'
     + 'About the learner: ' + about + '\n'
     + 'Goal: speak English fluently in everyday and work conversations. They tend to freeze when speaking, so keep the pressure low and be encouraging.\n'
     + 'Level to speak at: ' + c.level + '. ' + lv.style + '\n'
@@ -2594,25 +2633,35 @@ function rulesFor(c) {
     + 'MODE: ' + mode + '\n\n'
     + 'FORMAT. Follow it exactly every time:\n'
     + '1. Your reply in natural spoken English. ' + len + ' Plain text only: no Markdown, no emoji, ' + (c.pattern ? 'no Chinese except on "say:" lines' : 'no Chinese') + '.\n'
-    + '2. A line with only ###\n'
-    + '3. At most 2 lines, each a JSON object on one line that corrects the learner\'s LAST message: {"you": "<their exact words>", "better": "<a more natural way to say it>", "why": "<reason in Traditional Chinese as used in Taiwan, at most 20 characters>", "code": "<its pattern code from the list below, or empty>"}. At most one A item and at most one B or C item, the A item first; leave out the rest. If their last message was already natural, or the learner has not said anything yet, write exactly {"none": true}.\n'
+    + '2. A line with only ###\n';
+  // 中翻英, asked how to say something in Chinese: there is nothing to correct (the corrections part is always "none").
+  if (c.mode === 'zh' && !c.pattern && me && !isEnglish(me.t)) return head + '3. Exactly {"none": true}\nWrite nothing after it.';
+  return head
+    + '3. At most 2 lines, each a JSON object on one line that corrects the learner\'s LAST message: {"you": "<their exact words>", "better": "<a more natural way to say it>", "why": "<reason in Traditional Chinese as used in Taiwan, at most 20 characters>", "code": "<its pattern code from the list below, or empty>"' + (known.length ? ', "hint": "<only for the patterns under CORRECTING that the learner keeps working on>"' : '') + '}. At most one A item and at most one B or C item, the A item first; leave out the rest. If their last message was already natural, or the learner has not said anything yet, write exactly {"none": true}.\n'
     + 'Write nothing after the JSON lines.\n\n'
     + 'CORRECTING:\n'
     + '- Do not correct: a missing -s or -ed ending that dictation may have dropped, unless the sentence makes the mistake clear (as in "Yesterday I send"); short forms that are fine in casual chat ("Already sent!"); choices that are also correct (US or UK usage, "The meeting starts at 3").\n'
     + '- C items are more natural or more polite ways to say it, not mistakes: never call them wrong.\n'
     + '- When you correct an A item, also use the right form naturally in your reply (like "Oh, you sent them yesterday?"), without pointing it out.\n'
-    + (known.length ? '- The learner keeps working on ' + known.join(', ') + '. When you correct one of these, add "hint": a short question in Traditional Chinese as used in Taiwan that leads them to the fix without giving it away (like "這是昨天的事，send 要怎麼改？").\n' : '')
+    + (known.length ? '- The learner keeps working on ' + known.join(', ') + '. When you correct one of these, add "hint": a short question in Traditional Chinese as used in Taiwan that leads them to the fix without giving it away (like "這是昨天的事，send 要怎麼改？"), and do not use its right form in your reply, so they can find it themselves.\n' : '')
     + 'Pattern codes:\n' + ERR_LIST;
 }
 const OPEN_FREE = 'Begin now: greet the learner briefly and ask your first question about the topic.';
 const OPEN_ROLE = 'Begin the role-play now: set the scene in one short sentence, then say your first line in character.';
 const OPEN_PATTERN = 'Begin now: say in one short sentence what this drill practises, then give the first sentence on a "say:" line.';
 const usable = t => !t.sys && !t.pending && !t.streaming && !t.ex;
+// The coach's replies keep their corrections (the JSON after ###) only in the last few turns: enough to show the format,
+// without sending every old correction again (they were most of a long chat's prompt).
+const RAW_KEEP = 3;
 function buildTurns(c) {
   const out = [{ role: 'user', content: rulesFor(c) }];
-  if (c.mode !== 'zh' || c.pattern) out.push({ role: 'user', content: c.mode === 'role' ? OPEN_ROLE : c.mode === 'zh' ? OPEN_PATTERN : OPEN_FREE });
   const hist = c.turns.filter(t => usable(t) && String(t.r === 'm' ? t.t : (t.raw || t.t) || '').trim());
-  for (const t of hist.slice(-24)) out.push({ role: t.r === 'm' ? 'user' : 'assistant', content: t.r === 'm' ? t.t : (t.raw || t.t) });
+  const win = hist.slice(-24);
+  // The opening request belongs at the start of the conversation: once the window has moved on, it would read as a
+  // request to start again.
+  if ((c.mode !== 'zh' || c.pattern) && win.length === hist.length) out.push({ role: 'user', content: c.mode === 'role' ? OPEN_ROLE : c.mode === 'zh' ? OPEN_PATTERN : OPEN_FREE });
+  const coach = win.filter(t => t.r !== 'm'), withRaw = new Set(coach.slice(-RAW_KEEP));
+  for (const t of win) out.push({ role: t.r === 'm' ? 'user' : 'assistant', content: t.r === 'm' ? t.t : (withRaw.has(t) && t.raw) || t.t });
   while (out.length > 1 && out[out.length - 1].role !== 'user') out.pop();
   return out;
 }
@@ -2668,7 +2717,29 @@ function streamPart(text) {
 }
 // A sentence the coach asks the learner to say in English (practising one pattern in 中翻英).
 const SAY_RE = /^\s*say\s*[:：]\s*(.*)$/i;
-function parseCoach(text) {
+// The lines of a reply, with each "say:" cue as { say, line } (a "say:" alone on its line takes the next line) and every
+// other line as { line }.
+function coachLines(text) {
+  const lines = String(text || '').split('\n'), out = [];
+  for (let k = 0; k < lines.length; k++) {
+    const m = SAY_RE.exec(lines[k]);
+    if (!m) { out.push({ line: lines[k] }); continue; }
+    let s = m[1].trim(), line = lines[k];
+    if (!s && k + 1 < lines.length && lines[k + 1].trim() && !SAY_RE.test(lines[k + 1]) && !OPT_RE.test(lines[k + 1])) { s = lines[++k].trim(); line += ' ' + s; }
+    out.push({ say: s, line });
+  }
+  return out;
+}
+const CJK_RUN = /[\u2e80-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]+/g, hasCJK = s => /[\u2e80-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(s);
+// A "say:" cue in Chinese (the sentence to say in English), even with English words in it, or one still arriving.
+const zhCue = x => 'say' in x && (!x.say || hasCJK(x.say));
+// What the English voice reads: no Chinese cue and no other Chinese (it would be read with English sounds), no style labels.
+const speakable = reply => coachLines(reply).filter(x => !zhCue(x)).map(x => x.line).join('\n')
+  .replace(/^\s*(casual|neutral|work|final)\s*[:：]\s*/gim, '').replace(CJK_RUN, ' ').replace(/[ \t]{2,}/g, ' ').trim();
+// What 看中文 translates: the reply without its Chinese cues.
+const translatable = text => coachLines(text).filter(x => !zhCue(x)).map(x => x.line).join('\n').trim();
+// prefer: the pattern being drilled, kept first when there are more corrections than can be shown.
+function parseCoach(text, prefer) {
   const t = String(text || '').replace(/```[a-zA-Z]*/g, '');
   let a = t, b = '';
   const i = t.search(/###|(^|\n)[ \t]*##[ \t]*(?=\n|$)/);
@@ -2701,15 +2772,18 @@ function parseCoach(text) {
     const label = tail.replace(/^[\s(\[{"'“‘]+|[\s)\]}"'”’.!]+$/g, '');
     if (/^((corrections?|fix(es)?|feedback)\s*[:：\-]?\s*)?(none|n\/?a|nothing to (fix|correct)|no (corrections?|fix(es)?|changes?|mistakes?|errors?)( (needed|necessary|required|to make))?|none"?\s*[:=]\s*true)$/i.test(label)) { none = true; tail = ''; }
     else if (/^(corrections?|fix(es)?|feedback|notes?|json|output)\b[^.?!]{0,20}$/i.test(tail)) tail = '';
+    // A hint written on its own line after the JSON belongs to the last correction (never to the reply).
+    const hint = /^["“']?hint["”']?\s*[:：]\s*["“']?(.*?)["”']?$/i.exec(tail);
+    if (hint) { const f = fixes[fixes.length - 1]; if (f && !f.hint && hint[1].trim()) f.hint = hint[1].trim().slice(0, 80); tail = ''; }
     if (!/[A-Za-z]{2,}/.test(tail)) tail = '';
   }
   let reply = a.replace(/[ \t]+\n/g, '\n').trim();
   if (tail) reply = reply ? reply + '\n' + tail : tail;
-  // A Chinese sentence to say in English ("say: …") is not read out by the English voice.
-  const speakText = reply.split('\n').filter(l => !(SAY_RE.test(l) && cjkRatio(l) >= 0.3)).join('\n').replace(/^\s*(casual|neutral|work|final)\s*[:：]\s*/gim, '');
-  // At most two corrections a turn: one that can change the meaning (A) first, then one other.
-  const a1 = fixes.find(f => f.code[0] === 'A');
-  return { reply, fixes: (a1 ? [a1] : []).concat(fixes.filter(f => f.code[0] !== 'A')).slice(0, 2), none, speakText };
+  // At most two corrections a turn: one that can change the meaning (A) first, then one other; the drilled pattern goes
+  // first in its group.
+  const first = (x, y) => (y.code === prefer) - (x.code === prefer);
+  const as = fixes.filter(f => f.code[0] === 'A').sort(first), others = fixes.filter(f => f.code[0] !== 'A').sort(first);
+  return { reply, fixes: as.slice(0, 1).concat(others).slice(0, 2), none, speakText: speakable(reply) };
 }
 function chatLabel(c) {
   if (c.mode === 'free') return '自由聊天・' + (c.topicZh || '');
@@ -2723,10 +2797,11 @@ function chatLabelEn(c) {
 }
 function hintPrompt(c) {
   const lines = c.turns.filter(t => usable(t) && t.t).slice(-6).map(t => (t.r === 'm' ? 'Learner: ' : 'Coach: ') + t.t).join('\n');
+  const sc = c.mode === 'role' ? sceneOf(c.sceneK) : null;
   return 'An English learner (level ' + c.level + ') is stuck in this practice conversation and does not know what to say next.\n'
-    + (c.mode === 'role' ? 'Scenario: ' + c.sceneEn + ' The learner plays ' + c.meRole + '.\n' : '')
+    + (c.mode === 'role' ? 'Scenario: ' + c.sceneEn + ' The learner plays ' + c.meRole + '.' + (sc ? " The learner's task: " + sc.task : '') + '\n' : '')
     + 'Conversation so far (most recent last):\n' + lines + '\n\n'
-    + 'Suggest 3 different replies the learner could say next: natural spoken English, under 15 words each, at ' + c.level + ' level, each taking the conversation a different way. '
+    + 'Suggest 3 different replies the learner could say next: natural spoken English, under 15 words each, at ' + c.level + ' level, each taking the conversation a different way' + (sc ? ', and at least one moving their task forward' : '') + '. '
     + 'Reply with only a JSON array: [{"en": "...", "zh": "its meaning in Traditional Chinese as used in Taiwan"}]';
 }
 function reviewPrompt(c) {
@@ -2847,6 +2922,12 @@ async function apiSample(input, opts) {
   let text = '', stop = '', buf = '', ended = false;
   const reader = res.body.getReader();
   const dec = new TextDecoder();
+  // The text so far goes to onText at most once a frame (an event comes every few milliseconds, and each one redrew the
+  // reply), and once more at the end with all of it.
+  let told = 0, frame = 0;
+  const tell = () => { frame = 0; if (opts.onText && text.length > told) { const delta = text.slice(told); told = text.length; opts.onText({ text, delta }); } };
+  const tellSoon = () => { if (!frame) frame = requestAnimationFrame(tell); };
+  const tellNow = () => { if (frame) cancelAnimationFrame(frame); tell(); };
   try {
     for (;;) {
       const { value, done } = await reader.read();
@@ -2861,18 +2942,20 @@ async function apiSample(input, opts) {
         try { ev = JSON.parse(data); } catch (_) { continue; }
         if (ev.type === 'content_block_delta' && ev.delta && typeof ev.delta.text === 'string') {
           text += ev.delta.text;
-          if (opts.onText) opts.onText({ text, delta: ev.delta.text });
+          tellSoon();
         } else if (ev.type === 'message_delta' && ev.delta && ev.delta.stop_reason) stop = ev.delta.stop_reason;
         else if (ev.type === 'message_stop') ended = true;
         else if (ev.type === 'error') throw Object.assign(apiError(0, ev), text ? { text } : {});
       }
     }
   } catch (e) {
+    if (frame) cancelAnimationFrame(frame);
     // Stopped (an AbortError, whose old numeric code is 20) or cut off: the text received so far goes along.
     const aborted = (e && e.name === 'AbortError') || !!(opts.signal && opts.signal.aborted);
     if (!aborted && e && typeof e.code === 'string') throw e;
     throw Object.assign(aborted ? { code: 'cancelled', message: 'aborted' } : { code: 'upstream_error', message: 'stream' }, text ? { text } : {});
   }
+  tellNow();
   // The connection closed before the reply was complete (no stop reason, no end): a cut-off reply, not a full one.
   if (!stop && !ended) throw Object.assign({ code: 'upstream_error', message: 'stream ended early' }, text ? { text } : {});
   if (stop === 'refusal') throw { code: 'refused', message: 'refused' };
@@ -3057,12 +3140,16 @@ function saveChat() {
   const d = chatDoc();
   if (d) Store.put('chat', d);
 }
-// The stored chat keeps the last 60 turns, and fewer if long turns would make the document too big.
+// The stored chat keeps the last 60 turns, and fewer if long turns would make the document too big; the corrections of
+// the turns left out are still counted (errsBase). Only the last few replies keep their full text with the corrections
+// (see buildTurns).
 function chatDoc() {
   const c = S.chat; if (!c) return null;
-  const turns = c.turns.filter(t => !t.pending && !t.streaming).slice(-60).map(t => {
+  const all = c.turns.filter(t => !t.pending && !t.streaming);
+  const keepRaw = new Set(all.filter(t => t.r !== 'm' && !t.sys).slice(-RAW_KEEP));
+  const turns = all.slice(-60).map(t => {
     const o = { r: t.r, t: t.t, at: t.at || 0 };
-    if (t.raw) o.raw = t.raw;
+    if (t.raw && keepRaw.has(t)) o.raw = t.raw;
     if (t.fx && t.fx.length) o.fx = t.fx;
     if (t.ok) o.ok = true;
     if (t.zh) o.zh = t.zh;
@@ -3083,6 +3170,9 @@ function chatDoc() {
     let total = docBytes(doc);
     while (turns.length > 6 && total > DOC_LIMIT * 0.8) { total -= size.shift(); turns.shift(); }
   }
+  const base = Object.assign({}, c.errsBase);
+  for (const t of all.slice(0, all.length - turns.length)) if (t.r === 'm' && !t.ex) for (const f of (t.fx || [])) { const k = errCode(f && f.code); if (k) base[k] = (base[k] || 0) + 1; }
+  if (Object.keys(base).length) doc.errsBase = base;
   return doc;
 }
 // Every document as this device currently has it (used when changes have to move to this browser).
@@ -3376,10 +3466,10 @@ async function uploadPatches(docs, fromCloud, onQueued, resend, held) {
   for (let todo = names, round = 0; todo.length; round++) {
     if (round === 4) return 'unread'; // changed again on every read: tried again later
     for (const n of todo) marks[n] = { e: Store.edits[n] || 0, busy: Store.busyDoc(n) };
-    for (const n of todo) {
-      try { cloud[n] = await Store.get(n); } catch (_) { return Store.mode === 'db' ? 'unread' : 'stopped'; }
-      if (Store.mode !== 'db') return 'stopped';
-    }
+    const got = await mapLimit(todo, 6, n => Store.get(n).then(v => ({ v }), () => null)); // read together
+    if (Store.mode !== 'db') return 'stopped';
+    if (got.some(g => !g)) return 'unread';
+    todo.forEach((n, i) => { cloud[n] = got[i].v; });
     todo = names.filter(moved);
   }
   if (resend) { docs = resend.filter(docs); names = names.filter(n => docs[n]); if (!names.length) return true; }
@@ -3450,6 +3540,20 @@ function heldOver(cloud, docs, fromCloud, del, times) {
       if (n === 'shadow' && typeof d.cur === 'string' && cm[d.cur] === null) delete d.cur;
       docs = Object.assign({}, docs, { [n]: d });
     }
+  }
+  // A review of a chat that the cloud has from a later review of the same chat (continued and reviewed again on another
+  // device meanwhile) is not replaced by this older one.
+  for (const n of names) {
+    if (!n.startsWith('sessions-')) continue;
+    const m = docs[n].map, cm = cloud[n] && cloud[n].map;
+    if (!m || typeof m !== 'object' || !cm || typeof cm !== 'object') continue;
+    const map = {};
+    for (const [id, v] of Object.entries(m)) {
+      const had = cm[id];
+      if (v && typeof v === 'object' && had && typeof had === 'object' && (Number(had.at) || 0) > (Number(v.at) || 0)) continue;
+      map[id] = v;
+    }
+    docs = Object.assign({}, docs, { [n]: Object.assign({}, docs[n], { map }) });
   }
   for (const n of names) {
     if (!n.startsWith('log-') || !docs[n].days || typeof docs[n].days !== 'object') continue;
@@ -3685,6 +3789,7 @@ function normChat(d) {
     activeMs, meCount: Number.isFinite(Number(d.meCount)) && d.meCount !== null && d.meCount !== undefined && d.meCount !== '' ? Number(d.meCount) : turns.filter(t => t.r === 'm' && !t.ex).length, turns,
     pattern: d.mode === 'zh' ? errCode(d.pattern) : '',
     sceneK: d.mode === 'role' && sceneOf(d.sceneK) ? d.sceneK : '',
+    errsBase: normErrs(d.errsBase),
   };
 }
 // A chat that ends (discarded or reviewed) or a new one: nothing typed or being said for the old chat is carried over
@@ -3776,13 +3881,13 @@ async function ask() {
 }
 function finishTurn(c, turn, raw, cut) {
   S.micZh = null; // dictation follows the conversation again (中翻英: Chinese first, then the English version)
-  const p = parseCoach(raw);
+  const p = parseCoach(raw, c.pattern);
   turn.raw = raw; turn.t = p.reply || streamPart(raw) || '…'; turn.pending = false; turn.streaming = false; turn.at = Date.now();
   if (cut) turn.cut = true;
   const prev = c.turns[c.turns.indexOf(turn) - 1];
   if (prev && prev.r === 'm' && !cut) {
     // A pattern corrected at least twice before is first only hinted at: the learner tries, then opens the answer.
-    const known = knownErrs(c, prev);
+    const known = hinting(c) ? knownErrs(c, prev) : [];
     prev.fx = p.fixes.map(f => Object.assign({ you: f.you, better: f.better, why: f.why }, f.code ? { code: f.code } : {},
       f.code && known.includes(f.code) ? { hint: f.hint || ERR_TYPES[f.code].hint } : {}));
     prev.ok = !p.fixes.length && p.none && isEnglish(prev.t);
@@ -3798,10 +3903,10 @@ async function translateTurn(t) {
   if (!S.sample || t.zhBusy || S.sampleState !== 'ok') return;
   t.zhBusy = true; renderMessages();
   try {
-    const r = await S.sample('Translate into natural Traditional Chinese as used in Taiwan. Reply with only the translation.\n\n' + t.t, { modelTier: 'quick' });
+    const r = await S.sample('Translate into natural Traditional Chinese as used in Taiwan. Reply with only the translation.\n\n' + (translatable(t.t) || t.t), { modelTier: 'quick' });
     t.zh = r.text.trim(); t.zhOpen = true;
     if (S.note) { S.note = null; S.noteNoRetry = false; renderCoachNote(); }
-    if (S.chat && S.chat.turns.includes(t)) saveChat();
+    if (S.chat && S.chat.turns.includes(t)) { S.chat.updatedAt = Date.now(); saveChat(); } // newer, so other devices take it
   } catch (e) { onSampleError(e, 'task'); }
   finally { t.zhBusy = false; renderMessages(); }
 }
@@ -3838,7 +3943,7 @@ async function getHints() {
 async function endStoredChat(id, upd) {
   if (S.chat && S.chat.id !== id) return;
   const done = () => { if (S.endPending && S.endPending.id === id) setEndPending(null); };
-  const mark = () => { done(); Store.put('chat', { active: false, endedId: id, at: Date.now() }); };
+  const mark = () => { done(); endChatCopy(id); Store.put('chat', { active: false, endedId: id, at: Date.now() }); };
   if (Store.busyDoc('chat')) { mark(); return; } // this device's own write of the reviewed chat is still on its way
   let d;
   try { d = await Store.get('chat'); } catch (_) { return; } // a discarded chat: a later read writes its end (see applyChat)
@@ -3908,7 +4013,7 @@ function starBtn(p, cls, ctx) {
       if (!r) return;
       const now = isSaved(p.en);
       if (b.isConnected) {
-        b.setAttribute('aria-pressed', String(now)); b.innerHTML = now ? ICON.starOn : ICON.star;
+        b.setAttribute('aria-pressed', String(now)); setIcon(b, now ? ICON.starOn : ICON.star);
         b.setAttribute('aria-label', now ? '取消收藏' : '收藏'); b.title = now ? '取消收藏' : '收藏';
       }
       toast(r === 'full' ? FULL_MSG : r === 'added' ? '已加入收藏' : '已取消收藏');
@@ -4055,8 +4160,8 @@ function renderToday() {
   if (isToday) {
     const todayDone = st > 0;
     side = el('span', { class: 'streak' },
-      S.streak ? ['連續 ', el('b', { text: String(S.streak) }), ' 天'] : (todayDone ? '今天是第 1 天' : '練一項就開始連續'),
-      S.streak && !todayDone ? '・今天練了就延續' : null);
+      S.streakPending ? ['連續 ', el('b', { text: '…' }), ' 天'] : S.streak ? ['連續 ', el('b', { text: String(S.streak) }), ' 天'] : (todayDone ? '今天是第 1 天' : '練一項就開始連續'),
+      S.streak && !todayDone && !S.streakPending ? '・今天練了就延續' : null);
   } else {
     side = el('button', { type: 'button', class: 'btn ghost small', 'data-fk': 'back-today', onclick: () => { S.viewDate = tk; renderToday(); focusHeading('#today-dyn .date-big'); } }, '回到今天');
   }
@@ -4217,13 +4322,18 @@ function renderCoach() {
   const root = $('#coach-dyn'); if (!root) return;
   const composer = $('#composer');
   if (Voice.on && (!voiceAvailable() || S.review || S.reviewing)) voiceOff(); // the chat ended, or the microphone or coach went away
+  if (S.tab !== 'coach') return; // drawn when its tab is opened (switchTab), not while another tab is shown
   // The chat is rebuilt in steps (frame first, then messages), so the focused control is restored at the end.
   const ae = document.activeElement;
   const fk = ae && ae !== document.body && root.contains(ae) && ae.dataset ? ae.dataset.fk : null;
   if (S.review) { fill(root, reviewView(S.review)); composer.hidden = true; }
   else if (S.reviewing) { fill(root, reviewingView()); composer.hidden = true; }
   else if (S.chat) {
-    fill(root, chatView());
+    // The chat already on screen is drawn again in place (its bar, and the turns that changed): a long chat is not rebuilt
+    // for every sentence, and what is open in it (the task panel, a 唸一次 result) stays as it is.
+    const bar = $('#chat-bar');
+    if (bar && bar._chat === S.chat && root.contains(bar)) fill(bar, chatBarKids(S.chat));
+    else fill(root, chatView());
     composer.hidden = false;
     renderMessages(); renderHints(); renderCoachNote(); updateComposer();
   } else {
@@ -4361,16 +4471,19 @@ function groupedChips(label, list, current, onPick, lifeFirst) {
     own.length ? el('div', { class: 'chips' }, own.map(chip)) : null);
 }
 // The chosen scene: what happens, the learner's task and phrases worth having ready (to hear, say and save).
+// The phrases fold away, so 開始對話 stays close to the scene on a phone.
 function sceneCard(sc) {
   return el('div', { class: 'scene-card' },
     el('div', { class: 'scene-top' }, el('b', { text: sc.zh }), el('span', { class: 'tag', text: '建議程度 ' + sc.lv })),
     el('p', { class: 'help', text: sc.dz + '教練扮演' + sc.aiZh + '。' }),
     el('p', null, el('b', { text: '你的任務：' }), sc.goal),
-    scenePhrases(sc, 'sc'));
+    el('details', { class: 'scene-fold', open: S.scenePhrasesOpen, ontoggle: e => { S.scenePhrasesOpen = e.currentTarget.open; } },
+      el('summary', { 'data-fk': 'scene-phrases' }, '用得上的說法（' + sc.say.length + ' 句）'),
+      scenePhrases(sc, 'sc', true)));
 }
-function scenePhrases(sc, ctx) {
+function scenePhrases(sc, ctx, noLabel) {
   return el('div', { class: 'scene-say' },
-    el('span', { class: 'label', text: '用得上的說法' }),
+    noLabel ? null : el('span', { class: 'label', text: '用得上的說法' }),
     sc.say.map(([en, zh]) => el('div', { class: 'phrase' },
       el('div', null, el('div', { class: 'phrase-en', lang: 'en', text: en }), el('div', { class: 'phrase-zh', text: zh })),
       el('div', { class: 'phrase-acts' }, speakBtn(en, 'sm', ctx), sayBtn(en, ctx), starBtn({ en, zh, note: sc.zh, src: 'scene' }, 'sm', ctx)),
@@ -4383,23 +4496,30 @@ function updateStartBtn() {
   b.disabled = !S.ready || S.sampleState !== 'ok' || (needCustom && !String(s.custom || '').trim());
   const v = $('#start-voice'); if (v) v.disabled = b.disabled;
 }
-function chatView() {
-  const c = S.chat;
-  const sc = c.mode === 'role' ? sceneOf(c.sceneK) : null; // a role-play's task and phrases, at hand while it runs
+// The chat bar: what the chat is, how far it got, and its controls.
+function chatBarKids(c) {
   const count = meCountOf(c);
   const auto = !!S.settings.autoSpeak;
   const armed = isArmed('discard');
+  return [
+    el('div', { class: 'chat-title' },
+      el('b', { text: chatLabel(c) }),
+      el('small', { text: '教練程度 ' + c.level + ' · 你說了 ' + count + ' 句' + (count < 3 ? ' · 再說 ' + (3 - count) + ' 句就能複習' : '') })),
+    el('div', { class: 'chat-acts' },
+      voiceToggle(),
+      TTS.ok ? el('button', { type: 'button', class: 'icon-btn', 'aria-pressed': String(auto), 'aria-label': '自動朗讀', title: auto ? '自動朗讀：開' : '自動朗讀：關', html: auto ? ICON.speaker : ICON.mute, 'data-fk': 'auto', hidden: Voice.on,
+        onclick: () => { S.settings.autoSpeak = !S.settings.autoSpeak; if (!S.settings.autoSpeak && TTS.ok) speechSynthesis.cancel(); saveSettings('autoSpeak'); renderCoach(); toast(S.settings.autoSpeak ? '教練回覆時會自動朗讀' : '已關閉自動朗讀'); } }) : null,
+      el('button', { type: 'button', class: 'btn small' + (armed ? ' danger' : ''), disabled: S.reviewing, 'data-fk': 'discard', onclick: () => arm('discard', discardChat, renderCoach) }, armed ? '確定放棄？' : '放棄'),
+      el('button', { type: 'button', class: 'btn small primary', disabled: S.busy, 'data-fk': 'review', onclick: review }, '結束並複習')),
+  ];
+}
+function chatView() {
+  const c = S.chat;
+  const sc = c.mode === 'role' ? sceneOf(c.sceneK) : null; // a role-play's task and phrases, at hand while it runs
+  const bar = el('section', { id: 'chat-bar', class: 'card chat-bar' }, chatBarKids(c));
+  bar._chat = c; // (see renderCoach)
   return el('div', null,
-    el('section', { class: 'card chat-bar' },
-      el('div', { class: 'chat-title' },
-        el('b', { text: chatLabel(c) }),
-        el('small', { text: '教練程度 ' + c.level + ' · 你說了 ' + count + ' 句' + (count < 3 ? ' · 再說 ' + (3 - count) + ' 句就能複習' : '') })),
-      el('div', { class: 'chat-acts' },
-        voiceToggle(),
-        TTS.ok ? el('button', { type: 'button', class: 'icon-btn', 'aria-pressed': String(auto), 'aria-label': '自動朗讀', title: auto ? '自動朗讀：開' : '自動朗讀：關', html: auto ? ICON.speaker : ICON.mute, 'data-fk': 'auto', hidden: Voice.on,
-          onclick: () => { S.settings.autoSpeak = !S.settings.autoSpeak; if (!S.settings.autoSpeak && TTS.ok) speechSynthesis.cancel(); saveSettings('autoSpeak'); renderCoach(); toast(S.settings.autoSpeak ? '教練回覆時會自動朗讀' : '已關閉自動朗讀'); } }) : null,
-        el('button', { type: 'button', class: 'btn small' + (armed ? ' danger' : ''), disabled: S.reviewing, 'data-fk': 'discard', onclick: () => arm('discard', discardChat, renderCoach) }, armed ? '確定放棄？' : '放棄'),
-        el('button', { type: 'button', class: 'btn small primary', disabled: S.busy, 'data-fk': 'review', onclick: review }, '結束並複習'))),
+    bar,
     sc ? el('details', { class: 'card scene-help', open: S.sceneOpen, ontoggle: e => { S.sceneOpen = e.currentTarget.open; } },
       el('summary', { 'data-fk': 'scene-help' }, '這次的任務和用得上的說法'),
       el('p', { class: 'mt6' }, el('b', { text: '你的任務：' }), sc.goal),
@@ -4408,10 +4528,33 @@ function chatView() {
     el('div', { id: 'hints', class: 'hints' }),
     el('div', { id: 'coach-note', class: 'coach-note', hidden: true }));
 }
+// What a turn's drawing depends on: the turn itself, and things shared by every turn (when those change, all of them are
+// drawn again).
+const turnSig = t => [t.r, t.t, t.pending, t.streaming, t.cut, t.ex, t.ok, t.sys, t.zhNote, t.zh, t.zhOpen, t.zhBusy, JSON.stringify(t.fx || [])].join('\u0001');
+const msgEnv = c => [c.mode, c.pattern, S.sampleState, TTS.ok, Mic.ok, Mic.blocked, S.ready, S.phrases.map(p => p.id).join(',')].join('|'); // the saved set: every 收藏 star
+// The chat's turns, one node each. Only turns that changed are drawn again, and every turn after one that was added or
+// removed, so a long chat is not rebuilt (and laid out) for every sentence. A focused control that is redrawn keeps the
+// focus (data-fk), as fill() does.
 function renderMessages() {
   const box = $('#msgs'); if (!box || !S.chat) return;
-  const c = S.chat;
-  fill(box, c.turns.map((t, i) => (t.r === 'm' ? meMsg(t, i) : coachMsg(t, c, i))));
+  const c = S.chat, env = msgEnv(c), sigs = c.turns.map(turnSig);
+  const node = (t, i) => (t.r === 'm' ? meMsg(t, i) : coachMsg(t, c, i));
+  const drawn = box._turns;
+  if (!drawn || box._chat !== c || box._env !== env || box.children.length !== drawn.length) fill(box, c.turns.map(node));
+  else {
+    const ae = document.activeElement;
+    const fk = ae && ae !== document.body && box.contains(ae) && ae.dataset ? ae.dataset.fk : null;
+    let k = 0;
+    while (k < drawn.length && k < c.turns.length && drawn[k] === c.turns[k]) k++;
+    for (let i = 0; i < k; i++) if (box._sigs[i] !== sigs[i]) box.children[i].replaceWith(node(c.turns[i], i));
+    while (box.children.length > k) box.lastChild.remove();
+    for (let i = k; i < c.turns.length; i++) box.append(node(c.turns[i], i));
+    if (fk && !box.contains(document.activeElement)) {
+      const n = box.querySelector('[data-fk="' + (window.CSS && CSS.escape ? CSS.escape(fk) : fk) + '"]');
+      if (n && !n.disabled) n.focus({ preventScroll: true });
+    }
+  }
+  box._turns = c.turns.slice(); box._sigs = sigs; box._chat = c; box._env = env;
 }
 function coachMsg(t, c, i) {
   const node = el('div', { class: 'msg c' });
@@ -4424,10 +4567,12 @@ function coachMsg(t, c, i) {
   if (t.cut) node.append(el('p', { class: 'cut', text: '（回覆中斷了）' }));
   if (t.sys && t.zhNote) node.append(el('p', { class: 'zh', text: t.zhNote }));
   if (!t.pending && !t.sys && !t.streaming) {
-    // While translating, the button stays focusable (aria-disabled) so keyboard focus is not lost.
+    // While translating, the button stays focusable (aria-disabled) so keyboard focus is not lost. A reply that is only a
+    // Chinese cue has nothing to read out or translate.
+    const said = speakable(t.t);
     node.append(el('div', { class: 'msg-acts' },
-      speakBtn(parseCoach(t.raw || t.t).speakText || t.t, 'sm', 'c' + i),
-      S.sampleState === 'ok' || t.zh ? el('button', { type: 'button', class: 'btn ghost small', 'aria-disabled': t.zhBusy ? 'true' : null, 'data-fk': 'zh-' + i, onclick: () => translateTurn(t) }, t.zhBusy ? '翻譯中…' : (t.zh && t.zhOpen ? '收起中文' : '看中文')) : null));
+      said ? speakBtn(said, 'sm', 'c' + i) : null,
+      (S.sampleState === 'ok' && translatable(t.t)) || t.zh ? el('button', { type: 'button', class: 'btn ghost small', 'aria-disabled': t.zhBusy ? 'true' : null, 'data-fk': 'zh-' + i, onclick: () => translateTurn(t) }, t.zhBusy ? '翻譯中…' : (t.zh && t.zhOpen ? '收起中文' : '看中文')) : null));
     if (t.zh && t.zhOpen) node.append(el('p', { class: 'zh', lang: 'zh-Hant-TW', text: t.zh }));
   }
   return node;
@@ -4437,8 +4582,8 @@ function cueSource(c, i) {
   for (let j = i - 1; j >= 0; j--) {
     const t = c.turns[j];
     if (t.r !== 'c' || t.sys) continue;
-    const said = String(t.t || '').split('\n').map(l => SAY_RE.exec(l)).filter(Boolean).pop();
-    if (said) return said[1].trim();
+    const said = coachLines(t.t).filter(x => x.say && hasCJK(x.say)).pop();
+    if (said) return said.say;
   }
   return '';
 }
@@ -4447,12 +4592,12 @@ function fillZhReply(bubble, t, c, i) {
   if (c.pattern) source = cueSource(c, i);
   else for (let j = i - 1; j >= 0; j--) if (c.turns[j].r === 'm' && cjkRatio(c.turns[j].t) >= 0.3) { source = c.turns[j].t; break; }
   const zhSource = cjkRatio(source) >= 0.3 ? source : '';
-  for (const line of String(t.t || '').split('\n')) {
-    const said = SAY_RE.exec(line);
-    if (said) { // (still empty while the reply is arriving)
-      if (said[1].trim()) bubble.append(el('div', { class: 'cue', lang: 'zh-Hant-TW' }, el('span', { class: 'cue-k', text: '用英文說說看' }), el('span', { class: 'cue-zh', text: said[1].trim() })));
+  for (const x of coachLines(t.t)) {
+    if (zhCue(x)) { // (still empty while the reply is arriving)
+      if (x.say) bubble.append(el('div', { class: 'cue', lang: 'zh-Hant-TW' }, el('span', { class: 'cue-k', text: '用英文說說看' }), el('span', { class: 'cue-zh', text: x.say })));
       continue;
     }
+    const line = x.line;
     const mm = OPT_RE.exec(line);
     if (mm) {
       const key = mm[1].toLowerCase(), en = mm[2].trim();
@@ -4480,8 +4625,8 @@ function meMsg(t, i) {
               chip,
               f.you ? el('div', { class: 'fix-you', text: f.you }) : null,
               el('div', { class: 'fix-hint', lang: 'zh-Hant-TW', text: '小提示：' + f.hint }),
-              el('div', { class: 'fix-why', lang: 'zh-Hant-TW', text: '先自己說說看正確的說法，再看答案。' })),
-            el('div', { class: 'fix-acts', lang: 'zh-Hant-TW' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'reveal-' + i + '-' + j, onclick: () => revealFix(t, f, i, j) }, '看答案')));
+              el('div', { class: 'fix-why', lang: 'zh-Hant-TW', text: '先自己說說看' + (errCode(f.code)[0] === 'C' ? '更自然' : '正確') + '的說法，再看答案。' })),
+            el('div', { class: 'fix-acts', lang: 'zh-Hant-TW' }, el('button', { type: 'button', class: 'btn small', 'aria-label': '看答案：' + (f.you || f.hint), 'data-fk': 'reveal-' + i + '-' + j, onclick: () => revealFix(t, f, i, j) }, '看答案')));
         }
         return el('div', { class: 'fix-row', 'data-fx': i + '-' + j },
           el('div', null,
@@ -4497,10 +4642,12 @@ function meMsg(t, i) {
   }
   return node;
 }
-// 看答案: the answer stays open (also after a reload), and the focus moves to its buttons.
+// 看答案: the answer stays open (also after a reload and on other devices), and the focus moves to its buttons. A voice
+// conversation pauses first: the learner is about to say the answer, which the open microphone must not send.
 function revealFix(t, f, i, j) {
+  voicePause();
   f.open = true;
-  if (S.chat && S.chat.turns.includes(t)) saveChat();
+  if (S.chat && S.chat.turns.includes(t)) { S.chat.updatedAt = Date.now(); saveChat(); }
   renderMessages();
   announce('答案：' + f.better);
   const row = $('[data-fx="' + i + '-' + j + '"]');
@@ -4573,9 +4720,9 @@ function updateComposer() {
   if (!btn) return;
   const ok = S.sampleState === 'ok' && !!S.chat;
   if (S.busy) {
-    btn.className = 'send stop'; btn.innerHTML = ICON.stop; btn.setAttribute('aria-label', '停止回覆'); btn.disabled = false;
+    btn.className = 'send stop'; setIcon(btn, ICON.stop); btn.setAttribute('aria-label', '停止回覆'); btn.disabled = false;
   } else {
-    btn.className = 'send'; btn.innerHTML = ICON.send; btn.setAttribute('aria-label', '送出'); btn.disabled = !ok;
+    btn.className = 'send'; setIcon(btn, ICON.send); btn.setAttribute('aria-label', '送出'); btn.disabled = !ok;
   }
   ta.disabled = !ok;
   const zh = !!(S.chat && S.chat.mode === 'zh');
@@ -4647,7 +4794,7 @@ function updateMicBtn() {
   b.setAttribute('aria-pressed', String(on));
   b.setAttribute('aria-label', label);
   b.title = label;
-  b.innerHTML = on && !counting ? ICON.stop : ICON.mic;
+  setIcon(b, on && !counting ? ICON.stop : ICON.mic);
   lb.hidden = b.hidden || !(S.chat && S.chat.mode === 'zh');
   lb.textContent = zhLang ? '中' : 'EN';
   lb.setAttribute('aria-label', '聽寫語言：' + (zhLang ? '中文' : '英文') + '，按一下切換');
@@ -5671,7 +5818,7 @@ function renderLog() {
   const stat = (n, label) => el('div', { class: 'stat' }, el('b', { text: String(n) }), el('span', { text: label }));
   const stats = el('div', { class: 'stats' },
     stat(practiced, '有練習的天數'), stat(complete, '達標天數'), stat(minutes, '專注分鐘'),
-    isCur ? stat(S.streak, '目前連續天數') : stat(best, '最長連續天數'));
+    isCur ? stat(S.streakPending ? '…' : S.streak, '目前連續天數') : stat(best, '最長連續天數'));
   const first = new Date(y, mo - 1, 1);
   const lead = (first.getDay() + 6) % 7;
   const grid = el('div', { class: 'cal' }, ['一', '二', '三', '四', '五', '六', '日'].map(w => el('div', { class: 'dow', 'aria-hidden': 'true', text: w })));
@@ -5715,15 +5862,28 @@ function sessionCard(s) {
       el('b', { text: str(s.label) }),
       el('span', { class: 'tag', text: (Number(s.minutes) || 0) + ' 分鐘 · ' + (Number(s.count) || 0) + ' 句' })),
     str(s.summary) ? el('p', { class: 'help', text: str(s.summary) }) : null,
-    pats.length || phr.length ? el('details', { open: S.openSess.has(s.id), ontoggle: e => { if (e.currentTarget.open) S.openSess.add(s.id); else S.openSess.delete(s.id); } },
-      el('summary', null, '看重點與說法'),
-      pats.map(p => el('div', { class: 'pat' },
-        errChip(errCode(p.code)),
-        el('p', { text: str(p.issue) }),
-        str(p.fix) ? el('p', { class: 'fix-better', lang: 'en', text: str(p.fix) }) : null)),
-      phr.filter(p => str(p.en)).map(p => el('div', { class: 'phrase' },
-        el('div', null, el('div', { class: 'phrase-en', lang: 'en', text: str(p.en) }), str(p.zh) ? el('div', { class: 'phrase-zh', text: str(p.zh) }) : null),
-        el('div', { class: 'phrase-acts' }, speakBtn(str(p.en), 'sm'), starBtn({ en: str(p.en), zh: str(p.zh), example: str(p.example), src: 'review' }, 'sm', 'ss'))))) : null);
+    pats.length || phr.length ? sessDetails(s, pats, phr) : null);
+}
+// A review's points and phrases are drawn when they are first opened: a month of reviews drew thousands of hidden
+// nodes (with their buttons) every time 紀錄 was shown.
+function sessDetails(s, pats, phr) {
+  const str = v => (typeof v === 'string' ? v : '');
+  const body = () => [
+    pats.map(p => el('div', { class: 'pat' },
+      errChip(errCode(p.code)),
+      el('p', { text: str(p.issue) }),
+      str(p.fix) ? el('p', { class: 'fix-better', lang: 'en', text: str(p.fix) }) : null)),
+    phr.filter(p => str(p.en)).map(p => el('div', { class: 'phrase' },
+      el('div', null, el('div', { class: 'phrase-en', lang: 'en', text: str(p.en) }), str(p.zh) ? el('div', { class: 'phrase-zh', text: str(p.zh) }) : null),
+      el('div', { class: 'phrase-acts' }, speakBtn(str(p.en), 'sm'), starBtn({ en: str(p.en), zh: str(p.zh), example: str(p.example), src: 'review' }, 'sm', 'ss')))),
+  ].flat(Infinity).filter(Boolean);
+  const open = S.openSess.has(s.id);
+  const d = el('details', { open, ontoggle: e => {
+    const n = e.currentTarget;
+    if (n.open) { S.openSess.add(s.id); if (!n._drawn) { n._drawn = true; n.append(...body()); } } else S.openSess.delete(s.id);
+  } }, el('summary', null, '看重點與說法'), open ? body() : null);
+  d._drawn = open;
+  return d;
 }
 
 /* ================= rendering: saved ================= */
@@ -5737,12 +5897,15 @@ function renderStarters() {
       el('div', { class: 'seg', role: 'group', 'aria-label': '救急包' }, [['basic', '日常'], ['meeting', '開會']].map(([k, t]) =>
         el('button', { type: 'button', 'aria-pressed': String((meet ? 'meeting' : 'basic') === k), 'data-fk': 'starters-' + k, onclick: () => { S.starterSet = k; renderStarters(); } }, t)))),
     el('p', { class: 'help mt6', text: meet ? '開會和視訊時用得上的句子：插話、請別人發言、視訊出狀況、確認共識和負責人、收尾。點星號加入收藏。' : '卡住的時候，先用這些句子爭取時間、把對話接下去。點星號加入收藏。' }),
-    el('div', { class: 'mt6' }, list.map(([en, zh, use, say]) => el('div', { class: 'phrase' },
-      el('div', null,
-        el('div', { class: 'phrase-en', lang: 'en', text: en }),
-        el('div', { class: 'phrase-zh' }, zh, el('span', { class: 'use', text: use }))),
-      el('div', { class: 'phrase-acts' }, speakBtn(say || en, 'sm', ctx), sayBtn(say || en, ctx), starBtn({ en, zh, note: use, src: 'starter' }, 'sm', ctx)),
-      sayBox(say || en, ctx))))));
+    // The sentences fold away (open once, they stay open), so 我的收藏 below is not several screens down.
+    el('details', { class: 'mt6', open: S.startersOpen, ontoggle: e => { S.startersOpen = e.currentTarget.open; } },
+      el('summary', { 'data-fk': 'starters-open' }, '看這 ' + list.length + ' 句'),
+      list.map(([en, zh, use, say]) => el('div', { class: 'phrase' },
+        el('div', null,
+          el('div', { class: 'phrase-en', lang: 'en', text: en }),
+          el('div', { class: 'phrase-zh' }, zh, el('span', { class: 'use', text: use }))),
+        el('div', { class: 'phrase-acts' }, speakBtn(say || en, 'sm', ctx), sayBtn(say || en, ctx), starBtn({ en, zh, note: use, src: 'starter' }, 'sm', ctx)),
+        sayBox(say || en, ctx))))));
 }
 // The list of common mistakes (ERR_TYPES), by tier: each with an example, why, how often the coach corrected it lately,
 // and 用中翻英練這個.
@@ -5765,8 +5928,9 @@ function renderErrs() {
           return el('div', { class: 'err-item' },
             el('div', { class: 'err-name' }, el('b', { text: ty.zh }), n[k] ? el('span', { class: 'tag', text: '最近 30 天改過 ' + n[k] + ' 次' }) : null),
             q ? el('p', { class: 'err-q', lang: 'en', text: q }) : null,
-            el('p', { class: 'fix-you', lang: 'en', text: bad }),
-            el('div', { class: 'phrase-acts' }, el('span', { class: 'fix-better', lang: 'en', text: good }), speakBtn(good, 'sm', 'er')),
+            // The wrong one is struck through, which a screen reader does not say: it hears 說錯 and 說對 instead.
+            el('p', { class: 'fix-you', lang: 'en' }, el('span', { class: 'sr-only', lang: 'zh-Hant-TW', text: '說錯：' }), bad),
+            el('div', { class: 'phrase-acts' }, el('span', { class: 'fix-better', lang: 'en' }, el('span', { class: 'sr-only', lang: 'zh-Hant-TW', text: '說對：' }), good), speakBtn(good, 'sm', 'er')),
             el('p', { class: 'fix-why', text: ty.why }),
             el('div', null, el('button', { type: 'button', class: 'btn small', disabled: !can, 'data-fk': 'err-practice-' + k, onclick: () => practiseFromList(k) }, '用中翻英練這個')));
         }));
@@ -5780,19 +5944,31 @@ function practiseFromList(code) {
   if (S.chat && S.chat.turns.some(t => t.r === 'm')) { toast('先結束目前的對話，再開始練這個句型'); return; }
   practisePattern(code);
 }
+// 收藏's search: every phrase is drawn once, and typing only shows or hides the rows (drawing hundreds of rows on every
+// key was slow on a phone).
+const savedQuery = () => String(($('#saved-search') || {}).value || '').trim().toLowerCase();
+const savedKey = p => (p.en + '\n' + (p.zh || '') + '\n' + (p.note || '')).toLowerCase();
+function filterSaved() {
+  const box = $('#saved-list'); if (!box) return;
+  const q = savedQuery(), none = box.querySelector('.empty-q');
+  let n = 0;
+  for (const r of box.querySelectorAll('.phrase[data-q]')) { const on = !q || r.dataset.q.includes(q); r.hidden = !on; if (on) n++; }
+  if (none) none.hidden = n > 0 || !box.querySelector('.phrase[data-q]');
+}
+let savedTimer = 0;
+const savedSearched = () => { clearTimeout(savedTimer); savedTimer = setTimeout(filterSaved, 120); };
 function renderSavedList() {
   const box = $('#saved-list'); if (!box || S.tab !== 'saved') return;
-  const q = String(($('#saved-search') || {}).value || '').trim().toLowerCase();
   $('#mine-count').textContent = String(S.phrases.length);
   if (!S.phrases.length) {
     fill(box, el('p', { class: 'empty', text: !S.ready ? '正在載入…' : phrasesUnread() ? '還讀不到你的收藏，稍後會自動再試。' : '還沒有收藏。在教練的「更自然的說法」、複習或上面的救急包點星號，句子就會出現在這裡。' }));
     return;
   }
-  const items = S.phrases.filter(p => !q || p.en.toLowerCase().includes(q) || (p.zh || '').toLowerCase().includes(q) || (p.note || '').toLowerCase().includes(q));
-  if (!items.length) { fill(box, el('p', { class: 'empty', text: '找不到符合的句子。' })); return; }
-  fill(box, items.map(p => {
+  fill(box, el('p', { class: 'empty empty-q', text: '找不到符合的句子。', hidden: true }), S.phrases.map(p => {
     const armed = isArmed('del-' + p.id);
-    return el('div', { class: 'phrase' },
+    // After a deletion the focus goes to the next row still shown (or the one before).
+    const shown = () => S.phrases.filter(x => { const q = savedQuery(); return !q || savedKey(x).includes(q); });
+    return el('div', { class: 'phrase', 'data-q': savedKey(p) },
       el('div', null,
         el('div', { class: 'phrase-en', lang: 'en', text: p.en }),
         p.zh || p.note ? el('div', { class: 'phrase-zh', text: p.zh || p.note }) : null,
@@ -5800,9 +5976,10 @@ function renderSavedList() {
       el('div', { class: 'phrase-acts' },
         speakBtn(p.en, 'sm'),
         sayBtn(p.en, 'sv'),
-        iconBtn('trash', armed ? '再按一次刪除' : '刪除', () => arm('del-' + p.id, () => { const next = neighbourId(items, p.id); if (removePhrase(p.id)) focusFk(next && 'del-' + next, '#saved-search', '#mine-title'); }, renderSavedList), 'sm' + (armed ? ' danger' : ''), 'del-' + p.id)),
+        iconBtn('trash', armed ? '再按一次刪除' : '刪除', () => arm('del-' + p.id, () => { const next = neighbourId(shown(), p.id); if (removePhrase(p.id)) focusFk(next && 'del-' + next, '#saved-search', '#mine-title'); }, renderSavedList), 'sm' + (armed ? ' danger' : ''), 'del-' + p.id)),
       sayBox(p.en, 'sv'));
   }));
+  filterSaved();
 }
 // Anki text import: the header lines tell Anki the fields are tab-separated HTML, so every field is escaped.
 function ankiText(items) {
@@ -5969,10 +6146,7 @@ async function applyBackup() {
   try {
     // Every document the file touches must have been read here first, so the merge is applied to what is really
     // stored: months not read yet are loaded, and documents whose read failed are read again (or the merge waits).
-    for (const name of Object.keys(docs)) {
-      if (name.startsWith('log-')) await loadMonth(name.slice(4));
-      if (name.startsWith('sessions-')) await loadSessions(name.slice(9));
-    }
+    await mapLimit(Object.keys(docs), 6, name => (name.startsWith('log-') ? loadMonth(name.slice(4)) : name.startsWith('sessions-') ? loadSessions(name.slice(9)) : null));
     const unread = () => Object.keys(docs).filter(name => S.loadErrors.has(name));
     if (unread().length) await reloadDocs(unread());
     if (unread().length) { toast('還讀不到這裡的部分資料，先不合併，等一下再試。'); return; }
@@ -5987,15 +6161,18 @@ async function applyBackup() {
     }
     if (docs.phrases) {
       const patch = { map: {} };
+      let bytes = docBytes(phrasesFull()); // measured once, then each phrase added (the whole list each time was slow)
       for (const raw of normPhrases(docs.phrases)) {
-        // Taken in as if it were saved here: the same id for the same sentence, and the same field lengths.
+        // Taken in as if it were saved here: the same id for the same sentence, and the same field lengths. A date in the
+        // future (a damaged file) would keep the phrase first and new for ever: it becomes now.
         const en = phraseText(raw.en);
         if (!en) continue;
-        const p = { id: phraseId(en), en, zh: raw.zh.trim().slice(0, 200), note: raw.note.trim().slice(0, 200), ex: raw.ex.trim().slice(0, 300), src: raw.src.slice(0, 20), at: raw.at };
+        const p = { id: phraseId(en), en, zh: raw.zh.trim().slice(0, 200), note: raw.note.trim().slice(0, 200), ex: raw.ex.trim().slice(0, 300), src: raw.src.slice(0, 20), at: Math.min(raw.at, Date.now()) };
         if (raw.was && normEn(raw.was) !== normEn(en)) p.was = raw.was.trim().slice(0, 300);
         if (S.phrases.some(x => x.id === p.id) || patch.map[p.id]) continue;
-        if (S.phrases.length >= MAX_PHRASES || docBytes(phrasesFull()) + docBytes(p) > DOC_LIMIT * 0.8) { full = true; break; }
-        S.phrases.push(p); patch.map[p.id] = p; n.phrases++;
+        const own = docBytes({ [p.id]: p });
+        if (S.phrases.length >= MAX_PHRASES || bytes + own > DOC_LIMIT * 0.8) { full = true; break; }
+        S.phrases.push(p); patch.map[p.id] = p; n.phrases++; bytes += own;
       }
       S.phrases.sort((a, b) => b.at - a.at);
       if (n.phrases) Store.patch('phrases', phrasesFull(), patch);
@@ -6008,7 +6185,7 @@ async function applyBackup() {
         const id = String(x.id).slice(0, 40);
         if (S.inbox.some(y => y.id === id)) continue;
         if (S.inbox.length >= 100) { full = true; break; }
-        const item = { id, text: x.text.slice(0, 200), at: x.at };
+        const item = { id, text: x.text.slice(0, 200), at: Math.min(x.at, Date.now()) };
         S.inbox.push(item); patch.map[item.id] = item; n.inbox++;
       }
       S.inbox.sort((a, b) => b.at - a.at);
@@ -6026,9 +6203,12 @@ async function applyBackup() {
     if (docs.shadow) {
       const patch = { map: {} };
       for (const p of normShadow(docs.shadow).list) { // newest first
+        // Only real practice days (a damaged file could hold thousands, more than the document can store).
+        p.days = Object.fromEntries(Object.keys(p.days).filter(importDay).sort().slice(-400).map(k => [k, 1]));
         const cur = S.shadow.list.find(x => x.id === p.id);
         if (cur) {
           const add = Object.keys(p.days).filter(k => !cur.days[k]);
+          if (add.length && docBytes(shadowFull()) + docBytes(add) > DOC_LIMIT * 0.6) { full = true; continue; }
           if (add.length) { for (const k of add) cur.days[k] = 1; patch.map[p.id] = { days: Object.fromEntries(add.map(k => [k, 1])) }; }
           continue;
         }
@@ -6065,6 +6245,7 @@ async function applyBackup() {
       if (inc.monthRecord && !doc.monthRecord) { doc.monthRecord = true; patch.monthRecord = true; S.editedMonthRec.add(m); }
       if (Object.keys(patch.days).length || patch.monthRecord) Store.patch(name, doc, patch);
     }
+    const sizes = {}; // each month's size, measured once (see addSession)
     for (const [name, v] of Object.entries(docs)) {
       if (!name.startsWith('sessions-')) continue;
       for (const raw of normSessions(v)) {
@@ -6074,7 +6255,8 @@ async function applyBackup() {
         if (!S.sessLoaded.has(m)) await loadSessions(m);
         if ((S.sessions[m] || []).some(x => x.id === s.id)) continue;
         // A month that is full takes no more (nothing of this month is pushed out to make room).
-        if (!addSession(s, true)) { full = true; continue; }
+        if (!sizes[m]) sizes[m] = { n: docBytes(sessionsFull(m)) };
+        if (!addSession(s, true, sizes[m])) { full = true; continue; }
         n.sess++;
       }
     }
@@ -6291,7 +6473,7 @@ function bindStatic() {
   });
   $('#hint-btn').addEventListener('click', () => { voicePause('看完提示，按「繼續說」或直接送出。'); getHints(); });
   $('#tip-close').addEventListener('click', () => { S.tipHidden = true; lsSet('kaikou:tip', 'hide'); $('#composer-tip').hidden = true; updateScrollPad(); focusComposer(); });
-  $('#saved-search').addEventListener('input', renderSavedList);
+  $('#saved-search').addEventListener('input', savedSearched);
   $('#copy-anki').addEventListener('click', () => {
     if (!S.phrases.length) { toast('還沒有收藏可以複製'); return; }
     copyText(ankiText(S.phrases), $('#copy-fallback'), '已複製 ' + S.phrases.length + ' 句');
@@ -6436,7 +6618,18 @@ function setEndPending(v) {
   S.endPending = v;
   if (v && Store.uid) lsSet(END_LS, JSON.stringify({ uid: Store.uid, id: v.id, upd: v.upd })); else lsDel(END_LS);
 }
+// This browser's copy of the chat (kept for a visit that cannot reach the cloud) never holds open a chat the cloud has
+// ended: a later visit from the copy would show it again, and finishing it again would replace its review.
+function endChatCopy(id) {
+  if (Store.mode !== 'db' || !id) return;
+  try {
+    const v = JSON.parse(lsGet('kaikou:chat') || 'null');
+    if (v && v.active && String(v.id) === String(id)) lsSet('kaikou:chat', JSON.stringify({ active: false, endedId: String(id), at: Date.now() }));
+  } catch (_) { /* no copy, or not readable */ }
+}
 function applyChat(d) {
+  if (d && d.active === false && d.endedId) endChatCopy(d.endedId);
+  else if (d && d.id && isReviewed(String(d.id))) endChatCopy(String(d.id));
   // A chat discarded here whose end could not be written then (its read failed): a later read that finds it as it was
   // writes the end now. One continued elsewhere since (or replaced by another chat) is left as it is.
   const pend = S.endPending;
@@ -6487,6 +6680,10 @@ async function loadAll() {
   const now = new Date();
   const months = [0, 1, 2].map(i => mkey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
   const names = ['sessions-' + months[0], 'sessions-' + months[1], 'settings', 'phrases', 'inbox', 'srs', 'shadow', 'chat'].concat(months.map(m => 'log-' + m));
+  // The reviews of the last 30 days are all read (the patterns corrected in them decide the coach's hints): early in a
+  // month that reaches two months back.
+  const since = 'sessions-' + dkey(addDays(parseD(todayKey()), -30)).slice(0, 7);
+  if (!names.includes(since)) names.unshift(since);
   const res = await Promise.all(names.map(n => Store.get(n).then(v => ({ ok: true, v }), () => ({ ok: false }))));
   names.forEach((n, i) => {
     if (res[i].ok) { sameAsSeen(n, res[i].v); applyDoc(n, res[i].v, false); S.loadErrors.delete(n); return; }
@@ -6619,20 +6816,34 @@ async function boot(data) {
   }
   S.ready = true;
   updateSync();
+  // A streak that reaches back beyond the months read so far needs older months first: the page is drawn now and the
+  // count follows (shown as … meanwhile).
+  if (streakInfo(todayKey()).need) { S.streakPending = true; renderAll(); }
   S.streak = await settleStreak();
+  S.streakPending = false;
   renderAll();
   const note = takeNote(); if (note && Store.mode === 'db') toast(note); // said only when the cloud is really used
   // Changes an earlier visit left unsent are sent now; once that is over, the page has finished opening (S.started).
   resendUnsent().finally(() => { S.started = true; });
   scheduleMidnight();
+  // Every 3 minutes the documents are read again, but only while the page is being used: a window left open (overnight,
+  // say) read every document again and again. The first touch or key after a pause reads them at once.
+  let lastUse = Date.now(), lastPoll = Date.now();
+  const IDLE_MS = 10 * 60000, POLL_MS = 180000;
+  const used = () => {
+    const back = Date.now() - lastUse > IDLE_MS;
+    lastUse = Date.now();
+    if (back && document.visibilityState === 'visible' && Date.now() - lastPoll > POLL_MS) { lastPoll = Date.now(); refresh(); }
+  };
+  for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, used, { capture: true, passive: true });
   setInterval(() => {
     Store.saveUnsent(); // a record of changes still waiting is renewed, so other tabs see this one still looks after it
-    if (document.visibilityState === 'visible') refresh();
-  }, 180000);
+    if (document.visibilityState === 'visible' && Date.now() - lastUse < IDLE_MS) { lastPoll = Date.now(); refresh(); }
+  }, POLL_MS);
   if (data && typeof data.draft === 'string' && data.draft && S.chat) { const ta = $('#msg-input'); if (ta && !ta.value) { ta.value = data.draft; autosize(ta); } }
   if (S.tab === 'coach' && S.chat) scrollToEnd(true);
 }
-if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats, leaves, timeAt, stampTimes, mergeTimes, heldOver, takeHeld, recordHeld, heldSuperseded, stillHeld, ERR_TYPES, errCode, chatErrs, errCounts, knownErrs, normErrs, normChat, reviewPrompt, SCENES, sceneOf, F432_TOPICS, STARTERS, MEETING };
+if (window.__kaikouTest) window.__kaikouTest = { parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats, leaves, timeAt, stampTimes, mergeTimes, heldOver, takeHeld, recordHeld, heldSuperseded, stillHeld, ERR_TYPES, errCode, chatErrs, errCounts, knownErrs, normErrs, normChat, reviewPrompt, SCENES, sceneOf, F432_TOPICS, STARTERS, MEETING, chatDoc, hintPrompt, translatable, speakable, coachLines, storedSess, mapLimit, applyChat, renderAll };
 
 boot(viewSaved()).catch(err => { console.error(err); setSync('error'); });
 })();
