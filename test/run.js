@@ -3197,7 +3197,9 @@ function serve(root) {
         // Ordinals: a date written as a number is said as "fifth"; a recogniser writes "5th" or "fifth". An ordinal said
         // without its -th is not heard; "second" after a number is the unit of time.
         ord: [c('We launch on May 5.', 'we launch on may fifth'), c('We launch on May 5.', 'we launch on May 5th'), c('It is the twenty-first.', 'it is the 21st'), c('Let me think for a second.', 'let me think for a second'), X.sayTokens('five first'),
-          c('We launch on May fifth.', 'we launch on may five'), c('Give me a thirty-second summary.', 'give me a 30 second summary'), c('Take the second option.', 'take the 2nd option')],
+          c('We launch on May fifth.', 'we launch on may five'), c('Give me a thirty-second summary.', 'give me a 30 second summary'), c('Take the second option.', 'take the 2nd option'),
+          // "twenty-second" can be a date too; a recogniser may write an ordinal as digits ("May 5", "1/3").
+          c('It is the twenty-second.', 'it is the 22nd'), c('We launch on May fifth.', 'we launch on may 5'), c('Add one third of the water.', 'add 1/3 of the water')],
         // Numbers said in words are one number, as a recogniser writes them; a list of digits stays a list.
         more: [c("I'm twenty-five.", "I'm 25"), c('It costs two hundred and fifty dollars.', 'it costs 250 dollars'), c('It was two thousand twenty six.', 'it was 2026'),
           c('Okay, see you then.', 'ok see you then'), c('Press one two three.', 'press 1 2 3'), c('We sold 1,000 cups.', 'we sold one thousand cups'), c('I am twenty five.', 'I am 20')],
@@ -3216,7 +3218,7 @@ function serve(root) {
       eq(pure.miss, [5, 7, ['a', 'bit']]);
       eq(pure.nums, [4, 4, []]);
       eq(pure.spell, [[6, 6, []], [5, 5, []], [5, 5, []], [4, 4, []], ['our', 'hour', '4', 'your', 'tour', 'realism', 'finalist', 'promise']]);
-      eq(pure.ord, [[5, 5, []], [5, 5, []], [4, 4, []], [6, 6, []], ['5', '1th'], [4, 5, ['fifth.']], [5, 5, []], [4, 4, []]]);
+      eq(pure.ord, [[5, 5, []], [5, 5, []], [4, 4, []], [6, 6, []], ['5', '1th'], [4, 5, ['fifth.']], [5, 5, []], [4, 4, []], [4, 4, []], [5, 5, []], [6, 6, []]]);
     });
     check('唸一次的比對：用字唸的數字（twenty-five、two hundred and fifty、a hundred、年份）和辨識寫的數字算一樣，okay = ok，算的是句子裡的字數', () => {
       eq(pure.more, [[2, 2, []], [7, 7, []], [6, 6, []], [4, 4, []], [4, 4, []], [4, 4, []], [2, 4, ['twenty', 'five.']]]);
@@ -4508,6 +4510,10 @@ function serve(root) {
           T.speakable('Good job.\nsay:')], // a cue still arriving is not read out either
         // A hint written on its own line after the JSON goes to the correction, not into the reply.
         hintTail: (p => [p.reply, p.fixes.map(f => f.hint)])(T.parseCoach('Nice!\n###\n{"you": "a", "better": "b", "code": "A1"}\nhint: 這是昨天的事，要怎麼改？')),
+        // A hint line dressed up as a list item or in bold, or written like JSON, is still a hint; a cut-off object gives none.
+        hintDecor: ['Nice!\n###\n{"you": "a", "better": "b", "code": "A1"}\n- **Hint:** 這是昨天的事？', 'Nice!\n###\n{"you": "a", "better": "b", "code": "A1"}\n"hint": "think about the time",', 'Nice!\n###\nhint: early\n{"you": "a", "better": "b", "code": "A1"}']
+          .map(t => T.parseCoach(t)).map(p => [p.reply, p.fixes[0].hint]),
+        hintCut: T.parseCoach('Nice!\n###\n{"you": "We launch", "better": "We launched", "code": "A1"}\n{\n  "you": "new serum",\n  "hint": "可數名詞前面要加什麼？"').fixes.map(f => [f.code, f.hint]),
         // A hint between two corrections belongs to the one before it.
         hintBetween: T.parseCoach('Nice!\n###\n{"you": "I go", "better": "I went", "code": "A1"}\nhint: go 要怎麼改？\n{"you": "new serum", "better": "a new serum", "code": "B2"}').fixes.map(f => [f.code, f.hint]),
         // In a drill, the drilled pattern is kept when there are more corrections than can be shown.
@@ -4538,6 +4544,7 @@ function serve(root) {
     check('教練把提示寫在 JSON 後面時算進那個更正，不會出現在回覆裡；練句型時多出來的更正先留練的那個；複習的次數也能讀成對的寫法', () => {
       eq(pure.hintTail, ['Nice!', ['這是昨天的事，要怎麼改？']]);
       eq(pure.hintBetween, [['A1', 'go 要怎麼改？'], ['B2', '']]);
+      eq([pure.hintDecor, pure.hintCut], [[['Nice!', '這是昨天的事？'], ['Nice!', 'think about the time'], ['Nice!', 'early']], [['A1', '']]]);
       eq(pure.prefer, [['z', 'x'], ['y'], ['x', 'y']]);
       eq(pure.pairs, { A1: 2, B2: 3 });
     });
@@ -4924,10 +4931,11 @@ function serve(root) {
     await until(page, () => !window.__kaikouTest.Store.busyDoc('chat'));
     const started = await T(() => ({ label: document.querySelector('.chat-title b').textContent, rules: window.__lastRules.includes("The learner's task: Report briefly"), stored: window.__store.get('data/users/u_test/chat').sceneK, open: document.querySelector('.scene-help').open }));
     await page.click('[data-fk="scene-help"]');
+    await T(() => { document.querySelector('.scene-help .phrase').__kept = true; }); // nothing in it changes: not drawn again
     await page.fill('#msg-input', 'Yesterday I finish the survey');
     await page.click('#send-btn');
     await notBusy(page);
-    const kept = await T(() => { const d = document.querySelector('.scene-help'); return { open: d.open, goal: d.querySelector('p').textContent, phrases: d.querySelectorAll('.phrase').length }; });
+    const kept = await T(() => { const d = document.querySelector('.scene-help'); return { open: d.open, goal: d.querySelector('p').textContent, phrases: d.querySelectorAll('.phrase').length, same: !!d.querySelector('.phrase').__kept }; });
     // The phrase starred on the scene card is no longer saved (deleted in 收藏): the panel's star follows.
     const panelStar = () => T(() => [...document.querySelectorAll('.scene-help .phrase')].find(r => r.querySelector('.phrase-en').textContent === 'Yesterday I finished the first round of testing.').querySelector('[data-fk^="star:"]').getAttribute('aria-pressed'));
     const starBefore = await panelStar();
@@ -4940,7 +4948,7 @@ function serve(root) {
     const reloaded = await T(() => ({ panel: !!document.querySelector('.scene-help'), sceneK: window.__kaikouTest.S.chat.sceneK, review: window.__kaikouTest.reviewPrompt(window.__kaikouTest.S.chat).includes("The learner's task in this role-play: Report briefly") }));
     check('角色扮演對話：教練知道你的任務；任務和說法收在對話上方，打開後送出句子也還開著（收藏的星號跟著更新）；重新打開頁面還在，複習也會看任務有沒有完成', () => {
       eq(started, { label: '角色扮演・每日站會', rules: true, stored: 'standup', open: false });
-      eq(kept, { open: true, goal: '你的任務：用三句話報告昨天做了什麼、今天要做什麼、卡在哪裡，再回答一個追問。', phrases: 5 });
+      eq(kept, { open: true, goal: '你的任務：用三句話報告昨天做了什麼、今天要做什麼、卡在哪裡，再回答一個追問。', phrases: 5, same: true });
       eq([starBefore, starAfter], ['true', 'false']);
       eq(reloaded, { panel: true, sceneK: 'standup', review: true });
     });
@@ -5070,8 +5078,8 @@ function serve(root) {
 
   if (want('12')) {
     // This browser's copy of a chat (kept for a visit that cannot reach the cloud) is ended when the cloud has ended the
-    // chat, or has its review, or has moved on to a chat started after the copy last changed; a copy of another chat is
-    // left as it is, and so is one changed here after the cloud's chat was started.
+    // chat, or has its review, or the chat was ended here; a copy of another chat is left as it is (a tab of this browser
+    // that works from its storage may be in the middle of it), also when the cloud has moved on to a newer chat.
     const copy = (id, upd) => JSON.stringify({ active: true, id, mode: 'free', level: 'B1', topicZh: '這個週末', topicEn: 'the weekend', startedAt: 1, updatedAt: upd || 2, lastAt: upd || 2, turns: [{ r: 'm', t: 'Hi', at: 1 }] });
     const run = async (seed, id, upd) => {
       const { ctx, page } = await open(ARTIFACT, { viewport: { width: 400, height: 860 } }, 'chat-copy', null, "localStorage.setItem('kaikou:chat', " + JSON.stringify(copy(id, upd)) + ');' + seed);
@@ -5085,30 +5093,56 @@ function serve(root) {
     // The cloud's chat is another one (cY, started at 1000).
     const chatY = "store.set(P('chat'), { active: true, id: 'cY', mode: 'free', level: 'B1', startedAt: 1000, updatedAt: 3000, lastAt: 3000, turns: [{ r: 'm', t: 'Hello', at: 1000 }] });";
     const review1 = " const k = P('sessions-' + dk(back(0)).slice(0, 7)); const d = store.get(k) || {}; d.map = Object.assign({}, d.map, { c1: { date: dk(back(0)), at: 3, mode: 'free', label: 'x', level: 'B1', minutes: 1, count: 3, summary: 's', strengths: [], patterns: [], phrases: [], next: '' } }); store.set(k, d);";
-    const movedOn = await run('window.__mockSeed = (store, P) => { ' + chatY + ' };', 'c1'); // the copy last changed at 2
+    const movedOn = await run('window.__mockSeed = (store, P) => { ' + chatY + ' };', 'c1'); // cY started after the copy last changed
     const newerHere = await run('window.__mockSeed = (store, P) => { ' + chatY + ' };', 'c1', 5000);
     const reviewedThere = await run('window.__mockSeed = (store, P, dk, back) => { ' + chatY + review1 + ' };', 'c1', 5000);
-    // The page is still on the copy's chat (waiting for the coach): the copy stays until the page has moved on too.
-    const inUse = await (async () => {
-      const { ctx, page } = await open(ARTIFACT, { viewport: { width: 400, height: 860 } }, 'chat-copy-in-use', null, "window.__mockSeed = (store, P) => { store.delete(P('chat')); };");
+    // A chat discarded here whose end could not be written: its copy is ended at the next read.
+    const endedHere = await (async () => {
+      const { ctx, page } = await open(ARTIFACT, { viewport: { width: 400, height: 860 } }, 'chat-copy-ended-here', null, "window.__mockSeed = (store, P) => { store.delete(P('chat')); };");
       const r = await page.evaluate(c => {
-        const X = window.__kaikouTest, copyState = () => { const v = JSON.parse(localStorage.getItem('kaikou:chat') || 'null'); return v && [v.active, v.endedId || v.id]; };
+        const X = window.__kaikouTest;
         localStorage.setItem('kaikou:chat', c);
-        X.S.chat = X.normChat(JSON.parse(c));
-        const y = { active: true, id: 'cY', mode: 'free', level: 'B1', startedAt: Date.now(), updatedAt: Date.now(), lastAt: Date.now(), turns: [{ r: 'm', t: 'Hello', at: Date.now() }] };
-        X.S.busy = true; X.applyChat(y);
-        const busy = [copyState(), X.S.chat.id];
-        X.S.busy = false; X.applyChat(y); // the page moves on to cY, and at the next read the copy follows
-        X.applyChat(y);
-        return [busy, [copyState(), X.S.chat.id]];
+        X.S.endedChats.add('c1');
+        X.applyChat(null);
+        const v = JSON.parse(localStorage.getItem('kaikou:chat') || 'null');
+        return v && [v.active, v.endedId || v.id];
       }, copy('c1', 5000));
       await ctx.close();
       return r;
     })();
-    check('瀏覽器裡的對話副本：雲端已經結束（或已經複習）的對話會跟著標記結束，連不上雲端時不會再打開；雲端換成之後才開始的新對話時也結束；別的對話的副本、在這裡改得比雲端的新對話還晚的副本不動', () => {
+    // Two tabs of this browser: B could not reach the cloud and is chatting from this browser's storage; A reaches the
+    // cloud and starts a chat there. B's chat stays, on its screen and in the copy.
+    const twoTabs = await (async () => {
+      const ctx = await browser.newContext({ viewport: { width: 400, height: 860 } });
+      await ctx.clock.install({ time: NOON });
+      const B = await addPage(ctx, ARTIFACT, 'copy-tab-b', { noDb: true });
+      await B.click('#t-coach');
+      await B.click('[data-fk="mode-free"]');
+      await B.click('[data-fk="start"]');
+      await notBusy(B);
+      await B.fill('#msg-input', 'I eat a big lunch and it make me happy');
+      await B.click('#send-btn');
+      await notBusy(B);
+      await until(B, () => { const v = JSON.parse(localStorage.getItem('kaikou:chat') || 'null'); return !!(v && v.active && v.turns && v.turns.length >= 3); });
+      const chatB = await B.evaluate(() => window.__kaikouTest.S.chat.id);
+      await ff(B, 60000);
+      const A = await addPage(ctx, ARTIFACT, 'copy-tab-a', null, "window.__mockSeed = (store, P) => { store.delete(P('chat')); };");
+      await A.click('#t-coach');
+      await A.click('[data-fk="mode-free"]');
+      await A.click('[data-fk="start"]');
+      await notBusy(A);
+      await until(A, () => !window.__kaikouTest.Store.busyDoc('chat'));
+      await ff(A, 16000);
+      await A.evaluate(() => window.dispatchEvent(new Event('focus'))); // A reads the cloud again (its new chat comes back)
+      await A.waitForTimeout(1500);
+      const r = await B.evaluate(id => { const v = JSON.parse(localStorage.getItem('kaikou:chat') || 'null'); return { copy: v && [v.active, v.id === id], shown: !!window.__kaikouTest.S.chat && window.__kaikouTest.S.chat.id === id }; }, chatB);
+      await ctx.close();
+      return r;
+    })();
+    check('瀏覽器裡的對話副本：雲端已經結束、已經複習或在這裡結束的對話會跟著標記結束，連不上雲端時不會再打開；雲端只是換成別的對話時不動（同一個瀏覽器裡用瀏覽器儲存的分頁可能正在用它）', () => {
       eq([ended, reviewed, other], [[false, 'c1'], [false, 'c1'], [true, 'c9']]);
-      eq([movedOn, newerHere, reviewedThere], [[false, 'c1'], [true, 'c1'], [false, 'c1']]);
-      eq(inUse, [[[true, 'c1'], 'c1'], [[false, 'c1'], 'cY']]);
+      eq([movedOn, newerHere, reviewedThere, endedHere], [[true, 'c1'], [true, 'c1'], [false, 'c1'], [false, 'c1']]);
+      eq(twoTabs, { copy: [true, true], shown: true });
     });
   }
 

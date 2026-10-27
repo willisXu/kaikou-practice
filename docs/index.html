@@ -2351,15 +2351,17 @@ function sayWords(s) {
   return t.replace(/'/g, '').replace(/(\d),(?=\d{3}\b)/g, '$1').replace(/[^a-z0-9\s]+/g, ' ').split(/\s+/).filter(Boolean).map(w => (w === 'okay' ? 'ok' : usWord(w.replace(/^(\d+)(?:st|nd|rd|th)$/, '$1th'))));
 }
 // A number said in words becomes one token, as a recogniser writes it ("twenty-five" = "25", "two hundred" = "200",
-// "two thousand twenty six" = "2026"); "one two three" stays three numbers. Items are { w, o: [word indexes] }.
-function joinNumbers(list) {
+// "two thousand twenty six" = "2026"); "one two three" stays three numbers. Items are { w, o: [word indexes] }; a number
+// made from words is marked { words: true }. "thirty-second" is 32nd, or with split thirty and a second ("a thirty-second
+// summary"): compareSaid tries both.
+function joinNumbers(list, split) {
   const out = [];
   for (let i = 0; i < list.length; i++) {
     let total = 0, cur = 0, last = '', j = i, o = [], ord = false;
     while (j < list.length && !ord) {
       const w = list[j].w, next = j + 1 < list.length ? list[j + 1].w : '';
       const isOrd = NUM_WORDS[w] === undefined && ORD_WORDS[w] !== undefined;
-      if (isOrd && w === 'second' && last !== '') break; // "a thirty-second summary": the unit of time, not 32nd
+      if (split && w === 'second' && last === 'tens') break;
       const v = w === 'a' && last === '' && (next === 'hundred' || next === 'thousand') ? 1 : isOrd ? ORD_WORDS[w] : NUM_WORDS[w]; // "a hundred" = 100
       if (v !== undefined) {
         const kind = v >= 20 ? 'tens' : v >= 10 ? 'teen' : 'unit';
@@ -2372,34 +2374,39 @@ function joinNumbers(list) {
       o = o.concat(list[j].o); j++;
     }
     if (j === i) { out.push(list[i]); continue; }
-    out.push({ w: String(total + cur) + (ord ? 'th' : ''), o }); i = j - 1;
+    out.push({ w: String(total + cur) + (ord ? 'th' : ''), o, words: true }); i = j - 1;
   }
   return out;
 }
 function sayTokens(s) { return joinNumbers(sayWords(s).map(w => ({ w, o: [] }))).map(x => x.w); }
+// A word of the sentence (a) and a word heard (b) match: a number in the sentence may be said as an ordinal ("May 5" said
+// "May fifth"); an ordinal may come back as a number the recogniser wrote in digits ("May 5", "1/3"), but not as a number
+// word ("May fifth" said "May five" is not heard).
+const sameSaid = (a, b) => a.w === b.w || (/^\d+$/.test(a.w) && b.w === a.w + 'th') || (!b.words && /^\d+$/.test(b.w) && a.w === b.w + 'th');
 // Marks each word of the target as heard (true), missed (false) or punctuation only (null); hit and total count words.
 function compareSaid(target, heard) {
   const words = String(target || '').split(/\s+/).filter(Boolean);
   const base = [];
   words.forEach((w, i) => { for (const x of sayWords(w)) base.push({ w: x, o: [i] }); });
-  const tok = joinNumbers(base), tt = tok.map(x => x.w);
-  const hh = sayTokens(heard);
-  const n = tt.length, m = hh.length;
-  // A number in the sentence may be said as an ordinal ("May 5" said "May fifth"); an ordinal has to be said as one
-  // ("May fifth" said "May five" is not heard).
-  const same = (a, b) => a === b || (/^\d+$/.test(a) && b === a + 'th');
-  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
-  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = same(tt[i], hh[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
-  const hit = new Array(n).fill(false);
-  for (let i = 0, j = 0; i < n && j < m;) {
-    if (same(tt[i], hh[j])) { hit[i] = true; i++; j++; }
-    else if (dp[i + 1][j] >= dp[i][j + 1]) i++;
-    else j++;
+  const readings = list => { const a = joinNumbers(list), b = joinNumbers(list, true); return b.length === a.length ? [a] : [a, b]; };
+  let best = null;
+  for (const tok of readings(base)) for (const hh of readings(sayWords(heard).map(w => ({ w, o: [] })))) {
+    const n = tok.length, m = hh.length;
+    const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = sameSaid(tok[i], hh[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    const hit = new Array(n).fill(false);
+    for (let i = 0, j = 0; i < n && j < m;) {
+      if (sameSaid(tok[i], hh[j])) { hit[i] = true; i++; j++; }
+      else if (dp[i + 1][j] >= dp[i][j + 1]) i++;
+      else j++;
+    }
+    const ok = words.map(() => null);
+    tok.forEach((x, k) => { for (const o of x.o) ok[o] = (ok[o] === null ? true : ok[o]) && hit[k]; });
+    const got = ok.filter(v => v === true).length;
+    if (!best || got > best.got) best = { ok, got };
   }
-  const ok = words.map(() => null);
-  tok.forEach((x, k) => { for (const o of x.o) ok[o] = (ok[o] === null ? true : ok[o]) && hit[k]; });
-  const counted = ok.filter(v => v !== null);
-  return { marks: words.map((w, i) => ({ w, ok: ok[i] })), hit: counted.filter(Boolean).length, total: counted.length };
+  const counted = best.ok.filter(v => v !== null);
+  return { marks: words.map((w, i) => ({ w, ok: best.ok[i] })), hit: counted.filter(Boolean).length, total: counted.length };
 }
 const sayKey = (ctx, text) => ctx + ':' + phraseId(text);
 // opt (pronunciation pairs): { other: the word it is often confused with, lesson }: the result says which word was heard.
@@ -2761,12 +2768,15 @@ function parseCoach(text, prefer) {
   const fixes = [];
   let none = false, tail = '';
   if (b) {
-    // A "hint:" line among the JSON lines belongs to the correction just before it (never to the reply).
+    // A "hint:" line among the JSON lines belongs to the correction just before it (one before them all, to the first);
+    // never to the reply.
+    let early = '';
     const keep = part => part.split('\n').filter(l => {
-      const h = HINT_RE.exec(l.trim());
+      const h = HINT_RE.exec(l.replace(/\*\*/g, '').replace(/^[\s#*>•\-]+|[\s,;]+$/g, '')); // also a line like - **Hint:** … or a JSON-like hint line
       if (!h) return true;
-      const f = fixes[fixes.length - 1];
-      if (f && !f.hint && h[1].trim()) f.hint = h[1].trim().slice(0, 80);
+      const f = fixes[fixes.length - 1], text = h[1].trim().slice(0, 80);
+      if (!f) early = early || text;
+      else if (!f.hint && text) f.hint = text;
       return false;
     }).join('\n');
     let rest = '', pos = 0;
@@ -2784,8 +2794,11 @@ function parseCoach(text, prefer) {
         }
       }
     }
-    rest += keep(b.slice(pos));
-    const open = rest.search(/[[{]/); // an unfinished JSON fragment (the reply was cut) is never shown
+    // An unfinished JSON fragment (the reply was cut) is never shown, and no hint is taken from it.
+    const last = b.slice(pos), cut = last.search(/[[{]/);
+    rest += keep(cut >= 0 ? last.slice(0, cut) : last);
+    if (early && fixes[0] && !fixes[0].hint) fixes[0].hint = early;
+    const open = rest.search(/[[{]/);
     if (open >= 0) rest = rest.slice(0, open);
     tail = rest.replace(/\s+/g, ' ').replace(/^[\s#*,;:\-]+|[\s#*,;:\-]+$/g, '').trim();
     // A label after the separator ("None", "No corrections needed.", "Corrections:") is not part of the reply;
@@ -4352,9 +4365,10 @@ function renderCoach() {
     const bar = $('#chat-bar');
     if (bar && bar._chat === S.chat && root.contains(bar)) {
       fill(bar, chatBarKids(S.chat));
-      // The task panel's phrases too (their stars, 唸一次 and 朗讀 follow what changed); it stays open or closed.
+      // The task panel too when what it shows has changed (its stars, 唸一次 and 朗讀); it stays open or closed. Drawn only
+      // then, a text selection or a screen reader's place in it is not lost on every sentence.
       const help = $('#scene-help'), sc = S.chat.mode === 'role' ? sceneOf(S.chat.sceneK) : null;
-      if (help && sc) fill(help, sceneHelpKids(sc));
+      if (help && sc && help._sig !== sceneHelpSig(sc)) { fill(help, sceneHelpKids(sc)); help._sig = sceneHelpSig(sc); }
     } else fill(root, chatView());
     composer.hidden = false;
     renderMessages(); renderHints(); renderCoachNote(); updateComposer();
@@ -4535,7 +4549,8 @@ function chatBarKids(c) {
       el('button', { type: 'button', class: 'btn small primary', disabled: S.busy, 'data-fk': 'review', onclick: review }, '結束並複習')),
   ];
 }
-// The role-play's task and phrases, at hand while it runs.
+// The role-play's task and phrases, at hand while it runs. Its look depends on sceneHelpSig.
+const sceneHelpSig = sc => [sc.say.map(([en]) => (isSaved(en) ? 1 : 0)).join(''), TTS.ok, Mic.ok, Mic.blocked, S.ready].join('|');
 function sceneHelpKids(sc) {
   return [el('summary', { 'data-fk': 'scene-help' }, '這次的任務和用得上的說法'),
     el('p', { class: 'mt6' }, el('b', { text: '你的任務：' }), sc.goal),
@@ -4548,7 +4563,7 @@ function chatView() {
   bar._chat = c; // (see renderCoach)
   return el('div', null,
     bar,
-    sc ? el('details', { id: 'scene-help', class: 'card scene-help', open: S.sceneOpen, ontoggle: e => { S.sceneOpen = e.currentTarget.open; } }, sceneHelpKids(sc)) : null,
+    sc ? Object.assign(el('details', { id: 'scene-help', class: 'card scene-help', open: S.sceneOpen, ontoggle: e => { S.sceneOpen = e.currentTarget.open; } }, sceneHelpKids(sc)), { _sig: sceneHelpSig(sc) }) : null,
     el('div', { id: 'msgs', class: 'msgs' }),
     el('div', { id: 'hints', class: 'hints' }),
     el('div', { id: 'coach-note', class: 'coach-note', hidden: true }));
@@ -6654,8 +6669,9 @@ function endChatCopy(id) {
     if (v && v.active && String(v.id) === String(id)) lsSet('kaikou:chat', JSON.stringify({ active: false, endedId: String(id), at: Date.now() }));
   } catch (_) { /* no copy, or not readable */ }
 }
-// The copy is ended too when its chat was reviewed or ended (here or on another device), or when the cloud's chat is
-// another one started after the copy last changed (the learner moved on to it there).
+// The copy is ended too when its chat was reviewed or ended (here or on another device), also when the cloud's chat is
+// another one by now. Only because the cloud has another chat it is left alone: a tab of this browser that works from its
+// storage may be in the middle of it.
 function staleChatCopy(d) {
   if (Store.mode !== 'db') return;
   let v = null;
@@ -6663,9 +6679,7 @@ function staleChatCopy(d) {
   if (!v || !v.active || !v.id) return;
   const id = String(v.id);
   const ended = !!(d && d.active === false && String(d.endedId) === id);
-  const moved = !!(d && d.active !== false && d.id && String(d.id) !== id && (Number(d.startedAt) || 0) > (Number(v.updatedAt) || 0));
-  const inUse = !!(S.chat && String(S.chat.id) === id); // this page is still on it (waiting for a reply, say): not yet
-  if (ended || (moved && !inUse) || isReviewed(id) || S.endedChats.has(id)) endChatCopy(id);
+  if (ended || isReviewed(id) || S.endedChats.has(id)) endChatCopy(id);
 }
 function applyChat(d) {
   staleChatCopy(d);
