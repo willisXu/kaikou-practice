@@ -1553,13 +1553,15 @@ function addSession(sess, keep, size) {
   const arr = (S.sessions[m] || []).filter(s => s.id !== sess.id);
   arr.push(sess);
   arr.sort((a, b) => (a.at || 0) - (b.at || 0));
-  const own = keep && size ? docBytes({ [sess.id]: storedSess(sess) }) : 0;
-  const over = () => arr.length > 150 || (keep && size ? size.n + own : docBytes({ map: Object.fromEntries(arr.map(s => [s.id, storedSess(s)])) })) > DOC_LIMIT * 0.8;
-  if (keep && over()) return false;
-  if (keep && size) size.n += own;
+  const bytes = () => docBytes({ map: Object.fromEntries(arr.map(s => [s.id, storedSess(s)])) });
+  if (keep) {
+    const own = size ? docBytes({ [sess.id]: storedSess(sess) }) : 0;
+    if (arr.length > 150 || (size ? size.n + own : bytes()) > DOC_LIMIT * 0.8) return false;
+    if (size) size.n += own;
+  }
   S.sessions[m] = arr;
   const patch = { map: { [sess.id]: storedSess(sess) } };
-  while (arr.length > 1 && over()) patch.map[arr.shift().id] = null;
+  if (!keep) while (arr.length > 1 && (arr.length > 150 || bytes() > DOC_LIMIT * 0.8)) patch.map[arr.shift().id] = null;
   Store.patch('sessions-' + m, sessionsFull(m), patch);
   return true;
 }
@@ -2324,7 +2326,7 @@ function micErrMsg(err) {
 
 /* ---- the read-aloud check: say a sentence, see which words were recognised ---- */
 const NUM_WORDS = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
-// Ordinals said in words ("May fifth") are their number, as a recogniser writes "5th" (see sayWords).
+// Ordinals said in words ("May fifth") are compared as a recogniser writes them ("5th"; see sayWords and joinNumbers).
 const ORD_WORDS = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12, thirteenth: 13, fourteenth: 14, fifteenth: 15, sixteenth: 16, seventeenth: 17, eighteenth: 18, nineteenth: 19, twentieth: 20, thirtieth: 30 };
 // British spellings count as the American ones ("favour" = "favor", "organised" = "organized"): a recogniser may write either.
 const US_SPELL = { programme: 'program', programmes: 'programs', catalogue: 'catalog', catalogues: 'catalogs', dialogue: 'dialog', dialogues: 'dialogs',
@@ -2339,30 +2341,30 @@ function usWord(w) {
     .replace(/^(travel|cancel|model|label|level|signal|fuel|channel|dial|total|equal|counsel|marvel|quarrel|tunnel)l(ed|ing|er|ers|or|ors)$/, '$1$2');
 }
 // Words compared without case, punctuation or contractions ("I'm" = "I am"), "okay" = "ok", British or American spelling, numbers
-// and ordinals as digits ("5th" = "fifth" = 5).
+// as digits; ordinals as their own token ("fifth" = "5th", written "5th"; "21st" is "21th").
 function sayWords(s) {
   const t = String(s || '').toLowerCase().replace(/[‘’`´]/g, "'")
     .replace(/\bcan't\b/g, 'can not').replace(/\bcannot\b/g, 'can not').replace(/\bwon't\b/g, 'will not').replace(/\bshan't\b/g, 'shall not')
     .replace(/\blet's\b/g, 'let us').replace(/\bain't\b/g, 'is not').replace(/n't\b/g, ' not')
     .replace(/'re\b/g, ' are').replace(/'m\b/g, ' am').replace(/'ll\b/g, ' will').replace(/'ve\b/g, ' have').replace(/'d\b/g, ' would')
     .replace(/\b(it|that|there|here|what|who|where|how|he|she)'s\b/g, '$1 is');
-  return t.replace(/'/g, '').replace(/(\d),(?=\d{3}\b)/g, '$1').replace(/[^a-z0-9\s]+/g, ' ').split(/\s+/).filter(Boolean).map(w => (w === 'okay' ? 'ok' : usWord(w.replace(/^(\d+)(?:st|nd|rd|th)$/, '$1'))));
+  return t.replace(/'/g, '').replace(/(\d),(?=\d{3}\b)/g, '$1').replace(/[^a-z0-9\s]+/g, ' ').split(/\s+/).filter(Boolean).map(w => (w === 'okay' ? 'ok' : usWord(w.replace(/^(\d+)(?:st|nd|rd|th)$/, '$1th'))));
 }
 // A number said in words becomes one token, as a recogniser writes it ("twenty-five" = "25", "two hundred" = "200",
 // "two thousand twenty six" = "2026"); "one two three" stays three numbers. Items are { w, o: [word indexes] }.
 function joinNumbers(list) {
   const out = [];
   for (let i = 0; i < list.length; i++) {
-    let total = 0, cur = 0, last = '', j = i, o = [];
-    let ord = false;
+    let total = 0, cur = 0, last = '', j = i, o = [], ord = false;
     while (j < list.length && !ord) {
       const w = list[j].w, next = j + 1 < list.length ? list[j + 1].w : '';
-      ord = NUM_WORDS[w] === undefined && ORD_WORDS[w] !== undefined; // "twenty-first" = 21, and the number ends there
-      const v = w === 'a' && last === '' && (next === 'hundred' || next === 'thousand') ? 1 : ord ? ORD_WORDS[w] : NUM_WORDS[w]; // "a hundred" = 100
+      const isOrd = NUM_WORDS[w] === undefined && ORD_WORDS[w] !== undefined;
+      if (isOrd && w === 'second' && last !== '') break; // "a thirty-second summary": the unit of time, not 32nd
+      const v = w === 'a' && last === '' && (next === 'hundred' || next === 'thousand') ? 1 : isOrd ? ORD_WORDS[w] : NUM_WORDS[w]; // "a hundred" = 100
       if (v !== undefined) {
         const kind = v >= 20 ? 'tens' : v >= 10 ? 'teen' : 'unit';
         if (!(last === '' || last === 'hundred' || last === 'thousand' || (last === 'tens' && kind === 'unit' && v > 0))) break;
-        cur += v; last = kind;
+        cur += v; last = kind; ord = isOrd; // "twenty-first" = 21st, and the number ends there
       } else if (w === 'hundred' && (last === 'unit' || last === 'teen' || last === 'tens') && cur < 100) { cur *= 100; last = 'hundred'; }
       else if (w === 'thousand' && last && last !== 'thousand') { total += cur * 1000; cur = 0; last = 'thousand'; }
       else if (w === 'and' && (last === 'hundred' || last === 'thousand') && NUM_WORDS[next] !== undefined) { /* "two hundred and five" */ }
@@ -2370,7 +2372,7 @@ function joinNumbers(list) {
       o = o.concat(list[j].o); j++;
     }
     if (j === i) { out.push(list[i]); continue; }
-    out.push({ w: String(total + cur), o }); i = j - 1;
+    out.push({ w: String(total + cur) + (ord ? 'th' : ''), o }); i = j - 1;
   }
   return out;
 }
@@ -2383,11 +2385,14 @@ function compareSaid(target, heard) {
   const tok = joinNumbers(base), tt = tok.map(x => x.w);
   const hh = sayTokens(heard);
   const n = tt.length, m = hh.length;
+  // A number in the sentence may be said as an ordinal ("May 5" said "May fifth"); an ordinal has to be said as one
+  // ("May fifth" said "May five" is not heard).
+  const same = (a, b) => a === b || (/^\d+$/.test(a) && b === a + 'th');
   const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
-  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = tt[i] === hh[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = same(tt[i], hh[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
   const hit = new Array(n).fill(false);
   for (let i = 0, j = 0; i < n && j < m;) {
-    if (tt[i] === hh[j]) { hit[i] = true; i++; j++; }
+    if (same(tt[i], hh[j])) { hit[i] = true; i++; j++; }
     else if (dp[i + 1][j] >= dp[i][j + 1]) i++;
     else j++;
   }
@@ -2586,6 +2591,8 @@ function knownErrs(c, skip) { const n = errCounts(c, skip); return Object.keys(n
 // Hints come only in free talk and role-play outside a voice conversation: 中翻英 shows the polished version anyway, and in
 // a voice conversation the learner would say the answer into the open microphone.
 const hinting = c => c.mode !== 'zh' && !Voice.on;
+// The patterns hinted at (at most 6, most corrected first): the coach is told about these, and only these come as hints.
+const hintedErrs = (c, skip) => (hinting(c) ? knownErrs(c, skip).slice(0, 6) : []);
 // { A1: 3 }, or [['A1', 3]] as a review stores it (see storedSess).
 function normErrs(v) {
   const out = {};
@@ -2624,7 +2631,7 @@ function rulesFor(c) {
   const len = c.mode === 'zh' ? 'Keep it short.' : 'Use 1 to 3 short sentences (at most 45 words) and end with exactly one question.';
   // The patterns this learner was corrected on at least twice (not counting the message being answered).
   const me = c.turns.filter(t => t.r === 'm').pop();
-  const known = hinting(c) ? knownErrs(c, me).slice(0, 6) : [];
+  const known = hintedErrs(c, me);
   const head = 'You are a friendly English speaking coach inside a practice app.\n'
     + 'About the learner: ' + about + '\n'
     + 'Goal: speak English fluently in everyday and work conversations. They tend to freeze when speaking, so keep the pressure low and be encouraging.\n'
@@ -2717,6 +2724,8 @@ function streamPart(text) {
 }
 // A sentence the coach asks the learner to say in English (practising one pattern in 中翻英).
 const SAY_RE = /^\s*say\s*[:：]\s*(.*)$/i;
+// A hint the coach wrote as its own line among the corrections.
+const HINT_RE = /^["“']?hint["”']?\s*[:：]\s*["“']?(.*?)["”']?$/i;
 // The lines of a reply, with each "say:" cue as { say, line } (a "say:" alone on its line takes the next line) and every
 // other line as { line }.
 function coachLines(text) {
@@ -2752,9 +2761,20 @@ function parseCoach(text, prefer) {
   const fixes = [];
   let none = false, tail = '';
   if (b) {
-    let rest = b;
+    // A "hint:" line among the JSON lines belongs to the correction just before it (never to the reply).
+    const keep = part => part.split('\n').filter(l => {
+      const h = HINT_RE.exec(l.trim());
+      if (!h) return true;
+      const f = fixes[fixes.length - 1];
+      if (f && !f.hint && h[1].trim()) f.hint = h[1].trim().slice(0, 80);
+      return false;
+    }).join('\n');
+    let rest = '', pos = 0;
     for (const span of scanJsonSpans(b)) {
-      rest = rest.replace(span, ' ');
+      const at = b.indexOf(span, pos);
+      if (at < 0) continue;
+      rest += keep(b.slice(pos, at)) + ' ';
+      pos = at + span.length;
       const v = tryParseLoose(span);
       for (const o of (Array.isArray(v) ? v : [v])) {
         if (!o || typeof o !== 'object') continue;
@@ -2764,6 +2784,7 @@ function parseCoach(text, prefer) {
         }
       }
     }
+    rest += keep(b.slice(pos));
     const open = rest.search(/[[{]/); // an unfinished JSON fragment (the reply was cut) is never shown
     if (open >= 0) rest = rest.slice(0, open);
     tail = rest.replace(/\s+/g, ' ').replace(/^[\s#*,;:\-]+|[\s#*,;:\-]+$/g, '').trim();
@@ -2772,16 +2793,13 @@ function parseCoach(text, prefer) {
     const label = tail.replace(/^[\s(\[{"'“‘]+|[\s)\]}"'”’.!]+$/g, '');
     if (/^((corrections?|fix(es)?|feedback)\s*[:：\-]?\s*)?(none|n\/?a|nothing to (fix|correct)|no (corrections?|fix(es)?|changes?|mistakes?|errors?)( (needed|necessary|required|to make))?|none"?\s*[:=]\s*true)$/i.test(label)) { none = true; tail = ''; }
     else if (/^(corrections?|fix(es)?|feedback|notes?|json|output)\b[^.?!]{0,20}$/i.test(tail)) tail = '';
-    // A hint written on its own line after the JSON belongs to the last correction (never to the reply).
-    const hint = /^["“']?hint["”']?\s*[:：]\s*["“']?(.*?)["”']?$/i.exec(tail);
-    if (hint) { const f = fixes[fixes.length - 1]; if (f && !f.hint && hint[1].trim()) f.hint = hint[1].trim().slice(0, 80); tail = ''; }
     if (!/[A-Za-z]{2,}/.test(tail)) tail = '';
   }
   let reply = a.replace(/[ \t]+\n/g, '\n').trim();
   if (tail) reply = reply ? reply + '\n' + tail : tail;
   // At most two corrections a turn: one that can change the meaning (A) first, then one other; the drilled pattern goes
   // first in its group.
-  const first = (x, y) => (y.code === prefer) - (x.code === prefer);
+  const first = (x, y) => (prefer ? (y.code === prefer) - (x.code === prefer) : 0);
   const as = fixes.filter(f => f.code[0] === 'A').sort(first), others = fixes.filter(f => f.code[0] !== 'A').sort(first);
   return { reply, fixes: as.slice(0, 1).concat(others).slice(0, 2), none, speakText: speakable(reply) };
 }
@@ -3887,7 +3905,7 @@ function finishTurn(c, turn, raw, cut) {
   const prev = c.turns[c.turns.indexOf(turn) - 1];
   if (prev && prev.r === 'm' && !cut) {
     // A pattern corrected at least twice before is first only hinted at: the learner tries, then opens the answer.
-    const known = hinting(c) ? knownErrs(c, prev) : [];
+    const known = hintedErrs(c, prev);
     prev.fx = p.fixes.map(f => Object.assign({ you: f.you, better: f.better, why: f.why }, f.code ? { code: f.code } : {},
       f.code && known.includes(f.code) ? { hint: f.hint || ERR_TYPES[f.code].hint } : {}));
     prev.ok = !p.fixes.length && p.none && isEnglish(prev.t);
@@ -4332,8 +4350,12 @@ function renderCoach() {
     // The chat already on screen is drawn again in place (its bar, and the turns that changed): a long chat is not rebuilt
     // for every sentence, and what is open in it (the task panel, a 唸一次 result) stays as it is.
     const bar = $('#chat-bar');
-    if (bar && bar._chat === S.chat && root.contains(bar)) fill(bar, chatBarKids(S.chat));
-    else fill(root, chatView());
+    if (bar && bar._chat === S.chat && root.contains(bar)) {
+      fill(bar, chatBarKids(S.chat));
+      // The task panel's phrases too (their stars, 唸一次 and 朗讀 follow what changed); it stays open or closed.
+      const help = $('#scene-help'), sc = S.chat.mode === 'role' ? sceneOf(S.chat.sceneK) : null;
+      if (help && sc) fill(help, sceneHelpKids(sc));
+    } else fill(root, chatView());
     composer.hidden = false;
     renderMessages(); renderHints(); renderCoachNote(); updateComposer();
   } else {
@@ -4513,6 +4535,12 @@ function chatBarKids(c) {
       el('button', { type: 'button', class: 'btn small primary', disabled: S.busy, 'data-fk': 'review', onclick: review }, '結束並複習')),
   ];
 }
+// The role-play's task and phrases, at hand while it runs.
+function sceneHelpKids(sc) {
+  return [el('summary', { 'data-fk': 'scene-help' }, '這次的任務和用得上的說法'),
+    el('p', { class: 'mt6' }, el('b', { text: '你的任務：' }), sc.goal),
+    scenePhrases(sc, 'sh')];
+}
 function chatView() {
   const c = S.chat;
   const sc = c.mode === 'role' ? sceneOf(c.sceneK) : null; // a role-play's task and phrases, at hand while it runs
@@ -4520,10 +4548,7 @@ function chatView() {
   bar._chat = c; // (see renderCoach)
   return el('div', null,
     bar,
-    sc ? el('details', { class: 'card scene-help', open: S.sceneOpen, ontoggle: e => { S.sceneOpen = e.currentTarget.open; } },
-      el('summary', { 'data-fk': 'scene-help' }, '這次的任務和用得上的說法'),
-      el('p', { class: 'mt6' }, el('b', { text: '你的任務：' }), sc.goal),
-      scenePhrases(sc, 'sh')) : null,
+    sc ? el('details', { id: 'scene-help', class: 'card scene-help', open: S.sceneOpen, ontoggle: e => { S.sceneOpen = e.currentTarget.open; } }, sceneHelpKids(sc)) : null,
     el('div', { id: 'msgs', class: 'msgs' }),
     el('div', { id: 'hints', class: 'hints' }),
     el('div', { id: 'coach-note', class: 'coach-note', hidden: true }));
@@ -6131,7 +6156,8 @@ const importDay = k => DATE_RE.test(k) && dkey(parseD(k)) === k && k >= '2020-01
 function importSession(s) {
   if (!s || typeof s !== 'object' || !s.id || !importDay(String(s.date))) return null;
   const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
-  return Object.assign({ id: String(s.id).slice(0, 40), date: s.date, at: Number(s.at) || parseD(s.date).getTime(), mode: ['free', 'role', 'zh'].includes(s.mode) ? s.mode : 'free',
+  // A time in the future (a damaged file) would keep the review first and never the one to go: it becomes now.
+  return Object.assign({ id: String(s.id).slice(0, 40), date: s.date, at: Math.min(Number(s.at) || parseD(s.date).getTime(), Date.now()), mode: ['free', 'role', 'zh'].includes(s.mode) ? s.mode : 'free',
     label: str(s.label, 80), level: LEVELS[s.level] ? s.level : 'B1', minutes: clamp(Math.round(Number(s.minutes) || 0), 0, 600), count: clamp(Math.round(Number(s.count) || 0), 0, 1000) }, normReview(s));
 }
 async function applyBackup() {
@@ -6213,6 +6239,7 @@ async function applyBackup() {
           continue;
         }
         if (S.shadow.list.length >= SHADOW_MAX || docBytes(shadowFull()) + docBytes(p) > DOC_LIMIT * 0.6) { full = true; continue; }
+        p.at = Math.min(Number(p.at) || 0, Date.now()); // (a time in the future would keep it newest for ever)
         S.shadow.list.push(p); patch.map[p.id] = p; n.shadow++;
       }
       S.shadow.list.sort((a, b) => b.at - a.at);
@@ -6627,9 +6654,21 @@ function endChatCopy(id) {
     if (v && v.active && String(v.id) === String(id)) lsSet('kaikou:chat', JSON.stringify({ active: false, endedId: String(id), at: Date.now() }));
   } catch (_) { /* no copy, or not readable */ }
 }
+// The copy is ended too when its chat was reviewed or ended (here or on another device), or when the cloud's chat is
+// another one started after the copy last changed (the learner moved on to it there).
+function staleChatCopy(d) {
+  if (Store.mode !== 'db') return;
+  let v = null;
+  try { v = JSON.parse(lsGet('kaikou:chat') || 'null'); } catch (_) { return; }
+  if (!v || !v.active || !v.id) return;
+  const id = String(v.id);
+  const ended = !!(d && d.active === false && String(d.endedId) === id);
+  const moved = !!(d && d.active !== false && d.id && String(d.id) !== id && (Number(d.startedAt) || 0) > (Number(v.updatedAt) || 0));
+  const inUse = !!(S.chat && String(S.chat.id) === id); // this page is still on it (waiting for a reply, say): not yet
+  if (ended || (moved && !inUse) || isReviewed(id) || S.endedChats.has(id)) endChatCopy(id);
+}
 function applyChat(d) {
-  if (d && d.active === false && d.endedId) endChatCopy(d.endedId);
-  else if (d && d.id && isReviewed(String(d.id))) endChatCopy(String(d.id));
+  staleChatCopy(d);
   // A chat discarded here whose end could not be written then (its read failed): a later read that finds it as it was
   // writes the end now. One continued elsewhere since (or replaced by another chat) is left as it is.
   const pend = S.endPending;
