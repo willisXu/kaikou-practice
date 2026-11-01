@@ -62,6 +62,9 @@ window.__kaikouTest = true;
   put(dk(back(9)), '20', { shadow: true, ai: true, tutor: true });
   put(dk(back(12)), '60', { shadow: true, ai: true, chunk: true, listen: true });
   if (!cfg.noToday) put(dk(today), '20', { shadow: true });
+  // This month's document exists even without a record of today (on the first day of a month the days above are all in
+  // the month before): "no record of today" is the same situation on every day of the month.
+  if (!logs[dk(today).slice(0, 7)]) logs[dk(today).slice(0, 7)] = { days: {}, monthRecord: false };
   for (const [m, doc] of Object.entries(logs)) store.set(P('log-' + m), doc);
   store.set(P('settings'), Object.assign({ plan: '20', level: 'B1', about: 'I live in Taipei and work in marketing.', accent: 'en-US', voiceURI: '', rate: 0.95, autoSpeak: false }, cfg.settings || {}));
   store.set(P('phrases'), { items: [
