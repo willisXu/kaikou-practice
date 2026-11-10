@@ -1,0 +1,25 @@
+{
+  "scan": ["docs", "test", "tools", "team"],
+  "boundaries": [
+    {
+      "files": "docs/",
+      "mustNotImport": ["test/", "tools/", "team/"],
+      "why": "GitHub Pages 只發佈 docs/；網站引用 docs/ 以外的檔案，上線後就會壞掉。"
+    }
+  ],
+  "bannedPatterns": [
+    {
+      "pattern": "\\b(HACK|FIXME|XXX)\\b",
+      "why": "不要用註解替權宜寫法找藉口；直接修好，或在計畫裡開任務。"
+    },
+    {
+      "pattern": "sk-ant-(api|admin|oat)\\d{2}-[A-Za-z0-9_-]{20,}",
+      "why": "真的 Claude API 金鑰不能進版控；測試用拼出來的假字串（像 test/run.js 的寫法）。"
+    },
+    {
+      "pattern": "\\b(test|it|describe)\\.only\\(",
+      "files": ["test/", "team/guardrails/"],
+      "why": "只跑單一測試會讓其他檢查靜默略過。"
+    }
+  ]
+}
