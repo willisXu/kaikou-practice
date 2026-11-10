@@ -6,8 +6,17 @@ test/shots/
 test/*.html
 node_modules/
 
+# Claude Code：只追蹤 agent 團隊的檔案，個人設定（settings.local.json 等）不進版控
+.claude/*
+!.claude/agents/
+!.claude/skills/
+!.claude/hooks/
+!.claude/rules/
+!.claude/agent-memory/
+!.claude/settings.json
+!.claude/loop.md
+
 # 編輯器、Office 暫存與系統檔
-.claude/
 .vscode/
 ~$*
 *.tmp
