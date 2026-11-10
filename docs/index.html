@@ -399,7 +399,7 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
 .quiz{display:grid;grid-template-columns:minmax(0,1fr);justify-items:center;gap:10px;margin-top:12px;padding:16px 12px;border-radius:var(--r);background:var(--surface-2);text-align:center}
 .quiz-opts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%;max-width:420px}
 .quiz-opt{min-height:56px;padding:8px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font-size:20px;font-weight:700;cursor:pointer}
-.quiz-opt:hover:not(:disabled){border-color:var(--accent)}
+.quiz-opt:hover:not(:disabled):not([aria-disabled="true"]){border-color:var(--accent)} /* an answered option keeps its colour under the pointer */
 .quiz-opt:disabled{cursor:default}
 .quiz-opt.right{border-color:var(--accent);background:var(--accent-soft)}
 .quiz-opt.wrong{border-color:var(--pen);color:var(--pen)}
@@ -472,6 +472,8 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
 .act-en{font-size:17px;font-weight:700;overflow-wrap:anywhere}
 .act .say{background:var(--surface)}
 .can-list{display:grid;gap:10px;margin-top:10px}
+.say-list{display:grid;gap:6px;margin:0;padding-left:1.2em}
+.vary-list{display:grid;gap:6px;margin:0;padding-left:1.2em}
 .can{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:10px;font-size:16px}
 .check-q{display:grid;gap:4px;padding:10px 0;border-top:1px solid var(--line)}
 .check-q:first-child{border-top:0}
@@ -818,21 +820,21 @@ const WEEKLY = [
     howRec: '挑一個熟悉的主題，依序講 4 分鐘、3 分鐘、2 分鐘。這裡可以計時和錄音，三次講完會自動打勾。' },
 ];
 const MONTHLY_HOW = {
-  '20': '用手機錄一段 2 分鐘的自我介紹加近況，留著下個月對照。',
-  '60': '錄一段 2 分鐘的自我介紹加近況，並和上個月的錄音比較語速與停頓。',
+  '20': '用手機錄一段 2 分鐘的近況（這個月做了什麼、學到什麼、下個月想做什麼），留著下個月對照。',
+  '60': '錄一段 2 分鐘的近況（這個月做了什麼、學到什麼、下個月想做什麼），並和上個月的錄音比較語速與停頓。',
 };
 const TOPICS = [
   { k: 'weekend', zh: '這個週末', en: "the learner's weekend: what they did or plan to do" },
   { k: 'work', zh: '工作近況', en: 'what the learner is working on at work this week' },
-  { k: 'food', zh: '吃的', en: 'food, cooking and favourite places to eat' },
+  { k: 'food', zh: '吃的', en: 'food, cooking and favorite places to eat' },
   { k: 'travel', zh: '旅行', en: 'travel: places they have been and dream trips' },
   { k: 'hobby', zh: '興趣', en: 'hobbies and free time' },
   { k: 'tech', zh: 'AI 與科技', en: 'AI and technology in daily life and at work' },
   { k: 'custom', zh: '自訂話題', en: '' },
 ];
 const SCENES = [
-  { k: 'discovery', g: 'client', lv: 'B1–B2', zh: '客戶需求訪談', dz: '第一次跟新客戶開視訊會議：一家工業設備公司想用 AI 幫客服人員和維修技師從手冊和過去的維修紀錄裡找答案，但需求還很模糊。',
-    en: 'A first video call with a new client, an industrial equipment maker. They want an AI assistant that helps their support agents and field technicians find answers in repair manuals and past service tickets, but the request is still vague. The client is keen but only gives details when asked.',
+  { k: 'discovery', g: 'client', lv: 'B1–B2', zh: '客戶需求訪談', dz: '第一次跟新客戶開視訊會議：一家工業設備公司想用 AI 幫維修技師從手冊和過去的維修紀錄裡找答案，但需求還很模糊。',
+    en: 'A first video call with a new client, an industrial equipment maker. They want an AI assistant that helps their field technicians find answers in repair manuals and past service records, but the request is still vague. The client is keen but only gives details when asked.',
     ai: "the client's head of service, who is keen but vague", aiZh: '客戶的售後服務主管', me: 'the forward deployed engineer leading the project',
     goal: '問清楚要解決什麼問題、誰會用、有哪些資料、怎樣算成功、有什麼限制，最後總結重點，一起確認下一步。',
     task: 'Run a discovery conversation: ask about the problem, who will use the assistant, what data there is, how success will be measured and any constraints, then sum up and agree on next steps.',
@@ -844,11 +846,17 @@ const SCENES = [
     task: "Explain in plain words how the assistant finds answers in the company's documents and what happens to their data, rephrase when the director does not follow, and check they understood.",
     say: [['In simple terms, it searches your documents first, then writes the answer.', '簡單來說，它會先搜尋你們的文件，再寫出答案。'], ['Think of it as a new employee with a really good search tool.', '你可以把它想成一個有超好用搜尋工具的新員工。'], ["Under our contract, your data isn't used to train the model.", '依照合約，你們的資料不會被拿去訓練模型。'], ['Let me put it another way.', '我換個方式說。'], ['Does that make sense so far?', '到這裡都清楚嗎？']] },
   { k: 'demo', g: 'client', lv: 'B1–B2', zh: '展示方案與問答', dz: '視訊會議：向客戶的售後服務主管和團隊展示試行版的 AI 助理。大家會提問，其中有一題你當場答不出來。',
-    en: "A video call where the learner demos the pilot version of the AI assistant, which answers service questions using the client's manuals and past tickets, to the client's head of service and their team. The learner shares their screen and describes what it shows. The team asks practical questions, including one the learner cannot answer on the spot, such as whether it can read handwritten notes in old tickets.",
+    en: "A video call where the learner demos the pilot version of the AI assistant, which answers service questions using the client's manuals and past service records, to the client's head of service and their team. The learner shares their screen and describes what it shows. The team asks practical questions, including one the learner cannot answer on the spot, such as whether it can read handwritten notes in old tickets.",
     ai: "the client's head of service, asking questions for the team", aiZh: '客戶的售後服務主管', me: 'the forward deployed engineer giving the demo',
     goal: '開場說明要展示什麼，邊操作邊說明一個實際的例子，回答問題；答不出來的就說會再回覆，最後問大家還有沒有問題。',
     task: 'Give the demo: say what they will show, walk through one real example while describing the screen, answer questions, promise a follow-up for the one they cannot answer, and close by asking for more questions.',
-    say: [["Today I'll show you how it handles a real question from last week.", '今天我會示範它怎麼處理上週的一個真實問題。'], ['As you can see, it shows where each answer comes from.', '你們可以看到，它會顯示每個答案的出處。'], ["If it can't find the answer, it says so and passes the question to a person.", '如果找不到答案，它會直接說找不到，並把問題轉給真人。'], ['Let me check and get back to you by Friday.', '我確認一下，週五前回覆你。'], ['Before we wrap up, are there any other questions?', '結束之前，還有其他問題嗎？']] },
+    say: [["Today I'll show you how it handles a real question from last week.", '今天我會示範它怎麼處理上週的一個真實問題。'], ['As you can see, it shows where each answer comes from.', '你們可以看到，它會顯示每個答案的出處。'], ['You can click any source to open the original page.', '點任何一個出處，就能打開原始的那一頁。'], ['Let me check and get back to you by Friday.', '我確認一下，週五前回覆你。'], ['Before we wrap up, are there any other questions?', '結束之前，還有其他問題嗎？']] },
+  { k: 'sync', g: 'client', lv: 'B1', zh: '每週進度會議', dz: '每週和客戶的專案窗口開視訊會議：用白話說明這週的進度和一個卡住的技術問題，再請對方在某一天前提供一樣東西（資料、權限，或安排專家的時間）。',
+    en: "A weekly video call with the client's project lead. The learner gives this week's status in plain words, explains one technical blocker without jargon, and asks the client for one thing by a date: data, access or an expert's time. The project lead is friendly but busy, and asks what happens if the date slips.",
+    ai: "the client's project lead, who is friendly but busy", aiZh: '客戶的專案窗口', me: 'the forward deployed engineer',
+    goal: '用白話說明這週的進度和一個卡住的問題，請對方在某一天前提供一樣東西，並說明如果延誤會怎樣。',
+    task: 'Give the weekly status in plain words, explain one blocker without jargon, ask the client for one thing by a specific date, and say what happens if it slips.',
+    say: [["Here's where we are this week.", '這是我們這週的進度。'], ['We need one thing from your side.', '有一件事需要你們幫忙。'], ['Could we get access by Wednesday?', '週三前可以給我們權限嗎？'], ["If not, we'll lose about a week.", '如果不行，我們大概會晚一週。'], ['Does that sound reasonable?', '這樣聽起來合理嗎？']] },
   { k: 'scope', g: 'client', lv: 'B2', zh: '客戶要加需求', dz: '離上線只剩兩週，客戶的售後服務主管想在試行版再加兩個功能：技師用的語音輸入，和給主管看的每週報表。',
     en: "Two weeks before go-live, the client's head of service asks to add two new features to the pilot: voice input for technicians and a weekly report for managers. They push for both: technicians often have their hands full, and their boss wants the report. The team only has time to finish what was already agreed.",
     ai: "the client's head of service", aiZh: '客戶的售後服務主管', me: 'the forward deployed engineer',
@@ -856,7 +864,7 @@ const SCENES = [
     task: 'Handle the change request: ask why the features matter, explain how adding them now would affect the go-live date, offer options such as moving them to phase two, and agree on a decision.',
     say: [["Thanks for raising this. Can I ask what's driving it?", '謝謝你提出來。可以問一下背後的原因嗎？'], ['If we add both now, the go-live date will slip by about three weeks.', '如果現在兩個都加，上線日期會延後大約三週。'], ['What matters more to you, the date or the features?', '對你們來說，日期和功能哪個比較重要？'], ["That's outside the scope of this pilot, but we can plan it for phase two.", '這不在這次試行的範圍內，不過我們可以排進第二階段。'], ["I'll send you a short summary of what we decided.", '我會把我們的決定整理一下寄給你。']] },
   { k: 'golive', g: 'client', lv: 'B2', zh: '上線延期', dz: '跟客戶的專案負責人開視訊會議：正式環境的維修紀錄還沒開放存取，測試進度落後，上線要晚兩週。對方還不知道，而且已經跟老闆報告過日期了。',
-    en: "A video call with the client's project sponsor: the go-live will be two weeks late because access to the past service tickets in production still has not been approved, so testing is behind. The manuals are ready. The sponsor does not know about the delay yet and has already promised the date to their own boss.",
+    en: "A video call with the client's project sponsor: the go-live will be two weeks late because access to the past service records in production still has not been approved, so testing is behind. The manuals are ready. The sponsor does not know about the delay yet and has already promised the date to their own boss.",
     ai: "the client's project sponsor, who has already promised the date to their boss", aiZh: '客戶的專案負責人', me: 'the forward deployed engineer',
     goal: '說出壞消息，說明原因但不怪任何人，承認對對方的影響，提出兩個選項，並約好下次更新的時間。',
     task: 'Break the bad news: explain the reason without blaming anyone, acknowledge the impact, offer two options and agree when they will give the next update.',
@@ -866,19 +874,19 @@ const SCENES = [
     ai: 'a senior support agent who is used to the old way', aiZh: '習慣舊方法的資深客服', me: 'the forward deployed engineer running the training',
     goal: '分步驟說明怎麼用，請對方當場試一次，確認他們聽懂，回答一個疑慮，最後說卡住時找誰。',
     task: 'Teach the tool: explain how to use it in a few clear steps, ask the agent to try it, check they understood, answer one concern and say where to get help.',
-    say: [["First, type the customer's question. Then check the sources it shows.", '首先輸入客戶的問題，再看一下它列出的出處。'], ["If an answer looks wrong, click 'Report' so we can fix it.", '如果答案看起來不對，就按「回報」，我們才能修正。'], ['Could you try it now with a real question?', '可以現在用一個真實的問題試試看嗎？'], ['Fair point. You still make the final call on every answer.', '有道理。每個回答最後還是由你決定。'], ['If you get stuck, just send me a message.', '卡住的話，直接傳訊息給我。']] },
-  { k: 'incident', g: 'client', lv: 'B1–B2', zh: '線上處理問題', dz: '客戶的 IT 經理打來：從早上開始，AI 助理一直照舊版的手冊回答。他沒掛斷，在線上看你查原因。',
+    say: [["First, type the customer's question. Then check the sources it shows.", '首先輸入客戶的問題，再看一下它列出的出處。'], ['If an answer looks wrong, click the thumbs-down button so we can fix it.', '如果答案看起來不對，就按「倒讚」，我們才能修正。'], ['Could you try it now with a real question?', '可以現在用一個真實的問題試試看嗎？'], ['Fair point. You still make the final call on every answer.', '有道理。每個回答最後還是由你決定。'], ['If you get stuck, just send me a message.', '卡住的話，直接傳訊息給我。']] },
+  { k: 'incident', g: 'client', lv: 'B1–B2', zh: '線上處理問題', dz: '客戶的 IT 主管打來：從早上開始，AI 助理一直照舊版的手冊回答。他沒掛斷，在線上看你查原因。',
     en: "The client's IT manager calls: since this morning, the AI assistant has been answering from old versions of the manuals. They stay on the video call and watch while the learner looks into it. If the learner asks what changed recently, mention that new versions of the manuals were uploaded last night, but leave the diagnosis to them.",
-    ai: "the client's IT manager, who is worried", aiZh: '很擔心的客戶 IT 經理', me: 'the forward deployed engineer',
+    ai: "the client's IT manager, who is worried", aiZh: '很擔心的客戶 IT 主管', me: 'the forward deployed engineer',
     goal: '先穩住對方，問清楚發生什麼事；邊查邊說你在做什麼、可能的原因，最後說好多久後更新進度。',
     task: 'Handle the live problem calmly and reassure the IT manager: ask what they are seeing, say what they are checking and what the likely cause is as they go, and give a time for the next update.',
     say: [['Thanks for flagging this. Let me take a look.', '謝謝你通知我，我來看一下。'], ['Could you share an example of a wrong answer?', '可以給我一個答錯的例子嗎？'], ["Right now I'm checking the logs from this morning.", '我現在在看今天早上的系統紀錄。'], ["I think I know what's causing it, but let me double-check.", '我大概知道原因了，不過讓我再確認一下。'], ["I'll give you an update in 30 minutes, even if it's not fixed yet.", '30 分鐘後我會跟你更新進度，就算還沒修好也會說。']] },
-  { k: 'results', g: 'client', lv: 'B1–B2', zh: '報告試行成效', dz: '每月跟客戶的總經理檢討試行成效：AI 自己解決的比例、平均處理時間和客戶滿意度。總經理會一直追問原因。',
-    en: "A monthly review with the client's general manager about the results of the AI assistant pilot: the share of questions it resolves on its own, the average handling time and customer satisfaction. Let the learner present the numbers first. The general manager keeps asking why.",
+  { k: 'results', g: 'client', lv: 'B1–B2', zh: '報告試行成效', dz: '每月跟客戶的總經理檢討試行成效：一個幫業務團隊回答產品問題、準備報價的 AI 助理。你要報告三個數字：業務不用問工程師就答得出來的比例、準備一份報價的時間和業務對助理的評分。總經理會一直追問原因。',
+    en: "A monthly review with the client's general manager about the pilot of an AI assistant that helps the sales team answer product questions and prepare quotes. The learner reports three numbers: the share of product questions the sales reps answer without asking an engineer, the time it takes to prepare a quote, and the reps' rating of the assistant. Let the learner present the numbers first. The general manager keeps asking why.",
     ai: "the client's general manager", aiZh: '客戶的總經理', me: 'the forward deployed engineer presenting the results',
     goal: '報告三個數字的變化和原因，回答總經理的追問，最後建議下一步。',
     task: 'Present how three numbers changed and why, answer the follow-up questions, and recommend one next step.',
-    say: [['Let me start with a quick overview of the pilot results.', '我先快速說明一下試行的成果。'], ['The assistant now resolves 38% of questions on its own.', '現在有 38% 的問題，AI 助理自己就能解決。'], ['Average handling time went down from 9 minutes to 6.', '平均處理時間從 9 分鐘降到 6 分鐘。'], ['Satisfaction dipped slightly, mainly because some answers were too long.', '滿意度小幅下滑，主要是因為有些回答太長了。'], ["Based on these results, we'd recommend rolling it out to the second team.", '根據這些結果，我們建議推廣到第二個團隊。']] },
+    say: [['Let me start with a quick overview of the pilot results.', '我先快速說明一下試行的成果。'], ['The sales team now answers 38% of product questions without asking an engineer.', '現在有 38% 的產品問題，業務不用問工程師就能回答。'], ['Preparing a quote now takes about six hours, down from nine.', '現在準備一份報價大約只要六小時，原本要九小時。'], ['The rating dipped slightly, mainly because some answers were too long.', '評分小幅下滑，主要是因為有些回答太長了。'], ["Based on these results, we'd recommend rolling it out to the second team.", '根據這些結果，我們建議推廣到第二個團隊。']] },
   { k: 'overclaim', g: 'client', lv: 'B2', zh: '質疑誇大的宣傳', dz: '客戶的業務副總想對外宣傳新的 AI 助理「百分之百正確」，但測試時大約 94% 的答案是對的。',
     en: "The client's VP of sales wants to tell their customers that the new AI assistant is \"100% accurate\". In testing, it answered about 94% of questions correctly. The VP is excited and does not like being slowed down.",
     ai: "the client's VP of sales, who is excited", aiZh: '很興奮的客戶業務副總', me: 'the forward deployed engineer',
@@ -914,7 +922,7 @@ const SCENES = [
     ai: "the model provider's account manager", aiZh: '模型廠商的業務經理', me: 'the forward deployed engineer',
     goal: '說明預估的用量，問清楚速率上限、價格和資料在哪裡處理和存放，試著談價格，最後請對方書面確認。',
     task: 'Explain the expected volume, ask about rate limits, pricing and where data is processed and stored, try to negotiate the price, and ask for written confirmation.',
-    say: [["We're expecting about two million requests a month after go-live.", '上線後，我們預計每個月大約有兩百萬次請求。'], ['Can we get a higher rate limit before the launch?', '上線前可以把 rate limit 調高嗎？'], ['Where exactly is the data processed and stored?', '資料實際上是在哪裡處理和存放的？'], ['Is there any flexibility on the price at that volume?', '這個用量的話，價格有彈性嗎？'], ['Could you put that in writing?', '可以用書面確認嗎？']] },
+    say: [["We're expecting about two million requests a month after go-live.", '上線後，我們預計每個月大約有兩百萬次請求。'], ['Can we get a higher rate limit before the launch?', '上線前可以把速率上限調高嗎？'], ['Where exactly is the data processed and stored?', '資料實際上是在哪裡處理和存放的？'], ['Is there any flexibility on the price at that volume?', '這個用量的話，價格有彈性嗎？'], ['Could you put that in writing?', '可以用書面確認嗎？']] },
   { k: 'supplier', g: 'work', lv: 'B1', zh: '跟供應商確認交期', dz: '視訊會議：要裝在客戶機房的 GPU 伺服器延遲出貨，你要問清楚原因和新的交期。',
     en: "A video call with a hardware supplier: the GPU servers for a client's on-premises deployment are running late, and the learner needs a firm delivery date. The supplier blames a GPU shortage and avoids committing to a date.",
     ai: "the supplier's account manager", aiZh: '供應商的業務窗口', me: 'the forward deployed engineer',
@@ -927,12 +935,12 @@ const SCENES = [
     goal: '聽完回饋、確認你懂了，說你會怎麼改，再請主管給一個具體的建議。',
     task: 'Respond to critical feedback constructively: acknowledge it, check they understood, say what they will change and ask for one specific tip.',
     say: [["Thanks for telling me. That's fair.", '謝謝你告訴我，你說得有道理。'], ['Just to make sure I understand, it was too long?', '我確認一下，是太長了嗎？'], ["Next time, I'll start with the main point.", '下次我會先講重點。'], ['Do you have any tips on keeping it short?', '你有什麼讓簡報變短的建議嗎？'], ['I really appreciate the feedback.', '很謝謝你的回饋。']] },
-  { k: 'intro', g: 'work', lv: 'A2–B1', zh: '交流活動自我介紹', dz: '科技業的交流活動，第一次見面的兩個人互相認識。',
-    en: 'A tech networking event: two people meet for the first time and introduce themselves.',
+  { k: 'intro', g: 'work', lv: 'A2–B1', zh: '交流活動認識新朋友', dz: '科技業的交流活動，第一次見面的兩個人互相認識。',
+    en: 'A tech networking event: two people meet for the first time. The other attendee talks mostly about their own work and the event\'s talks, and does not ask the learner to explain their own job.',
     ai: 'another attendee who works in tech', aiZh: '在科技業工作的參加者', me: 'themself',
-    goal: '介紹你和你的工作，問對方兩個問題，最後交換聯絡方式。',
-    task: 'Introduce themself and their work, ask the other person two questions, and end by exchanging contact details.',
-    say: [["Hi, nice to meet you. I'm a forward deployed engineer at an AI company.", '嗨，很高興認識你。我在一家 AI 公司當前線部署工程師。'], ['Basically, I help companies get AI working in their day-to-day business.', '簡單說，我幫企業把 AI 真正用在日常的工作上。'], ['What brings you here today?', '你今天怎麼會來這裡？'], ['How did you get into that?', '你是怎麼開始做這個的？'], ['It was great talking to you. Shall we connect on LinkedIn?', '很高興跟你聊天。要不要加個 LinkedIn？']] },
+    goal: '主動開口，問對方兩個關於工作的問題，聊一件今天在活動上聽到的事，最後交換聯絡方式。',
+    task: 'Start the conversation, ask the other person two questions about their work, share one thing they heard at the event, and exchange contact details.',
+    say: [['Hi, mind if I join you?', '嗨，我可以一起聊嗎？'], ['What brings you here today?', '你今天怎麼會來這裡？'], ['How did you get into that?', '你是怎麼開始做這個的？'], ['What did you think of the last talk?', '你覺得剛剛那場演講怎麼樣？'], ['It was great talking to you. Want to connect on LinkedIn?', '很高興跟你聊天。要不要加個 LinkedIn？']] },
   { k: 'interview', g: 'work', lv: 'B1–B2', zh: '產品經理面試', dz: '應徵國際公司的產品經理職位，面試官請你舉例說明。',
     en: 'A job interview for a product manager role at an international company.',
     ai: 'the interviewer', aiZh: '面試官', me: 'the candidate',
@@ -943,8 +951,8 @@ const SCENES = [
     en: 'Ordering a drink at a busy coffee shop abroad, with one change to the usual recipe.',
     ai: 'the barista', aiZh: '咖啡師', me: 'the customer',
     goal: '點一杯飲料並改一個做法（例如換燕麥奶），確認價格後付款。',
-    task: 'Order a drink with one change (such as oat milk or less sugar), check the price and pay.',
-    say: [['Can I get a medium latte, please?', '請給我一杯中杯拿鐵。'], ['Could I have it with oat milk instead?', '可以改成燕麥奶嗎？'], ['Less sweet, please.', '甜度少一點，謝謝。'], ["It's to go, please.", '外帶，謝謝。'], ['Can I pay by card?', '可以刷卡嗎？']] },
+    task: 'Order a drink with one change (such as oat milk, or iced), check the price and pay.',
+    say: [['Can I get a medium latte, please?', '請給我一杯中杯拿鐵。'], ['Could I have it with oat milk instead?', '可以改成燕麥奶嗎？'], ['Could I get that iced?', '可以做成冰的嗎？'], ["It's to go, please.", '外帶，謝謝。'], ['Can I pay by card?', '可以刷卡嗎？']] },
   { k: 'restaurant', g: 'life', lv: 'A2', zh: '餐廳點餐', dz: '在國外的餐廳吃晚餐，問菜色、點餐。',
     en: 'Ordering dinner at a restaurant abroad and asking about the dishes.',
     ai: 'the server', aiZh: '服務生', me: 'the customer',
@@ -955,8 +963,8 @@ const SCENES = [
     en: 'Calling a restaurant to book a table for a team dinner.',
     ai: 'the restaurant host on the phone', aiZh: '餐廳接電話的人', me: 'the customer',
     goal: '說明日期、時間、人數和一個特別需求，最後確認訂位的名字。',
-    task: 'Give the date, time, number of people and one special request (such as a vegetarian guest), and confirm the name on the booking.',
-    say: [["I'd like to book a table for six on Friday.", '我想訂週五六個人的位子。'], ['Around seven, if possible.', '可以的話，大約七點。'], ['One of us is vegetarian.', '我們有一位吃素。'], ['Could we have a table by the window?', '可以坐靠窗的位子嗎？'], ['The booking is under Chen.', '訂位的名字是陳。']] },
+    task: 'Give the date, time, number of people and one special request (such as a vegetarian guest), and confirm the name on the reservation.',
+    say: [["I'd like to book a table for six on Friday.", '我想訂週五六個人的位子。'], ['Around seven, if possible.', '可以的話，大約七點。'], ['One of us is vegetarian.', '我們有一位吃素。'], ['Could we have a table by the window?', '可以坐靠窗的位子嗎？'], ['The reservation is under Chen.', '訂位的名字是陳。']] },
   { k: 'hotel', g: 'life', lv: 'B1', zh: '飯店入住出問題', dz: '在國外的飯店辦入住，但你訂的房間沒有了。',
     en: 'Checking into a hotel abroad, but the room that was booked is not available.',
     ai: 'the front desk clerk', aiZh: '櫃檯人員', me: 'the guest',
@@ -976,11 +984,11 @@ const SCENES = [
     task: 'Describe the symptoms and how long they have had them, and ask how to take the medicine.',
     say: [["I've had a sore throat since Monday.", '我從星期一開始喉嚨痛。'], ['I also have a slight fever.', '我還有一點發燒。'], ['It hurts when I swallow.', '吞東西的時候會痛。'], ['How often should I take this?', '這個要多久吃一次？'], ['Should I take it before or after meals?', '要飯前吃還是飯後吃？']] },
   { k: 'favour', g: 'life', lv: 'B1', zh: '請鄰居幫忙', dz: '下週要出差，想請鄰居幫你澆花、收信。',
-    en: 'Asking a neighbour to water the plants and collect the mail while the learner is away on a business trip.',
-    ai: 'the neighbour', aiZh: '鄰居', me: 'themself',
+    en: 'Asking a neighbor to water the plants and collect the mail while the learner is away on a business trip.',
+    ai: 'the neighbor', aiZh: '鄰居', me: 'themself',
     goal: '客氣地提出請求、說明細節並道謝，可以提議回報對方。',
-    task: 'Ask for a favour politely, explain the details and thank them, offering something in return.',
-    say: [['Could I ask you a favour?', '可以請你幫個忙嗎？'], ["I'm away on a business trip next week.", '我下週要出差。'], ['Would you mind watering my plants?', '你介意幫我澆花嗎？'], ["Only if it's no trouble.", '不麻煩的話再幫就好。'], ['Thanks a lot. I owe you one.', '非常感謝，我欠你一次。']] },
+    task: 'Ask for a favor politely, explain the details and thank them, offering something in return.',
+    say: [['Could I ask you a favor?', '可以請你幫個忙嗎？'], ["I'll be away on a business trip next week.", '我下週要出差。'], ['Would you mind watering my plants?', '你介意幫我澆花嗎？'], ["Only if it's no trouble.", '不麻煩的話再幫就好。'], ['Thanks a lot. I owe you one.', '非常感謝，我欠你一次。']] },
   { k: 'news', g: 'life', lv: 'B1', zh: '聽朋友說近況', dz: '跟好久不見的朋友聊天，他有一個好消息、一個壞消息。',
     en: 'Catching up with a friend who has one piece of good news and one piece of bad news.',
     ai: 'a friend', aiZh: '好久不見的朋友', me: 'themself',
@@ -1004,7 +1012,7 @@ const STARTERS = [
   ['Can I ask a quick question?', '可以問個小問題嗎？', '開口提問'],
   ["I'll get back to you on that.", '這個我再回覆你。', '工作場合'],
   ['I was wondering if …', '我在想能不能…', '委婉請求'],
-  ["It's a kind of …", '它是一種…', '找不到字', "It's a kind of app that checks your skin."],
+  ["It's a kind of …", '它是一種…', '找不到字', "It's a kind of tool that finds answers in manuals."],
   ['What do you mean by …?', '你說的…是什麼意思？', '確認詞意', 'What do you mean by a phased rollout?'],
   ['Does that make sense?', '這樣說清楚嗎？', '確認對方懂'],
   ['Sorry, where was I?', '抱歉，我剛剛說到哪？', '拉回主題'],
@@ -1014,80 +1022,93 @@ const MEETING = [
   ['Sorry to interrupt, but …', '抱歉打斷一下…', '插話', 'Sorry to interrupt, but can I add something?'],
   ['Can I just finish this point?', '我先把這點說完好嗎？', '保住發言權'],
   ['What do you think, …?', '…，你覺得呢？', '請別人發言', 'What do you think, Amy?'],
-  ['Could you go back to the last slide?', '可以回到上一張投影片嗎？', '簡報'],
+  ['Could you go back one slide?', '可以回到上一張投影片嗎？', '簡報'],
   ["I think you're on mute.", '你好像靜音了。', '視訊'],
   ["You're breaking up a bit.", '你的聲音有點斷斷續續。', '視訊'],
-  ['Let me share my screen.', '我來分享螢幕。', '視訊'],
+  ['Let me share my screen.', '我來分享畫面。', '視訊'],
   ["Just to make sure we're on the same page, …", '確認一下我們的理解一樣：…', '確認共識', "Just to make sure we're on the same page, we launch on May 5."],
-  ["Who's the owner for this?", '這件事誰負責？', '確認負責人'],
+  ["Who's going to own this?", '這件事誰負責？', '確認負責人'],
   ["Let's take that offline.", '這個我們會後再聊。', '收尾'],
   ["I'll send a recap after the meeting.", '會後我會寄重點摘要。', '收尾'],
 ];
 /* ================= the course, the shadowing library and the phrase bank ================= */
 // The course: 12 units that follow one client project, five lessons each (see LESSON_DAYS). Every unit has a dialogue in
 // the shadowing library (LIBRARY, same key), six phrases (PHRASEBOOK, same key), a pronunciation lesson (PRON key) with
-// words from the dialogue, a role-play scene (SCENES key) and a 4/3/2 talk. All original. Kept away from the
+// words from the dialogue, a role-play scene (SCENES key), three changed facts for acting the dialogue out again
+// without AI (vary) and a 4/3/2 talk. All original. Kept away from the
 // diagnostic's prompts (introducing yourself and the FDE role to a new client team, why the AI makes things up, hosted or
 // own model) and its reading passage's words, so practising does not change what the diagnostic measures.
 const COURSE = [
   { k: 'u1', zh: '開會前後的閒聊', dz: '第一次和客戶團隊開視訊會議。會議開始前要確認聲音、閒聊幾句、互相打招呼；結束時道謝，說好接下來會寄什麼。',
     can: ['能在視訊會議開始前確認聲音，自然地閒聊幾句', '能跟第一次見面的人打招呼，也能問對方在哪裡工作', '能有禮貌地結束會議，說好接下來會做什麼'],
     pron: 'th', focus: ['thanks', 'think', 'this', 'there'], scene: 'smalltalk', sceneNote: '角色扮演是在茶水間和剛來的外國同事閒聊；一樣練問候、接話，再自然地結束。',
+    vary: ['你這週在倫敦出差，跟他們只差一個小時。', '一開始 Ken 的聲音斷斷續續，你要請他再說一次。', '結束前你答應今天下班前寄會議紀錄和下次開會的時間。'],
     talk: { zh: '外國同事來你的城市出差', en: 'a colleague from abroad is visiting your city on a business trip: what you would recommend',
       pts: ['Where should they stay?', 'What should they eat?', 'What can they do on a free evening?'], pz: '住哪裡／吃什麼／一個晚上的空檔可以做什麼' } },
   { k: 'u2', zh: '需求訪談：問對問題', dz: '第一次需求訪談。客戶的售後服務主管 Maria 想用 AI 幫維修技師更快找到資料，但說得很籠統。你要用開放式的問題，問清楚現在怎麼做、難在哪裡、誰會用。',
     can: ['能用開放式的問題請對方說明現在的做法', '能追問例子、次數和細節', '能問出誰會用、怎樣算有用'],
     pron: 'ee', focus: ['see', 'team', 'visit', 'minutes'], scene: 'discovery',
+    vary: ['這次的客戶是倉庫主管，想讓倉庫人員更快查到零件放在哪裡、還有沒有庫存。', '他們現在靠紙本目錄和一份很大的 Excel 表，新人常常找不到。', '對方回答得很短，你要多追問例子和次數。'],
     talk: { zh: '一個花了太久才解決的工作問題', en: 'a problem at work that took too long to solve',
       pts: ['What was the problem?', 'Why did it take so long?', 'What could make it faster next time?'], pz: '問題是什麼／為什麼花那麼久／怎樣可以更快' } },
   { k: 'u3', zh: '確認理解、總結下一步', dz: '需求訪談快結束了。你要用自己的話重述聽到的重點、問清楚沒聽懂的詞，最後一起說好下一步：誰在什麼時候做什麼。',
     can: ['能用自己的話重述對方的需求', '能問清楚對方某個詞的意思', '能總結下一步，說清楚誰在什麼時候做什麼'],
     pron: 'sh', focus: ['sure', 'share', 'so', 'signal'], scene: 'discovery', sceneNote: '這次把重點放在最後：用自己的話總結聽到的需求，確認下一步和負責的人。',
+    vary: ['客戶要在平板上用，不是手機。', '這次要問清楚的詞是「急件」：對方是指當天就要修好的案子。', '下一步改成：Ken 下週一前寄三十份手冊，你下週四提出計畫。'],
     talk: { zh: '總結這週的一個會議', en: 'a meeting you had this week: what it was about, what was decided and what happens next',
       pts: ['What was the meeting about?', 'What did you decide?', 'Who will do what next?'], pz: '會議在談什麼／決定了什麼／接下來誰做什麼' } },
   { k: 'u4', zh: '用白話解釋技術', dz: '客戶的財務長 Daniel 不懂技術。他想知道 AI 助理怎麼找到答案、公司的資料會怎麼處理。你要避開術語、用比喻說明，並確認他聽懂。',
     can: ['能用白話和比喻說明 AI 助理怎麼運作', '能說明資料怎麼處理，不把話說得太滿', '能確認對方聽懂，聽不懂就換個說法'],
     pron: 'v', focus: ['very', 'gives', 'never', 'version'], scene: 'explain',
+    vary: ['這次聽你說明的是客戶的法務主管，最在意資料存在哪裡、誰看得到。', '他問：問過的問題存在哪裡、存多久？答案是：存在他們自己的雲端帳號，三十天後自動刪除。', '第一版要六週才會好，不是四週。'],
     talk: { zh: '用白話解釋一個每天會用到的技術（例如 Wi-Fi、GPS 或雲端硬碟）', en: 'explaining an everyday technology, such as Wi-Fi, GPS or cloud storage, in plain words',
       pts: ['What does it do?', 'How does it work, in simple words?', 'What is a good comparison from daily life?'], pz: '它做什麼／簡單說它怎麼運作／生活裡可以拿什麼來比喻' } },
   { k: 'u5', zh: '展示方案與問答', dz: '視訊會議上向客戶團隊展示試行版的 AI 助理。你要先說今天的安排，邊操作邊說明，回答問題；有一題你答不出來，要誠實地說會在什麼時候回覆。',
     can: ['能清楚地開場，說明這次展示的安排', '能邊操作邊說明畫面上的東西', '答不出來時，能誠實地說會在什麼時候回覆'],
     pron: 'stress', focus: ['assistant', 'technician', 'manual', 'demo'], scene: 'demo',
+    vary: ['這次示範的是查零件編號，不是錯誤代碼。', '示範到一半畫面卡住了，你要請大家等一下。', '有人問能不能用語音問問題；你不確定，答應週三前回覆。'],
     talk: { zh: '介紹手機裡一張你喜歡的照片', en: 'a photo on your phone that you like: what it shows and the story behind it',
       pts: ['Where and when did you take it?', 'What can you see in it, from left to right?', 'Why do you like it?'], pz: '在哪裡、什麼時候拍的／照片裡有什麼，從左到右說／為什麼喜歡它' } },
   { k: 'u6', zh: '站會：報告進度與卡住的地方', dz: '你加入客戶團隊的每日站會。輪到你時，要用幾句話說昨天做了什麼、今天要做什麼、卡在哪裡，並請對方幫忙。',
     can: ['能用過去式說清楚昨天做了什麼', '能說出卡住的地方，和需要誰幫忙', '能用幾句話說完，不拖太長'],
     pron: 'ed', focus: ['finished', 'scanned', 'fixed', 'asked'], scene: 'standup',
+    vary: ['昨天你改好了掃描手冊的搜尋，今天要處理舊機型的手冊。', '卡住你的是還沒拿到客服團隊整理的常見問題清單。', '這件事要請 Priya 幫忙，不是 Ken。'],
     talk: { zh: '上週工作做了什麼', en: 'what you did at work last week',
       pts: ['What did you finish?', 'What problem did you have?', 'What will you do next week?'], pz: '完成了什麼／遇到什麼問題／下週要做什麼' } },
   { k: 'u7', zh: '說壞消息：上線要延後', dz: '原本下週要上線，但測試時發現客戶有些手冊新舊版本混在一起，很多答案是錯的。你要直接說出壞消息、承擔責任，再提出兩個選項和你的建議。',
     can: ['能直接但有禮貌地說出壞消息', '能說明原因、承擔責任，不推給別人', '能提出兩個選項，並說出你的建議'],
-    pron: 'ae', focus: ['bad', 'happened', 'better', 'plan'], scene: 'golive', sceneNote: '角色扮演的原因和對話不一樣：這次是正式環境的資料還拿不到。一樣要直接說出壞消息、說明原因，再提出選項。',
+    pron: 'ae', focus: ['bad', 'happened', 'better', 'had'], scene: 'golive', sceneNote: '角色扮演的原因和對話不一樣：這次是正式環境的資料還拿不到。一樣要直接說出壞消息、說明原因，再提出選項。',
+    vary: ['延後的原因改成：客戶正式環境的維修紀錄還沒通過內部核准，現在還不能用（說明原因，但不要怪對方）。', '兩個選項：先只用手冊上線、維修紀錄之後再加，或整個延後兩週。', '這次你建議延後兩週，因為少了維修紀錄，很多問題會答不出來。'],
     talk: { zh: '一個沒照計畫走的專案', en: 'a project that did not go as planned',
       pts: ['What was the plan?', 'What went wrong?', 'What would you do differently?'], pz: '原本的計畫／哪裡出了問題／下次會怎麼做' } },
   { k: 'u8', zh: '教客戶團隊使用', dz: '助理要上線了，你帶技師和客服團隊上一堂線上教育訓練。你要一步一步說明怎麼用、請大家跟著做，並確認每個人都跟上了。',
     can: ['能用 first、then、after that 一步一步說明', '能請大家跟著操作，確認每個人都跟上', '能回答使用上的問題'],
-    pron: 'ng', focus: ['training', 'using', 'getting', 'something'], scene: 'training',
+    pron: 'ng', focus: ['training', 'using', 'getting', 'something'], scene: 'training', sceneNote: '角色扮演是教客服人員，有一位資深客服還不太買單。一樣一步一步說明、請對方試一次，再回答他的疑慮。',
+    vary: ['這次是教客服人員，他們用電腦上的網頁版，不是手機。', '訓練只有十分鐘，你要說得更精簡。', '有人說他問了問題卻沒有回應；其實還在處理，請他稍等一下。'],
     talk: { zh: '教別人用一樣東西', en: 'teaching someone how to use something',
       pts: ['What did you teach?', 'What were the steps?', 'What was hard for them?'], pz: '教了什麼／有哪些步驟／對方覺得難的地方' } },
   { k: 'u9', zh: '線上處理問題', dz: '上線第一週，客戶的 IT 主管 Ken 打來說，助理今天早上突然變得很慢。他在線上等著，你要一邊查一邊說明在做什麼、可能的原因、要多久；還不確定的事不要亂猜。',
     can: ['能一邊查問題，一邊說明正在做什麼', '能說出可能的原因，但不說得太肯定', '能說清楚下一步，和什麼時候再回報'],
     pron: 'cl', focus: ['slow', 'please', 'first', 'find'], scene: 'incident', sceneNote: '角色扮演的狀況和對話不一樣：這次是助理一直照舊版的手冊回答。一樣邊查邊說明，不確定的事不要說得太肯定。',
+    vary: ['這次的問題是：一部分技師從早上八點起就登入不了。', '只有德國的技師有這個問題。', '你要先看登入的紀錄，大約要二十分鐘，答應九點前回報。'],
     talk: { zh: '一次你修好東西的經驗', en: 'a time you fixed something that broke',
       pts: ['What broke, and how did you notice?', 'How did you find the cause?', 'What did you learn?'], pz: '什麼壞了、怎麼發現的／怎麼找到原因／學到什麼' } },
   { k: 'u10', zh: '管理範圍：客戶要加功能', dz: '試行進行到一半，Maria 想多加一個功能：讓助理也能自動建立維修工單。這不在這次試行的範圍內。你要先肯定這個想法，說明為什麼現在不做，再提出之後做的方式。',
     can: ['能先肯定對方的想法，再說明限制', '能婉拒，同時提出替代的做法', '能說清楚範圍和時間的取捨'],
     pron: 'rl', focus: ['really', 'repair', 'rough', 'delay'], scene: 'scope', sceneNote: '角色扮演裡客戶要加的是另外兩個功能（語音輸入和每週報表），時間也在上線前。一樣先肯定，再說明取捨、提出替代做法。',
+    vary: ['這次 Maria 想加的是：讓助理也能用西班牙文回答。', '這要請會西班牙文的技師一起檢查答案，大概會多花一個月。', '你提議先在一個國家試用兩週，再決定要不要全面推出。'],
     talk: { zh: '一次你在工作上說「不」的經驗', en: 'a time you said no at work',
       pts: ['What did they ask for?', 'Why did you say no?', 'What did you offer instead?'], pz: '對方要什麼／為什麼拒絕／你提出了什麼替代做法' } },
-  { k: 'u11', zh: '跟模型廠商談用量', dz: '試行結束後要推廣到全部八十位技師，使用量會變多。你要跟模型廠商的業務 Sam 談：現在的速率上限（每分鐘可以送幾次請求）夠不夠、價格怎麼算、資料可以在哪裡處理，並請對方用書面確認。',
+  { k: 'u11', zh: '跟模型廠商談用量', dz: '試行快結束了，如果之後推廣到全部八十位技師，使用量會變成兩倍。你要先跟模型廠商的業務 Sam 談：現在的速率上限（每分鐘最多能送多少請求、多少 token）夠不夠、價格怎麼算、資料可以在哪裡處理，並請對方用書面確認。',
     can: ['能說出自己的需求和大概的數字', '能問清楚價格與條件', '能請對方把重點用書面確認'],
-    pron: 'end', focus: ['need', 'raise', 'price', 'rate'], scene: 'provider',
+    pron: 'end', focus: ['need', 'raise', 'price', 'rate'], scene: 'provider', sceneNote: '角色扮演是另一個客戶、還沒上線，用量比對話裡大很多。一樣說出用量和數字、問清楚上限和價格，再請對方用書面確認。',
+    vary: ['你們的用量預計會變成三倍，而且晚上也有人用。', '你想問用量大的話有沒有折扣。', '資料必須留在德國，不能送到別的國家處理。'],
     talk: { zh: '一次買重要東西的經驗', en: 'something important you bought: what you compared and what you asked first',
       pts: ['What did you buy?', 'What did you compare?', 'What questions did you ask?'], pz: '買了什麼／比較了什麼／問了哪些問題' } },
   { k: 'u12', zh: '報告試行成效', dz: '試行結束了。你向客戶的主管報告成效：用數字說明找資料的時間省了多少、技師的評價、還要改進的地方，最後提出下一步的建議。',
     can: ['能清楚地說出數字和變化', '能說明結果的原因和還不夠好的地方', '能根據結果提出下一步的建議'],
-    pron: 's', focus: ['questions', 'minutes', 'ratings', 'months'], scene: 'results', sceneNote: '角色扮演是另一個客服試行專案，數字和對話裡的不一樣（教練會給你數字）。一樣用數字說變化，再說明原因和建議。',
+    pron: 's', focus: ['questions', 'minutes', 'ratings', 'months'], scene: 'results', sceneNote: '角色扮演是另一個試行專案：幫業務團隊回答產品問題、準備報價的 AI 助理。數字和對話裡的不一樣，用「用得上的說法」裡的數字。一樣用數字說變化，再說明原因和建議。',
+    vary: ['這次的數字：三十位技師問了一千五百個問題，找資料從二十分鐘變成五分鐘。', '八成的評分是正面的；手寫的維修紀錄還讀得不好。', '你的建議：先改善手寫紀錄的部分，再推廣到其他國家。'],
     talk: { zh: '用數字說一個你的成果', en: 'a result of your work, told with numbers',
       pts: ['What was the goal?', 'What changed, in numbers?', 'What would you do next?'], pz: '目標是什麼／用數字說改變了什麼／下一步' } },
 ];
@@ -1105,7 +1126,8 @@ const LIBRARY = [
     ['Ken', "Hi, nice to meet you. Sorry I'm a bit late.", '嗨，很高興認識你。抱歉我晚了一點。'],
     ['You', 'No worries. Nice to meet you too.', '沒關係，我也很高興認識你。'],
     ['Ken', 'So, where are you based?', '那你在哪個城市工作？'],
-    ['You', "I'm in Taipei, so there's a six-hour time difference.", '我在台北，所以我們有六個小時的時差。'],
+    ['You', "I'm in Taipei, so there's a six-hour time difference. Where are you based?", '我在台北，所以我們有六個小時的時差。你在哪裡工作？'],
+    ['Ken', 'At the head office, with Maria.', '跟 Maria 一樣在總部。'],
     ['Maria', "Okay, I think we're all here. Shall we get started?", '好，我想大家都到了。我們開始吧？'],
     ['Maria', "That's all for today. Thanks, everyone.", '今天就到這裡。謝謝大家。'],
     ['You', 'This was really helpful. Thanks for your time.', '今天很有收穫，謝謝你們撥時間。'],
@@ -1120,12 +1142,12 @@ const LIBRARY = [
     ['Maria', 'The manuals are really long, and the search tool is pretty bad.', '手冊都很長，搜尋工具又滿難用的。'],
     ['You', 'Can you give me an example?', '可以舉個例子嗎？'],
     ['Maria', 'Last month, a technician spent an hour looking up one error code.', '上個月有個技師花了一個小時，只為了查一個錯誤代碼。'],
-    ['You', "An hour? That's a lot. How often does that happen?", '一個小時？那很久。這種情況多常發生？'],
-    ['Maria', "A few times a week, I'd say.", '我想，一週好幾次吧。'],
+    ['You', "An hour? That's a long time. How often does that happen?", '一個小時？那很久。這種情況多常發生？'],
+    ['Maria', "A few times a week, I'd say.", '我想一週會有幾次吧。'],
     ['You', 'And who would use it day to day? Just the technicians?', '那平常會是誰在用？只有技師嗎？'],
     ['Maria', 'The technicians first. Maybe the support team later.', '先是技師，之後可能還有客服團隊。'],
     ['You', 'Got it. What does a typical day look like for them?', '了解。他們平常的一天是什麼樣子？'],
-    ['Maria', "They visit three or four customers a day, so they're always in a hurry.", '他們一天要跑三、四個客戶，所以總是很趕。'],
+    ['Maria', "They visit three or four customers a day, so they're always in a hurry. And they only carry their phones.", '他們一天要跑三、四個客戶，所以總是很趕。而且身上只帶手機。'],
     ['You', 'How many technicians are we talking about?', '大概有多少位技師？'],
     ['Maria', 'About eighty, in three countries.', '大約八十位，分布在三個國家。'],
     ['You', "That's really helpful. And how will you know it's working?", '這很有幫助。那你們會怎麼判斷它有沒有用？'],
@@ -1174,6 +1196,8 @@ const LIBRARY = [
     ['Maria', 'Nice. Can it read the old manuals, the scanned ones?', '不錯。它能讀舊的手冊嗎？掃描的那些？'],
     ['You', 'Good question. It can read most of them, but this part is still a work in progress.', '好問題。大部分都可以，不過這部分還在改進中。'],
     ['Ken', 'How many users can it handle at the same time?', '它可以讓多少人同時使用？'],
+    ['You', "So you're asking about the morning, when everyone logs in at once?", '所以你是問早上大家同時登入的時候？'],
+    ['Ken', 'Exactly.', '沒錯。'],
     ['You', "I don't have that number with me, and I'd rather check than guess.", '我手邊沒有這個數字，與其用猜的，我寧可先確認。'],
     ['You', 'Can I get back to you by Friday?', '我週五前回覆你，可以嗎？'],
     ['Ken', "Sure, that's fine.", '好，沒問題。'],
@@ -1182,12 +1206,12 @@ const LIBRARY = [
   { k: 'u6', title: 'My turn at stand-up', zh: '站會：報告進度與卡住的地方', lv: 'A2–B1', g: 'work', lines: [
     ['Ken', "Okay, let's go around. Alex, do you want to start?", '好，我們輪流說。Alex，你要先開始嗎？'],
     ['You', 'Sure. I made good progress on the search yesterday.', '好。我昨天在搜尋功能上有不少進展。'],
-    ['You', 'I finished it for the new manuals, tested it with fifty real questions, and fixed two bugs.', '新手冊的部分完成了，用五十個真實的問題測過，也修好了兩個錯誤。'],
+    ['You', 'I finished setting it up for the new manuals, tested it with fifty real questions, and fixed two bugs.', '新手冊的部分完成了，用五十個真實的問題測過，也修好了兩個錯誤。'],
     ['You', "Today I'll focus on the scanned manuals.", '今天我會專心處理掃描的手冊。'],
-    ['You', "One thing is blocking me. I asked for access to the service records, but I don't have it yet.", '有一件事卡住我了：我申請了維修紀錄的權限，但還沒拿到。'],
-    ['Ken', 'Oh, I thought I sent that. Let me check.', '喔，我以為我寄了。我查一下。'],
+    ['You', "One thing is blocking me. I asked for access to the service records, but I don't have it yet. Ken, could you check on that?", '有一件事卡住我了：我申請了維修紀錄的權限，但還沒拿到。Ken，可以幫我確認一下嗎？'],
+    ['Ken', 'Oh, I thought I sent that. Let me check.', '喔，我以為已經開給你了。我查一下。'],
     ['You', 'Thanks. If I get it by tomorrow, we should still make the Friday deadline.', '謝謝。如果明天前拿到，我們應該還是趕得上週五的期限。'],
-    ['Ken', "Got it. I'll send it right after this call.", '了解。我開完這個會就馬上寄。'],
+    ['Ken', "Got it. I'll send it right after this call.", '了解。這個會開完我就馬上開給你。'],
     ['You', "Great, that's all from me.", '太好了，我這邊就這樣。'],
     ['Ken', "Thanks. Priya, you're next.", '謝謝。Priya，換你。'],
     ['Priya', "Sure. We're a bit behind on checking answers, because the manuals came in late.", '好。我們檢查答案的進度有點落後，因為手冊比較晚到。'],
@@ -1217,10 +1241,10 @@ const LIBRARY = [
     ['Priya', "Oh, no, I'm not. Okay, I'm in now.", '喔，不是。好，我登入了。'],
     ['You', 'Great. Then type a question, like how to restart a machine.', '很好。接著輸入一個問題，例如怎麼讓機器重新啟動。'],
     ['You', "Don't worry, you can't break anything.", '別擔心，你們不會弄壞任何東西。'],
-    ['You', 'After that, scroll down to see the source.', '然後，往下滑就能看到來源。'],
+    ['You', 'After that, scroll down to see the source.', '然後，往下滑就能看到出處。'],
     ['You', 'If something looks wrong, tap the thumbs-down button and tell us why.', '如果有地方看起來不對，就按「倒讚」，告訴我們原因。'],
     ['Priya', "What if we're not sure it's wrong?", '如果我們不確定是不是錯的呢？'],
-    ['You', 'Good point. Then ask a senior technician, just like before.', '問得好。那就跟以前一樣，問資深技師。'],
+    ['You', 'Good question. In that case, ask a senior technician, just like before.', '問得好。那就跟以前一樣，問資深技師。'],
     ['You', "Is everyone with me so far? Let's try one together.", '到這裡大家都跟上了嗎？我們一起試一次。'],
   ] },
   { k: 'u9', title: 'Slow answers this morning', zh: '線上處理問題', lv: 'B1', g: 'work', lines: [
@@ -1249,17 +1273,17 @@ const LIBRARY = [
     ['Maria', "We don't want that either.", '我們也不希望那樣。'],
     ['You', "Here's what we can do instead. Let's finish the pilot first, as planned.", '我們可以改成這樣做：先照計畫完成試行。'],
     ['You', 'How about we add ticket creation to phase two?', '然後把建立工單排進第二階段，好嗎？'],
-    ['Maria', 'Okay. Can you write that down for our managers?', '好。你可以把這些寫下來給我們的主管嗎？'],
+    ['Maria', 'Okay. Can you write that up for our managers?', '好。你可以把這些整理成文件給我們的主管嗎？'],
     ['You', "Of course. I'll add it to the plan with a rough timeline.", '當然。我會把它加進計畫，附上大概的時程。'],
     ['Maria', 'Thanks for being honest about it.', '謝謝你這麼坦白。'],
     ['You', "Sure. I don't want to promise something we can't deliver.", '應該的。我不想承諾做不到的事。'],
   ] },
   { k: 'u11', title: 'Talking to the model provider', zh: '跟模型廠商談用量', lv: 'B1–B2', g: 'work', lines: [
-    ['You', 'Thanks for meeting with us, Sam. Our usage is going to grow after the pilot.', 'Sam，謝謝你跟我們開會。試行結束後，我們的使用量會變多。'],
+    ['You', 'Thanks for meeting with us, Sam. If we roll out to all eighty technicians, our usage will grow.', 'Sam，謝謝你跟我們開會。如果推廣到全部八十位技師，我們的使用量會變多。'],
     ['Sam', 'Great to hear. What kind of numbers are we talking about?', '很高興聽到。大概是多少的量？'],
     ['You', 'We expect about twice as many requests, mostly in the morning.', '我們預計請求會變成兩倍左右，大多集中在早上。'],
     ['You', 'Will our current rate limit be enough for that?', '我們目前的速率上限夠用嗎？'],
-    ['Sam', "Probably not at peak times. We can raise it, but you'd need the business plan.", '尖峰時段可能不夠。我們可以調高，但你們得用企業方案。'],
+    ['Sam', "Probably not at peak times, because your requests are long. We can raise it, but you'd need to be on the business plan.", '尖峰時段可能不夠，因為你們每次送的內容很長。我們可以調高，但你們得用企業方案。'],
     ['You', 'I see. How does the pricing work for the business plan?', '了解。企業方案的價格怎麼算？'],
     ['Sam', "It's the same price per token, plus a monthly fee.", '每個 token 的價格一樣，另外加一筆月費。'],
     ['You', "What's included in the monthly fee?", '月費包含哪些東西？'],
@@ -1273,10 +1297,10 @@ const LIBRARY = [
   { k: 'u12', title: 'The results of the pilot', zh: '報告試行成效', lv: 'B1', g: 'work', lines: [
     ['You', "Thanks, everyone. I'd like to share the results of the six-week pilot.", '謝謝大家。我想分享這六週試行的結果。'],
     ['You', 'Forty technicians used the assistant, and they asked over two thousand questions.', '有四十位技師用了助理，問了兩千多個問題。'],
-    ['You', 'Finding the right steps took four minutes, down from twenty-five.', '找到正確的步驟只要四分鐘，原本要二十五分鐘。'],
+    ['You', 'Finding the right steps now takes about four minutes, down from twenty-five.', '現在找到正確的步驟大約只要四分鐘，原本要二十五分鐘。'],
     ['You', 'Eighty-five percent of the ratings were positive.', '評分有百分之八十五是正面的。'],
     ['Daniel', "That's impressive. Were there any problems?", '成果很亮眼。有遇到什麼問題嗎？'],
-    ['You', 'Yes. The scanned manuals are still a weak spot.', '有。掃描的手冊還是一個弱點。'],
+    ['You', 'Yes. In week three, it started covering the older machines too. Their scanned manuals are still a weak spot.', '有。從第三週開始，它也涵蓋比較舊的機型了。那些機型的掃描手冊還是一個弱點。'],
     ['You', 'About one in ten answers from those manuals needed corrections.', '從那些手冊找的答案，大約十個裡有一個需要更正。'],
     ['Daniel', 'So what do you suggest?', '那你建議怎麼做？'],
     ['You', "I'd suggest two next steps. First, we clean up the scanned manuals.", '我建議接下來做兩件事。第一，先整理掃描的手冊。'],
@@ -1370,7 +1394,7 @@ const PHRASEBOOK = [
     ["How's your week going so far?", '你這週到現在還順利嗎？'],
     ['Pretty busy, but in a good way.', '滿忙的，不過是好的那種忙。'],
     ['Where are you based?', '你在哪個城市工作？'],
-    ["I think we're all here. Shall we get started?", '我想大家都到了，我們開始吧？'],
+    ["I'll send a short summary by tomorrow.", '我明天前會寄一份簡短的摘要。'],
     ['This was really helpful. Thanks for your time.', '今天很有收穫，謝謝你們撥時間。'],
   ] },
   { k: 'u2', zh: '提問與追問', say: [
@@ -1386,7 +1410,7 @@ const PHRASEBOOK = [
     ['So if I understand correctly, the main problem is the search tool.', '所以如果我理解得沒錯，主要的問題在搜尋工具。'],
     ['When you say offline, do you mean no internet at all?', '你說「離線」，是指完全沒有網路嗎？'],
     ["That's an important detail.", '這是很重要的細節。'],
-    ["So, next steps: you'll send the files, and I'll share a plan.", '那麼，下一步：你們寄檔案，我提出計畫。'],
+    ["So, next steps: you'll send the files by Friday, and I'll share a plan next Wednesday.", '那麼，下一步：你們週五前寄檔案，我下週三提出計畫。'],
     ['Does that work for you?', '這樣可以嗎？'],
   ] },
   { k: 'u4', zh: '用白話解釋', say: [
@@ -1402,7 +1426,7 @@ const PHRASEBOOK = [
     ["Let's say a technician sees an error code.", '假設一位技師看到一個錯誤代碼。'],
     ['Let me zoom in so you can see it better.', '我放大一點，讓大家看得清楚。'],
     ['This part is still a work in progress.', '這部分還在改進中。'],
-    ["I'd rather check than guess.", '與其用猜的，我寧可先確認。'],
+    ["I'd rather check than guess. Can I get back to you by Friday?", '與其用猜的，我寧可先確認。週五前回覆你可以嗎？'],
     ["Is there anything you'd like to see again?", '有沒有哪個部分想再看一次？'],
   ] },
   { k: 'u6', zh: '進度與卡住的地方', say: [
@@ -1410,7 +1434,7 @@ const PHRASEBOOK = [
     ["Today I'll focus on the scanned manuals.", '今天我會專心處理掃描的手冊。'],
     ['One thing is blocking me.', '有一件事卡住我了。'],
     ['We should still make the Friday deadline.', '我們應該還是趕得上週五的期限。'],
-    ["We're a bit behind, because the data came in late.", '我們進度有點落後，因為資料比較晚到。'],
+    ['Could you check on that for me?', '可以幫我確認一下嗎？'],
     ["That's all from me.", '我這邊就這樣。'],
   ] },
   { k: 'u7', zh: '說壞消息與道歉', say: [
@@ -1424,17 +1448,17 @@ const PHRASEBOOK = [
   { k: 'u8', zh: '一步一步教', say: [
     ['First, open the app and log in.', '首先，打開 App 並登入。'],
     ['Then type your question here.', '接著在這裡輸入你的問題。'],
-    ['After that, scroll down to see the source.', '然後，往下滑就能看到來源。'],
+    ['After that, scroll down to see the source.', '然後，往下滑就能看到出處。'],
     ["Don't worry, you can't break anything.", '別擔心，你們不會弄壞任何東西。'],
     ['Is everyone with me so far?', '到這裡大家都跟上了嗎？'],
-    ["Let's try one together.", '我們一起試一次。'],
+    ['Good question. In that case, ask a senior technician, just like before.', '問得好。那就跟以前一樣，問資深技師。'],
   ] },
   { k: 'u9', zh: '查問題與回報', say: [
     ["I'm looking into it now.", '我現在就來查。'],
     ['Is it happening for everyone, or just some users?', '是每個人都這樣，還是只有部分使用者？'],
     ["I'm trying to narrow it down.", '我正在縮小範圍。'],
     ["I'm not sure yet, but it might be the number of users.", '我還不確定，不過可能跟使用人數有關。'],
-    ['I need to test that before I can say for sure.', '我得先測試，才能確定。'],
+    ["I'll send you an update by ten, even if it isn't fixed yet.", '就算還沒修好，我也會在十點前跟你更新進度。'],
     ['In the meantime, it still works, just slowly.', '這段時間它還是能用，只是比較慢。'],
   ] },
   { k: 'u10', zh: '婉拒與提出替代做法', say: [
@@ -1446,16 +1470,16 @@ const PHRASEBOOK = [
     ["I don't want to promise something we can't deliver.", '我不想承諾做不到的事。'],
   ] },
   { k: 'u11', zh: '詢價與談條件', say: [
-    ['Our usage is going to grow next month.', '我們下個月的使用量會變多。'],
+    ['We expect about twice as many requests, mostly in the morning.', '我們預計請求會變成兩倍左右，大多集中在早上。'],
     ['Will our current rate limit be enough?', '我們目前的速率上限夠用嗎？'],
     ['How does the pricing work?', '價格是怎麼算的？'],
-    ["What's included in the monthly fee?", '月費包含哪些東西？'],
+    ['Could you send me those details in writing?', '可以把這些細節用書面寄給我嗎？'],
     ['Can our data be processed in Europe?', '我們的資料可以在歐洲處理嗎？'],
     ["Once I have the details, I'll check with my team.", '拿到細節之後，我會跟團隊確認。'],
   ] },
   { k: 'u12', zh: '數字與成效', say: [
     ["I'd like to share the results of the pilot.", '我想分享試行的結果。'],
-    ['It took four minutes, down from twenty-five.', '只要四分鐘，原本要二十五分鐘。'],
+    ['Finding the right steps now takes about four minutes, down from twenty-five.', '現在找到正確的步驟大約只要四分鐘，原本要二十五分鐘。'],
     ['Eighty-five percent of the ratings were positive.', '評分有百分之八十五是正面的。'],
     ['About one in ten answers needed corrections.', '大約十個答案裡有一個需要更正。'],
     ['The scanned manuals are still a weak spot.', '掃描的手冊還是一個弱點。'],
@@ -1496,6 +1520,7 @@ const S = {
   pron: null,                           // the open pronunciation lesson { k, quiz }
   shadow: { cur: '', list: [] }, tool: null, sh: null, shGen: null, f432: null, // today tools
   lesson: null, toolFrom: null, pronFrom: false, openBook: new Set(), // the open lesson, where a tool was opened from, open phrase bank groups
+  lessonMarks: new Map(), // per lesson id, what was revealed and ticked on it (kept while the page is open, see openLesson)
   importing: null, installEvt: null,
 };
 
@@ -1608,7 +1633,12 @@ const Store = {
     if (this.mode === 'db') {
       for (let i = 0; ; i++) {
         try { const s = await this.ref(name).get(); return s.exists ? clone(s.data()) : null; }
-        catch (e) { if (i === 0 && e && e.code === 'unavailable') { await sleep(300 + Math.random() * 700); continue; } throw e; }
+        catch (e) {
+          // Busy (unavailable), or too many reads at once (resource_exhausted: about a dozen go out when the page opens):
+          // tried once more a moment later, a little later when it was too many.
+          if (i === 0 && e && (e.code === 'unavailable' || e.code === 'resource_exhausted')) { await sleep((e.code === 'unavailable' ? 300 : 900) + Math.random() * 700); continue; }
+          throw e;
+        }
       }
     }
     if (this.mode === 'local') { const v = lsGet('kaikou:' + name); try { return v ? JSON.parse(v) : null; } catch (_) { return null; } }
@@ -2427,9 +2457,9 @@ const PRON = [
     sents: ['I left my bag in the back of the cab.', 'We need to find a good seat.', 'Did you get the job you applied for?'] },
   { k: 'ee', title: '長短 i：sheep 和 ship', tip: 'sheep、seat 的長音 /iː/ 嘴角往兩邊拉、聲音拉長；ship、sit 的短音 /ɪ/ 嘴巴放鬆、短促，聽起來介於「ㄧ」和「ㄝ」之間。',
     pairs: [['sheep', 'ship'], ['seat', 'sit'], ['feel', 'fill'], ['heat', 'hit'], ['steal', 'still'], ['cheap', 'chip']],
-    sents: ['Could you fill in this sheet, please?', 'I think we need a bit more time.', 'This seat is free, so feel free to sit.'] },
+    sents: ['Could you fill out this sheet, please?', 'I think we need a bit more time.', 'This seat is free, so feel free to sit.'] },
   { k: 'ae', title: 'æ 和 e：bad 和 bed', tip: 'bad、sat 的 /æ/ 嘴巴張大、下巴往下，介於「ㄝ」和「ㄚ」之間；bed、set 的 /ɛ/ 嘴巴張小一點，接近「ㄝ」。',
-    pairs: [['bad', 'bed'], ['sat', 'set'], ['sad', 'said'], ['had', 'head'], ['pat', 'pet'], ['bag', 'beg']],
+    pairs: [['bad', 'bed'], ['sat', 'set'], ['sad', 'said'], ['had', 'head'], ['pat', 'pet'], ['bat', 'bet']],
     sents: ['Can I have a black coffee, please?', 'I left my pen in my bag.', "Let's grab a cab back to the hotel."] },
   { k: 'sh', title: 's 和 sh：see 和 she', tip: 'she、ship 的 /ʃ/：嘴唇嘟起往前推，像叫人安靜的「噓——」；see、sip 的 /s/：嘴角往兩邊、舌尖靠近上排牙齒後面，像「ㄙ」。see 不要唸成「西」，聽起來會像 she。',
     pairs: [['she', 'see'], ['ship', 'sip'], ['sheet', 'seat'], ['shell', 'sell'], ['short', 'sort'], ['shave', 'save']],
@@ -2443,12 +2473,15 @@ const PRON = [
   { k: 'ed', title: '-ed 字尾：looked 不是 look', tip: '過去式的 -ed 有三種唸法：前面是不震動喉嚨的音（k、p、s、sh、ch、f）唸 /t/，例如 looked、asked、fixed；前面是震動喉嚨的音唸 /d/，例如 played、called；只有前面是 t 或 d 時，才多一個音節唸 /ɪd/，例如 wanted、needed。looked 只有一個音節，不要唸成 look-ed，但最後的 /t/ 要讓人聽得到。',
     pairs: [['looked', 'look'], ['played', 'play'], ['wanted', 'want'], ['called', 'call'], ['asked', 'ask'], ['fixed', 'fix']],
     sents: ['We fixed the bug and checked it again.', 'She called me and asked about the demo.', 'They wanted to wait, so we started on Thursday.'] },
-  { k: 's', title: '-s 字尾：costs 和 cost', tip: '複數名詞和第三人稱單數動詞的 -s 有三種唸法：前面是不震動喉嚨的音唸 /s/，例如 costs、works、books；前面是震動喉嚨的音唸 /z/，例如 days、plans、calls；前面是 s、z、sh、ch、j 的音時，多一個音節唸 /ɪz/，例如 pages、boxes。字尾的音一定要唸出來：costs 最後的 s、t、s 三個音都要有。',
+  { k: 's', title: '-s 字尾：costs 和 cost', tip: '複數名詞和第三人稱單數動詞的 -s 有三種唸法：前面是 s、z、sh、ch、j 的音時，多一個音節唸 /ɪz/，例如 pages、boxes；其他不震動喉嚨的音（p、t、k、f 和 think 的 th）唸 /s/，例如 costs、works、books、months；其他震動喉嚨的音和母音唸 /z/，例如 days、plans、calls。字尾的音一定要唸出來：costs 最後的 s、t、s 三個音都要有。',
     pairs: [['costs', 'cost'], ['days', 'day'], ['books', 'book'], ['works', 'work'], ['pages', 'page'], ['plans', 'plan']],
     sents: ['She usually works on two projects at a time.', 'It costs less than the old tools.', 'The office closes early on Fridays.'] },
-  { k: 'stress', title: '字重音：deVELopment', tip: '超過一個音節的字，會有一個音節唸得比較重、比較長、音調比較高，其他音節輕輕帶過。重音放錯，對方可能整個字聽不懂。-tion 和 -ics 結尾的字，重音通常在它們前一個音節（appliCAtion、anaLYTics），其他字尾沒有固定規則，新的字先聽一次再跟著唸。',
+  { k: 'stress', title: '字重音：deVELopment', tip: '超過一個音節的字，會有一個音節唸得比較重、比較長、音調比較高，其他音節輕輕帶過。重音放錯，對方可能整個字聽不懂。-tion 和 -ics 結尾的字，重音通常在它們前一個音節（appliCAtion、anaLYTics），其他字尾沒有固定規則，新的字先聽一次再跟著唸。長的字常常還有一個比較輕的次重音（例如 appliCAtion 的 ap），但唸得最重的只有一個。',
     stress: [['technology', ['tech', 'nol', 'o', 'gy'], 1], ['development', ['de', 'vel', 'op', 'ment'], 1], ['application', ['ap', 'pli', 'ca', 'tion'], 2], ['analytics', ['an', 'a', 'lyt', 'ics'], 2],
       ['architecture', ['ar', 'chi', 'tec', 'ture'], 0], ['assistant', ['as', 'sis', 'tant'], 1], ['technician', ['tech', 'ni', 'cian'], 1], ['evaluation', ['e', 'val', 'u', 'a', 'tion'], 3]],
+    // The quiz asks for words the card does not show (it shows its words' stress in capitals).
+    quiz: [['calendar', ['cal', 'en', 'dar'], 0], ['document', ['doc', 'u', 'ment'], 0], ['important', ['im', 'por', 'tant'], 1], ['available', ['a', 'vail', 'a', 'ble'], 1],
+      ['computer', ['com', 'put', 'er'], 1], ['analysis', ['a', 'nal', 'y', 'sis'], 1], ['afternoon', ['af', 'ter', 'noon'], 2], ['recommend', ['rec', 'om', 'mend'], 2]],
     sents: ['Our technician tried the new assistant today.', 'Development of the new application is almost done.', 'We need better analytics for the evaluation.'] },
   { k: 'cl', title: '連在一起的子音：sport 不是 support', tip: '兩、三個子音連在一起時（像 sp、st、nd、sk），中間不要多加「ㄜ」，最後一個子音也不要吞掉。sport 如果在 s 和 p 中間多一個母音，聽起來就像 support；find 吞掉最後的 d，就變成 fine。先慢慢唸清楚，再加快。',
     pairs: [['sport', 'support'], ['plant', 'planet'], ['find', 'fine'], ['tent', 'ten'], ['mask', 'mass'], ['guest', 'guess']],
@@ -2597,7 +2630,7 @@ function pronQuiz(p) {
   const card = el('section', { class: 'card' }, el('h3', { class: 'card-title', text: '聽辨小測驗' }));
   if (!z) {
     const st = pronStats()[p.k];
-    card.append(el('p', { class: 'help mt6', text: p.stress ? '播一個字，選出唸得最重的是哪一個音節。耳朵先聽得出重音，嘴巴才唸得出來。' : '播一個字，選出你聽到的是哪一個。耳朵先分得出來，嘴巴才唸得出來。' }),
+    card.append(el('p', { class: 'help mt6', text: p.stress ? '播一個上面沒有的字，選出唸得最重的是哪一個音節。耳朵先聽得出重音，嘴巴才唸得出來。' : '播一個字，選出你聽到的是哪一個。耳朵先分得出來，嘴巴才唸得出來。' }),
       el('div', { class: 'start-row mt12' },
         el('button', { type: 'button', class: 'btn primary', 'data-fk': 'quiz-start', onclick: () => quizStart(p) }, '開始（' + QUIZ_LEN + ' 題）'),
         st && st.quiz ? el('span', { class: 'help', text: '上次聽對 ' + st.quiz[0] + ' / ' + st.quiz[1] }) : null));
@@ -2614,7 +2647,7 @@ function pronQuiz(p) {
   }
   const [pi, side] = z.q[z.i], picked = z.pick !== null;
   if (p.stress) {
-    const item = p.stress[pi], w = item[0];
+    const item = quizList(p)[pi], w = item[0];
     card.append(el('div', { class: 'quiz' },
       el('span', { class: 'eyebrow', text: '第 ' + (z.i + 1) + ' / ' + z.q.length + ' 題' }),
       el('button', { type: 'button', class: 'btn', 'data-fk': 'quiz-play', 'aria-label': '第 ' + (z.i + 1) + ' 題，再聽一次', onclick: () => { clearTimeout(z.timer); ttsUnlock(); speak(w); } }, el('span', { class: 'ico', html: ICON.speaker }), '再聽一次'),
@@ -2640,13 +2673,15 @@ function pronQuiz(p) {
       el('button', { type: 'button', class: 'btn primary', 'data-fk': 'quiz-next', onclick: () => quizNext(p) }, z.i + 1 < z.q.length ? '下一題' : '看結果')) : null));
   return card;
 }
+// What a lesson's quiz asks about: its pairs, or for word stress, words of its own (p.quiz).
+const quizList = p => (p.stress ? p.quiz || p.stress : p.pairs);
 function quizStart(p) {
   ttsUnlock();
   if (Mic.cur) micStop(true);
-  const order = (p.stress || p.pairs).map((_, i) => i);
+  const order = quizList(p).map((_, i) => i);
   for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
   // Each question: [the pair's (or word's) index, the answer: the word of the pair spoken, or the stressed syllable].
-  S.pron.quiz = { q: order.slice(0, QUIZ_LEN).map(i => [i, p.stress ? p.stress[i][2] : Math.random() < 0.5 ? 0 : 1]), i: 0, pick: null, score: 0 };
+  S.pron.quiz = { q: order.slice(0, QUIZ_LEN).map(i => [i, p.stress ? quizList(p)[i][2] : Math.random() < 0.5 ? 0 : 1]), i: 0, pick: null, score: 0 };
   quizShow(p);
 }
 // Shows the current question with keyboard focus on the replay button, then says its word (a moment later, so a
@@ -2657,7 +2692,7 @@ function quizShow(p) {
   const [pi, side] = z.q[i];
   const b = $('#pron [data-fk="quiz-play"]'); if (b) b.focus({ preventScroll: true });
   clearTimeout(z.timer);
-  z.timer = setTimeout(() => { if (S.pron && S.pron.quiz === z && z.i === i && z.pick === null && S.tab === 'saved') speak(p.stress ? p.stress[pi][0] : p.pairs[pi][side]); }, 400);
+  z.timer = setTimeout(() => { if (S.pron && S.pron.quiz === z && z.i === i && z.pick === null && S.tab === 'saved') speak(p.stress ? quizList(p)[pi][0] : p.pairs[pi][side]); }, 400);
 }
 function quizPick(p, j) {
   const z = S.pron && S.pron.quiz;
@@ -2718,8 +2753,18 @@ function speak(text) {
     const v = TTS.pick();
     if (v) { u.voice = v; u.lang = v.lang; } else u.lang = S.settings.accent;
     u.rate = clamp(Number(S.settings.rate) || 0.95, 0.6, 1.3);
+    u.onerror = e => { if (ttsFailed(e)) ttsFailNote(e); };
     speechSynthesis.speak(u);
   } catch (_) { /* speech is optional */ }
+}
+// A voice that could not speak (an online voice without a network, say), as against speech the page cut off itself.
+const ttsFailed = e => !!e && !['interrupted', 'canceled'].includes(String(e.error || ''));
+const ttsFailMsg = e => (e && e.error === 'not-allowed' ? '瀏覽器這次不讓頁面出聲：按一下喇叭按鈕再試一次。'
+  : '朗讀失敗了：這個聲音可能要連網才能用。可以到設定的「聲音」換一個裝置上的聲音。');
+function ttsFailNote(e) {
+  if (Date.now() - (TTS.failAt || 0) < 8000) return; // one note for a run of failures
+  TTS.failAt = Date.now();
+  toast(ttsFailMsg(e));
 }
 // iOS only lets speech start from a user gesture once; a silent utterance on the first tap unlocks it.
 function ttsUnlock() {
@@ -2730,16 +2775,17 @@ function ttsUnlock() {
 // Says one utterance and calls done(ms, cut) once: on its end event, when speechSynthesis stops speaking after it
 // started (some voices never send their events), after a fallback time (about 1.3× its expected length plus 1.5 s),
 // or with cut = true when it was cut off or failed, or when alive() turns false (the caller has moved on). ms: how
-// long it took. TTS.cur keeps the utterance referenced, or Chrome may never fire its events.
+// long it took; failed: the error event when the voice could not speak (see ttsFailed), so the caller can say so.
+// TTS.cur keeps the utterance referenced, or Chrome may never fire its events.
 function sayOne(text, rate, done, alive) {
   let over = false, guard = 0, poll = 0, began = false, t0 = 0;
   const t1 = Date.now();
   const u = new SpeechSynthesisUtterance(text);
-  const end = cut => {
+  const end = (cut, failed) => {
     if (over) return;
     over = true; clearTimeout(guard); clearInterval(poll);
     if (TTS.cur === u) TTS.cur = null;
-    done(Date.now() - (t0 || t1), cut);
+    done(Date.now() - (t0 || t1), cut, failed || null);
   };
   const busy = () => { try { return !!(speechSynthesis.speaking || speechSynthesis.pending); } catch (_) { return false; } };
   try {
@@ -2748,7 +2794,7 @@ function sayOne(text, rate, done, alive) {
     u.rate = rate;
     u.onstart = () => { t0 = Date.now(); };
     u.onend = () => end(false);
-    u.onerror = () => end(true);
+    u.onerror = e => end(true, ttsFailed(e) ? e : null);
     TTS.cur = u;
     speechSynthesis.speak(u);
     began = busy();
@@ -2757,17 +2803,18 @@ function sayOne(text, rate, done, alive) {
       if (alive && !alive()) { end(true); return; }
       if (busy()) began = true; else if (began) end(false);
     }, 250);
-  } catch (_) { setTimeout(() => end(true), 0); }
+  } catch (_) { setTimeout(() => end(true, { error: 'synthesis-failed' }), 0); }
 }
 // Speaks a coach's reply at the coach's speed, one sentence at a time (Chrome may stop a long utterance without an
 // end event), and calls done() once: when every sentence has been said, one was cut off or failed, or the voice
-// stopped reporting. alive(): false once the caller has moved on (換我說, a pause…); after that no further
-// sentence starts, whatever the voice reports (a cancel may look like a normal end).
+// stopped reporting (done(failed): the error event when the voice could not speak). alive(): false once the caller
+// has moved on (換我說, a pause…); after that no further sentence starts, whatever the voice reports (a cancel may look
+// like a normal end).
 function speakThen(text, done, alive) {
   const t = String(text || '').replace(/…/g, ', ').trim();
   let fired = false;
   const live = () => !fired && (!alive || alive());
-  const finish = () => { if (fired) return; fired = true; done(); };
+  const finish = failed => { if (fired) return; fired = true; done(failed || null); };
   if (!TTS.ok || !t) { setTimeout(finish, 0); return; }
   if (Mic.cur) micStop(true);
   const parts = splitSentences(t);
@@ -2778,7 +2825,7 @@ function speakThen(text, done, alive) {
   const next = () => {
     if (!live()) { fired = true; return; }
     if (i >= parts.length) { finish(); return; }
-    sayOne(parts[i++], rate, (ms, cut) => { if (cut) finish(); else next(); }, live);
+    sayOne(parts[i++], rate, (ms, cut, failed) => { if (cut) finish(failed); else next(); }, live);
   };
   next();
 }
@@ -2926,6 +2973,17 @@ function sayTokens(s) { return joinNumbers(sayWords(s).map(w => ({ w, o: [] })))
 // "May fifth"); an ordinal may come back as a number the recogniser wrote in digits ("May 5", "1/3"), but not as a number
 // word ("May fifth" said "May five" is not heard).
 const sameSaid = (a, b) => a.w === b.w || (/^\d+$/.test(a.w) && b.w === a.w + 'th') || (!b.words && /^\d+$/.test(b.w) && a.w === b.w + 'th');
+// Words written together on one side and apart on the other ("log in" / "login", "e-mail" / "email", "LinkedIn" /
+// "linked in") are the same when said: two neighbouring words of list a become one where list b has them as one word.
+function joinPairs(a, b) {
+  const one = new Set(b.map(x => x.w)), out = [];
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = a[i + 1];
+    if (y && !/^\d/.test(x.w) && !/^\d/.test(y.w) && one.has(x.w + y.w)) { out.push({ w: x.w + y.w, o: x.o.concat(y.o) }); i++; }
+    else out.push(x);
+  }
+  return out;
+}
 // Marks each word of the target as heard (true), missed (false) or punctuation only (null); hit and total count words.
 function compareSaid(target, heard) {
   const words = String(target || '').split(/\s+/).filter(Boolean);
@@ -2933,7 +2991,8 @@ function compareSaid(target, heard) {
   words.forEach((w, i) => { for (const x of sayWords(w)) base.push({ w: x, o: [i] }); });
   const readings = list => { const a = joinNumbers(list), b = joinNumbers(list, true); return b.length === a.length ? [a] : [a, b]; };
   let best = null;
-  for (const tok of readings(base)) for (const hh of readings(sayWords(heard).map(w => ({ w, o: [] })))) {
+  for (const tok0 of readings(base)) for (const hh0 of readings(sayWords(heard).map(w => ({ w, o: [] })))) {
+    const tok = joinPairs(tok0, hh0), hh = joinPairs(hh0, tok0);
     const n = tok.length, m = hh.length;
     const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
     for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = sameSaid(tok[i], hh[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
@@ -3052,13 +3111,13 @@ function sayCheck(text, key, opt) {
 // learner sees in the list of common mistakes (收藏).
 const ERR_TYPES = {
   A1: { zh: '過去式', en: 'past tense not marked (Yesterday I send -> sent)', hint: '這是已經發生的事，動詞要用什麼形式？',
-    bad: 'Yesterday I send the samples to the lab.', good: 'Yesterday I sent the samples to the lab.', why: '英文要在動詞上表示過去（send → sent）；少了它，聽的人不確定事情做完了沒。' },
+    bad: 'Yesterday I send the demo link to the client.', good: 'Yesterday I sent the demo link to the client.', why: '英文要在動詞上表示過去（send → sent）；少了它，聽的人不確定事情做完了沒。' },
   A2: { zh: '未來式', en: "future not marked (Next week I talk -> I'll talk / I'm going to talk)", hint: '這是還沒發生的事，要怎麼說出「未來」？',
-    bad: 'Next week I talk to the regulatory team.', good: "Next week I'm going to talk to the regulatory team.", why: '中文說「下週」就夠，英文還要用 will 或 be going to 表示未來。' },
+    bad: 'Next week I talk to their IT team.', good: "Next week I'm going to talk to their IT team.", why: '中文說「下週」就夠，英文還要用 will、be going to，或已經排好的事用現在進行式（I\'m meeting them next week）表示未來。' },
   A3: { zh: '完成式', en: "present perfect vs past (I work here for 3 years -> I've worked; I have finished it yesterday -> I finished)", hint: '是從過去一直到現在，還是已經說了過去的時間點？該用哪個時態？',
     bad: 'I work here for three years.', good: "I've worked here for three years.", why: '從過去一直到現在用 have + 過去分詞；說出過去的時間點（yesterday）就用過去式。' },
-  A4: { zh: 'be 動詞', en: "be missing or extra (I very busy -> I'm really busy; I'm agree -> I agree)", hint: '這句的 be 動詞（am、is、are）是少了，還是多了？',
-    bad: 'I very busy this week.', good: "I'm really busy this week.", why: '形容詞前面要有 be 動詞；agree、like 這類動詞前面不加 be（I agree）。' },
+  A4: { zh: 'be 動詞', en: "be missing or extra (I very busy -> I'm very busy; I'm agree -> I agree)", hint: '這句的 be 動詞（am、is、are）是少了，還是多了？',
+    bad: 'I very busy this week.', good: "I'm very busy this week.", why: '形容詞前面要有 be 動詞；agree、like 這類動詞前面不加 be（I agree）。' },
   A5: { zh: '回答 yes／no', en: 'yes/no following Chinese logic, e.g. answering a negative question (You didn\'t get it? "Yes" meaning not received)', hint: '英文的 yes／no 跟著事實走：事實是有，還是沒有？',
     bad: "You didn't get my email? / Yes, I didn't get it.", good: "You didn't get my email? / No, I didn't.", why: 'yes／no 跟著事實走：沒收到就說 No。中文的「對」是同意對方的話，英文不是這樣用。' },
   A6: { zh: '問句的語序', en: "question word order, direct or inside a sentence (Why you didn't -> Why didn't you; where is the room -> where the room is)", hint: '問句裡，疑問詞和助動詞要放在哪裡？',
@@ -3069,20 +3128,20 @@ const ERR_TYPES = {
     bad: 'We got many feedbacks from users.', good: 'We got a lot of feedback from users.', why: '可數名詞的複數要加 -s；feedback、advice、information 不可數，不加 -s。' },
   A9: { zh: 'he／she', en: 'he/she or his/her mixed up', hint: '你說的這個人是男生還是女生？',
     bad: 'My manager Amy said he will approve it.', good: 'My manager Amy said she will approve it.', why: '他和她中文同音，說快時容易混用；英文聽的人會以為你在說另一個人。' },
-  B1: { zh: '第三人稱 -s', en: "third-person -s and agreement (The formula contain -> contains; She don't -> doesn't)", hint: '主詞是他、她或它，現在式的動詞要怎麼變？',
-    bad: 'The new formula contain retinol.', good: 'The new formula contains retinol.', why: '主詞是第三人稱單數（it、she、the formula）時，現在式的動詞要加 -s。' },
+  B1: { zh: '第三人稱 -s', en: "third-person -s and agreement (The new version support -> supports; She don't -> doesn't)", hint: '主詞是他、她或它，現在式的動詞要怎麼變？',
+    bad: 'The new version support offline mode.', good: 'The new version supports offline mode.', why: '主詞是第三人稱單數（it、she、the new version）時，現在式的動詞要加 -s。' },
   B2: { zh: '冠詞', en: "articles a/an/the (I'm in meeting -> in a meeting)", hint: '這個名詞前面要不要加 a、an 或 the？',
     bad: "I'm in meeting.", good: "I'm in a meeting.", why: '單數的可數名詞前面要有 a／an 或 the：第一次提到用 a，雙方都知道是哪一個用 the。' },
-  B3: { zh: 'There is／are', en: 'there is/are vs have (There have three projects -> There are)', hint: '說「某個地方有某樣東西」，英文用什麼句型？',
-    bad: 'There have three projects this quarter.', good: 'There are three projects this quarter.', why: '說「某個地方有某樣東西」用 there is／are；「擁有」才用 have（We have three projects）。' },
+  B3: { zh: 'There is／are', en: 'there is/are vs have (There have two meeting rooms -> There are)', hint: '說「某個地方有某樣東西」，英文用什麼句型？',
+    bad: 'There have two meeting rooms on this floor.', good: 'There are two meeting rooms on this floor.', why: '說「某個地方有某樣東西」用 there is／are；「擁有」才用 have（We have three projects）。' },
   B4: { zh: '雖然…但是', en: 'paired conjunctions (Although…, but… / Because…, so…)', hint: '英文一句只用一個連接詞，這句可以拿掉哪一個？',
     bad: 'Although the data is good, but the sample is small.', good: 'Although the data is good, the sample is small.', why: '中文的「雖然…但是」「因為…所以」成對用，英文一句只留一個連接詞。' },
   B5: { zh: 'very + 動詞', en: 'very + verb (I very like -> I really like)', hint: 'very 不能直接放在動詞前面，要怎麼加強語氣？',
     bad: 'I very like this idea.', good: 'I really like this idea.', why: 'very 不修飾動詞：用 really like，或在句尾加 a lot。' },
   B6: { zh: '介系詞', en: 'prepositions (in the bus -> on the bus; discuss about -> discuss)', hint: '這裡的介系詞要用哪一個？還是根本不用？',
     bad: "Let's discuss about the timeline.", good: "Let's discuss the timeline.", why: 'discuss 後面直接接要討論的事；中文的「在…上、在…裡」也不一定是 on、in。' },
-  B7: { zh: '詞性', en: 'word class (The economic -> The economy; I want succeed -> to succeed)', hint: '這裡要的是名詞、動詞，還是形容詞？',
-    bad: 'I want succeed in this role.', good: 'I want to succeed in this role.', why: '中文一個詞可以當名詞、動詞或形容詞，英文要換成對的詞形（succeed、success、successful）。' },
+  B7: { zh: '詞性', en: 'word class (The economic -> The economy; very help -> very helpful)', hint: '這裡要的是名詞、動詞，還是形容詞？',
+    bad: 'This tool is very help for our team.', good: 'This tool is very helpful for our team.', why: '中文一個詞可以當名詞、動詞或形容詞，英文要換成對的詞形（help → helpful、success → successful）。' },
   B8: { zh: '-ed／-ing', en: "-ed vs -ing adjectives (I'm boring -> I'm bored)", hint: '說人的感受用 -ed，說讓人有這種感受的事用 -ing：這裡是哪一種？',
     bad: "I'm boring in long meetings.", good: 'I get bored in long meetings.', why: "人的感受用 -ed（bored），讓人有這種感受的事用 -ing（boring）；I'm boring 是說自己很無趣。" },
   B9: { zh: '容易混的動詞', en: 'verbs that are easy to mix up (say/tell, remember/remind, give a presentation)', hint: '這個動詞後面可以直接接人嗎？有沒有更貼切的動詞？',
@@ -3199,10 +3258,14 @@ function rulesFor(c) {
     + 'CORRECTING:\n'
     + '- Do not correct: a missing -s or -ed ending that dictation may have dropped, unless the sentence makes the mistake clear (as in "Yesterday I send"); short forms that are fine in casual chat ("Already sent!"); choices that are also correct (US or UK usage, "The meeting starts at 3").\n'
     + '- C items are more natural or more polite ways to say it, not mistakes: never call them wrong.\n'
-    + '- When you correct an A item, also use the right form naturally in your reply (like "Oh, you sent them yesterday?"), without pointing it out.\n'
+    + '- When you correct an A item' + (known.length ? ' (except the patterns that get a hint, below)' : '') + ', also use the right form naturally in your reply' + recastEg(known) + ', without pointing it out.\n'
     + (known.length ? '- The learner keeps working on ' + known.join(', ') + '. When you correct one of these, add "hint": a short question in Traditional Chinese as used in Taiwan that leads them to the fix without giving it away (like "這是昨天的事，send 要怎麼改？"), and do not use its right form in your reply, so they can find it themselves.\n' : '')
     + 'Pattern codes:\n' + ERR_LIST;
 }
+// An example of using the right form in the reply (a recast), taken from a pattern that is not being hinted at: for a
+// hinted one the reply must not use its right form, and an example of exactly that would contradict the rule.
+const RECAST_EG = [['A1', '"Oh, you sent them yesterday?"'], ['A4', '"Oh, you\'re busy this week?"'], ['A2', '"So you\'re going to talk to them next week?"']];
+const recastEg = known => { const e = RECAST_EG.find(([code]) => !known.includes(code)); return e ? ' (like ' + e[1] + ')' : ''; };
 const OPEN_FREE = 'Begin now: greet the learner briefly and ask your first question about the topic.';
 const OPEN_ROLE = 'Begin the role-play now: set the scene in one short sentence, then say your first line in character.';
 const OPEN_PATTERN = 'Begin now: say in one short sentence what this drill practises, then give the first sentence on a "say:" line.';
@@ -3690,7 +3753,7 @@ async function startSession(setup, firstMessage, voice) {
   const c = newChat(setup);
   S.chat = c;
   if (c.pattern) {
-    c.turns.push({ r: 'c', t: "Let's practise one pattern. I'll give you a sentence in Chinese; say it in English.", zhNote: '這次練「' + ERR_TYPES[c.pattern].zh + '」：教練每次出一句中文，你用英文說出來（打字或按麥克風），教練會給精修版，也會幫你改。', sys: true, at: Date.now() });
+    c.turns.push({ r: 'c', t: "Let's practice one pattern. I'll give you a sentence in Chinese; say it in English.", zhNote: '這次練「' + ERR_TYPES[c.pattern].zh + '」：教練每次出一句中文，你用英文說出來（打字或按麥克風），教練會給精修版，也會幫你改。', sys: true, at: Date.now() });
     saveChat(); renderCoach(); renderToday();
     ask();
     focusComposer();
@@ -3939,8 +4002,10 @@ function heldParts(p, fn) {
 const canonJson = v => (v && typeof v === 'object' ? (Array.isArray(v) ? '[' + v.map(canonJson).join(',') + ']' : '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonJson(v[k])).join(',') + '}') : JSON.stringify(v));
 const sameValue = (a, b) => canonJson(a) === canonJson(b);
 const leafAt = (o, path) => path.reduce((x, k) => (x && typeof x === 'object' ? x[k] : undefined), o);
-// Whether a fresh marker's item (an id; 'day|item' or 'month' in a month) is set in patch p.
-const heldKey = (n, k, p) => !!p && (n.startsWith('log-') ? (k === 'month' ? 'monthRecord' in p : leafAt(p, ['days', k.split('|')[0], 'items', k.split('|')[1]]) !== undefined) : !!(p.map && typeof p.map === 'object' && k in p.map));
+// Whether a fresh marker's item (an id; 'day|item' or 'month' in a month; 'course|<lesson>' in settings) is set in patch p.
+const heldKey = (n, k, p) => !!p && (n.startsWith('log-') ? (k === 'month' ? 'monthRecord' in p : leafAt(p, ['days', k.split('|')[0], 'items', k.split('|')[1]]) !== undefined)
+  : n === 'settings' ? k.startsWith('course|') && leafAt(p, ['course', k.slice(7)]) !== undefined
+  : !!(p.map && typeof p.map === 'object' && k in p.map));
 function heldParse() {
   let cur = null;
   try { cur = JSON.parse(lsGet('kaikou:held') || 'null'); } catch (_) { cur = null; }
@@ -4111,6 +4176,15 @@ function heldOver(cloud, docs, fromCloud, del, times) {
     const map = {};
     for (const [id, p] of Object.entries(docs.phrases.map)) if (p === null ? !resaved('phrases', id) : !have.has(id) && !deleted(id)) map[id] = p;
     docs = Object.assign({}, docs, { phrases: Object.assign({}, docs.phrases, { map }) });
+  }
+  // A lesson the cloud already has as done keeps the day it was done there: done again where the progress could not be
+  // read (or was read from an older copy), it is not a lesson first done that day.
+  const cloudCourse = cloud.settings && cloud.settings.course;
+  if (names.includes('settings') && docs.settings.course && typeof docs.settings.course === 'object' && cloudCourse && typeof cloudCourse === 'object') {
+    const course = {}, s = Object.assign({}, docs.settings);
+    for (const [id, v] of Object.entries(docs.settings.course)) if (!(v && lessonOk(id) && DATE_RE.test(String(cloudCourse[id])))) course[id] = v;
+    if (Object.keys(course).length) s.course = course; else delete s.course;
+    docs = Object.assign({}, docs, { settings: s });
   }
   // Edits a cloud visit could not save (fromCloud) were made on the cloud's own copy. A note, a passage or a review
   // has an id of its own, so one the cloud has deleted (null) was deleted after this edit: it stays deleted. A library
@@ -4465,6 +4539,14 @@ async function ask() {
     if (near) scrollToEnd(true);
   }
 }
+// A hint that names the fix (a word of the better version that the learner did not say, like 「用 sent」) gives the
+// answer away: the pattern's own hint is shown instead.
+function safeHint(f) {
+  const h = String(f.hint || '').trim();
+  if (!h) return '';
+  const said = new Set(sayWords(f.you)), inHint = new Set(sayWords(h));
+  return sayWords(f.better).some(w => !said.has(w) && inHint.has(w)) ? '' : h;
+}
 function finishTurn(c, turn, raw, cut) {
   S.micZh = null; // dictation follows the conversation again (中翻英: Chinese first, then the English version)
   const p = parseCoach(raw, c.pattern);
@@ -4475,7 +4557,7 @@ function finishTurn(c, turn, raw, cut) {
     // A pattern corrected at least twice before is first only hinted at: the learner tries, then opens the answer.
     const known = hintedErrs(c, prev);
     prev.fx = p.fixes.map(f => Object.assign({ you: f.you, better: f.better, why: f.why }, f.code ? { code: f.code } : {},
-      f.code && known.includes(f.code) ? { hint: f.hint || ERR_TYPES[f.code].hint } : {}));
+      f.code && known.includes(f.code) ? { hint: safeHint(f) || ERR_TYPES[f.code].hint } : {}));
     prev.ok = !p.fixes.length && p.none && isEnglish(prev.t);
   }
   if (Voice.on && Voice.phase === 'waiting') {
@@ -5552,8 +5634,9 @@ function voiceSpeak(text) {
   clearTimeout(Voice.timer);
   Voice.typed = false;
   voiceSet('speaking');
-  speakThen(text, () => {
+  speakThen(text, failed => {
     if (tok !== Voice.tok || !Voice.on) return;
+    if (failed) { voicePause(ttsFailMsg(failed)); Voice.owed = text; return; } // 繼續說 tries the reply again
     // Typing during the reply: the coach finishes, then the loop waits instead of opening the microphone.
     if (Voice.typed) { voicePause(VOICE_TYPE_MSG); return; }
     // A short gap, so the end of the coach's voice does not reach the microphone.
@@ -5801,20 +5884,26 @@ function courseCard() {
 function openLesson(u, d, from) {
   if (!S.ready || !unitOf(u)) return;
   const was = S.tool === 'lesson' && S.lesson ? S.lesson.from : '';
-  S.lesson = { u, d: clamp(Math.round(Number(d)) || 1, 1, LESSON_DAYS.length), from: from === undefined ? was : from, shown: new Set(), can: new Set() };
+  const day = clamp(Math.round(Number(d)) || 1, 1, LESSON_DAYS.length), id = lessonId(u, day);
+  // What was revealed or ticked on a lesson stays when the learner goes to another day and comes back (day 5 sends them
+  // back to practise what they are not sure of yet).
+  let m = S.lessonMarks.get(id);
+  if (!m) { m = { shown: new Set(), can: new Set() }; S.lessonMarks.set(id, m); }
+  S.lesson = { u, d: day, from: from === undefined ? was : from, shown: m.shown, can: m.can };
   openTool('lesson');
 }
 function finishLesson() {
   const L = S.lesson; if (!L || !S.ready) return;
   setLessonDone(lessonId(L.u, L.d), true);
-  toast(L.d === LESSON_DAYS.length ? '第 ' + unitNo(L.u) + ' 單元完成了！' : '完成了：' + lessonName(L.u, L.d));
+  const unitDone = LESSON_DAYS.every((_, i) => lessonDone(lessonId(L.u, i + 1)));
+  toast(unitDone ? '第 ' + unitNo(L.u) + ' 單元的 5 課都完成了！' : '完成了：' + lessonName(L.u, L.d));
   renderTool();
   focusFk('l-next', '#today-dyn h2');
 }
 // The tools a lesson opens come back to it (see backTo).
 function lessonShadow(k, opts) {
   if (!S.ready || !libOf(k)) return;
-  openTool('shadow', 'lesson');
+  openTool('shadow', 'lesson', true);
   openLib(k, opts);
 }
 function lessonTalk(k) {
@@ -5831,6 +5920,14 @@ function goScene(k) {
   switchTab('coach');
   if (S.chat || S.reviewing) toast('先結束目前的對話，練習選單已經選好這個情境');
   else if (S.review) toast('按「回到練習選單」，就能開始這個情境（已經選好了）');
+  else {
+    // The menu opens at its top, far above the scene chosen (below the list of scenes): the scene and 開始對話 come
+    // into view, with the focus on the button.
+    const card = $('#coach-dyn .scene-card'), b = $('#start-btn');
+    if (card) card.scrollIntoView({ block: 'start' });
+    if (b) { b.scrollIntoView({ block: 'nearest' }); b.focus({ preventScroll: true }); } // with the phrases open, the button may sit lower
+    announce('已選好「' + sceneOf(k).zh + '」，按「開始對話」就能開始。');
+  }
 }
 const stepCard = (n, title, ...kids) => el('section', { class: 'card' },
   el('h3', { class: 'card-title' }, n ? el('span', { class: 'step-n', 'aria-hidden': 'true', text: String(n) }) : null, title), ...kids);
@@ -5892,7 +5989,7 @@ function lessonView() {
     parts.push(stepCard(1, '聽懂對話',
       el('p', { class: 'help mt6', text: TTS.ok ? '第一次關掉「顯示稿子」只用聽的，聽聽看懂了多少；第二次打開稿子和中文再聽一次，把沒聽懂的地方弄懂。' : '這個瀏覽器不能朗讀：打開稿子和中文，把對話讀懂。' }),
       el('div', { class: 'start-row mt12' }, el('button', { type: 'button', class: 'btn primary', 'data-fk': 'l-listen', onclick: () => lessonShadow(u.k, { script: !TTS.ok, zh: !TTS.ok, mode: 'flow' }) },
-        el('span', { class: 'ico', html: ICON.play }), '聽對話（' + lib.lines.length + ' 句）'))));
+        TTS.ok ? el('span', { class: 'ico', html: ICON.play }) : null, (TTS.ok ? '聽對話（' : '看對話（') + lib.lines.length + ' 句）'))));
     parts.push(stepCard(2, '學 6 句',
       el('p', { class: 'help mt6', text: (TTS.ok ? '每句先聽，再大聲唸三次。' : '每句大聲唸三次。') + '按星號收進收藏，之後會排進句子複習。' }),
       bookList(book, 'l1'), saveAllBtn(book, 'l-all')));
@@ -5922,17 +6019,10 @@ function lessonView() {
       el('p', { class: 'help mt6', text: TTS.ok ? '關掉稿子，延遲半拍跟著唸，像影子一樣。卡住的句子，按那一句的播放鍵單獨多聽幾次。' : '這個瀏覽器不能朗讀：遮住英文，看著中文把整段對話說出來。' }),
       el('div', { class: 'start-row mt12' }, el('button', { type: 'button', class: 'btn primary', 'data-fk': 'l-blind', onclick: () => lessonShadow(u.k, { script: false, zh: !TTS.ok, mode: 'pause' }) }, '不看稿跟讀'))));
   } else if (L.d === 4) {
-    const coach = S.sampleState === 'ok';
-    parts.push(el('section', { class: 'card' },
-      el('h3', { class: 'card-title', text: '情境：' + sc.zh }),
-      u.sceneNote ? el('p', { class: 'mt6', text: u.sceneNote }) : null,
-      el('p', { class: 'mt6' }, el('b', { text: '你的任務：' }), sc.goal),
-      el('p', { class: 'help mt6', text: '用下面兩種方法的一種演一次。' })));
-    parts.push(stepCard(null, '和教練演',
-      el('p', { class: 'help mt6', text: coach ? '教練扮演' + sc.aiZh + '。先大聲說，再用聽寫送出；說了 3 句以上就能按「結束並複習」，看哪裡可以說得更好。'
-        : S.sampleState === 'loading' ? '連線中…' : '現在不能用 AI 教練，用下面的方法自己演一次就好。' }),
-      coach ? el('div', { class: 'start-row mt12' }, el('button', { type: 'button', class: 'btn primary', 'data-fk': 'l-coach', onclick: () => goScene(u.scene) }, '到教練開始這個情境')) : null));
-    parts.push(stepCard(null, '自己演一次（不用 AI）',
+    // Acted three ways: the dialogue as it is, again with changed facts (both without AI), then the scene with the coach.
+    const coach = S.sampleState === 'ok', set = bookOf(u.k);
+    parts.push(stepCard(1, '照對話演一次（不用 AI）',
+      el('p', { class: 'mt6', text: u.dz }),
       el('p', { class: 'help mt6', text: '你演 Alex。' + (TTS.ok ? '別人的話按喇叭聽，' : '別人的話先唸出來，') + '輪到你時看中文，自己用英文說出來，再按「看英文」對答案。' }),
       el('div', { class: 'act-list' }, lib.lines.map(([who, en, zh], i) => {
         if (who !== 'You') return el('div', { class: 'act' },
@@ -5946,6 +6036,17 @@ function lessonView() {
             : el('div', null, el('button', { type: 'button', class: 'btn small', 'data-fk': 'l4-show-' + i, onclick: () => reveal('4-' + i, 'l4-en-' + i) }, '看英文')),
           sayBox(en, 'l4'));
       }))));
+    parts.push(stepCard(2, '換個情況再演一次（不用 AI）',
+      el('p', { class: 'help mt6', text: '情況變了，照新的情況從頭再演一次你的部分；別人的話自己想像。不用背原本的句子，用自己的話說，用得上這個單元的說法就用。' }),
+      el('ul', { class: 'vary-list mt6' }, u.vary.map(t => el('li', { text: t }))),
+      set ? el('details', { class: 'mt12', open: shown('says4'), ontoggle: e => { if (e.currentTarget.open) L.shown.add('says4'); else L.shown.delete('says4'); } },
+        el('summary', { 'data-fk': 'l4-says', text: '這個單元的 ' + set.say.length + ' 句' }), saysList(set)) : null));
+    parts.push(stepCard(3, '和教練演（要用 AI）',
+      el('p', { class: 'mt6' }, el('b', { text: '情境：' }), sc.zh),
+      u.sceneNote ? el('p', { class: 'mt6', text: u.sceneNote }) : null,
+      el('p', { class: 'mt6' }, el('b', { text: '你的任務：' }), sc.goal),
+      coach ? el('p', { class: 'help mt6', text: '教練扮演' + sc.aiZh + '。先大聲說，再用聽寫送出；說了 3 句以上就能按「結束並複習」，看哪裡可以說得更好。' }) : null,
+      coach ? el('div', { class: 'start-row mt12' }, el('button', { type: 'button', class: 'btn primary', 'data-fk': 'l-coach', onclick: () => goScene(u.scene) }, '到教練開始這個情境')) : aiUnavailable('和你演這個情境')));
   } else {
     parts.push(stepCard(1, '4/3/2：' + u.talk.zh,
       el('ol', { class: 'topic-pts mt6', lang: 'en' }, u.talk.pts.map(x => el('li', { text: x }))),
@@ -5971,7 +6072,7 @@ function lessonView() {
   return el('div', { class: 'panel' }, parts);
 }
 function courseView() {
-  const next = nextLesson(), n = doneCount();
+  const next = S.settingsRead ? nextLesson() : null, n = doneCount(); // unread, the list does not guess the next lesson
   const head = el('section', { class: 'card' },
     el('div', { class: 'tool-head' }, backBtn(), S.settingsRead ? el('span', { class: 'tag' + (n ? ' on' : ''), text: '完成 ' + n + ' / ' + LESSONS }) : null),
     el('h2', { class: 'card-title mt6', tabindex: '-1', 'data-fk': 'course-head', text: '每日一課' }),
@@ -6111,7 +6212,8 @@ function splitSentences(text) {
   return res.map(s => s.split(DOT).join('.').slice(0, 240)).slice(0, 30);
 }
 // from: 'lesson' when a lesson opens the tool (回到 goes back to it).
-function openTool(name, from) {
+// quiet: the caller draws the tool itself right after (a lesson opening a passage: the player, not first the list).
+function openTool(name, from, quiet) {
   if (!S.ready) return;
   if (Mic.cur) micStop(true);
   shStop();
@@ -6123,6 +6225,7 @@ function openTool(name, from) {
     if (!S.shGen) S.shGen = { topic: 'weekend', custom: '', len: 'short', busy: false, err: '', own: '', ctl: null };
   }
   if (name === 'f432' && !S.f432) S.f432 = f432New();
+  if (quiet && S.tab === 'today') return;
   if (S.tab !== 'today') switchTab('today'); else renderToday();
   window.scrollTo(0, 0);
   focusHeading('#today-dyn h2');
@@ -6142,7 +6245,7 @@ function backTo() {
   return S.toolFrom === 'lesson' && S.lesson ? 'lesson' : 'today';
 }
 function closeTool() {
-  const to = backTo(), lesson = S.lesson;
+  const to = backTo(), lesson = S.lesson, was = S.tool;
   leaveTool();
   if (to !== 'today') {
     S.tool = to; S.lesson = lesson;
@@ -6153,9 +6256,12 @@ function closeTool() {
     return;
   }
   renderToday(); renderInbox();
-  focusHeading('#today-dyn .date-big');
+  if (lesson || was === 'lesson' || was === 'course') focusFk(S.settingsRead && nextLesson() ? 'lesson-go' : 'course-all', '#today-dyn .date-big');
+  else focusHeading('#today-dyn .date-big');
 }
 const f432Busy = () => !!(S.f432 && (S.f432.state === 'run' || S.f432.state === 'pause' || S.f432.state === 'saving'));
+// Leaving loses what this 4/3/2 has so far: a round under way, the rounds done before the next one, or the recordings.
+const f432Losing = () => f432Busy() || !!(S.f432 && (S.f432.state === 'gap' || (S.f432.state === 'done' && S.f432.recs.some(Boolean))));
 function renderTool() {
   const root = $('#today-dyn'); if (!root || S.tab !== 'today' || !S.tool) return;
   $('#today-inbox').hidden = true;
@@ -6166,11 +6272,18 @@ function renderTool() {
 }
 const BACK_LABEL = { today: '回到今日', lesson: '回到這一課', course: '回到全部課程' };
 function backBtn() {
-  const busy = S.tool === 'f432' && f432Busy();
-  const armed = isArmed('tool-back');
+  const busy = S.tool === 'f432' && f432Losing();
+  const armed = busy && isArmed('tool-back');
+  const lose = !armed ? '' : f432Busy() ? '計時會停止' : S.f432.state === 'gap' ? '講過的 ' + S.f432.phase + ' 次會清掉' : '錄音會清掉';
   return el('button', { type: 'button', class: 'btn ghost small' + (armed ? ' danger' : ''), 'data-fk': 'tool-back', onclick: () => (busy ? arm('tool-back', closeTool, renderTool) : closeTool()) },
-    el('span', { class: 'ico', html: ICON.left }), armed ? '再按一次離開（計時會停止）' : BACK_LABEL[backTo()]);
+    el('span', { class: 'ico', html: ICON.left }), armed ? '再按一次離開（' + lose + '）' : BACK_LABEL[backTo()]);
 }
+// A 4/3/2 on a unit's theme keeps the unit's 6 sentences at hand, to try out while speaking (no need to leave for them).
+function unitSaysBox(k) {
+  const set = bookOf(k), F = S.f432; if (!set || !F) return null;
+  return el('details', { class: 'mt12', open: !!F.saysOpen, ontoggle: e => { F.saysOpen = e.currentTarget.open; } }, el('summary', { 'data-fk': 'f432-says', text: '這個單元的 ' + set.say.length + ' 句（講的時候試著用上）' }), saysList(set));
+}
+const saysList = set => el('ul', { class: 'say-list mt6' }, set.say.map(([en, zh]) => el('li', null, el('span', { lang: 'en', text: en }), el('span', { class: 'help', text: '　' + zh }))));
 function aiUnavailable(what) {
   if (S.sampleState === 'loading') return [el('p', { class: 'help', text: '連線中…' })];
   if (S.sampleState === 'blocked') return [el('p', { class: 'help', text: sampleErrMsg({ code: S.blockCode || 'not_granted' }) }), S.blockCode === 'not_granted' ? el('div', { class: 'start-row' }, permsBtn('tool-perms')) : null];
@@ -6244,7 +6357,14 @@ function useOwnText() {
 const Player = { tok: 0, timer: 0, on: false };
 // Speaks one sentence at the shadowing speed; done(ms) runs once (see sayOne), with how long the sentence took.
 function shSpeak(text, done) {
-  sayOne(String(text).replace(/…/g, ', '), clamp(Number(S.settings.shRate) || 0.85, 0.5, 1.2), ms => done(ms));
+  sayOne(String(text).replace(/…/g, ', '), clamp(Number(S.settings.shRate) || 0.85, 0.5, 1.2), (ms, cut, failed) => done(ms, failed));
+}
+function shFailed(failed) {
+  const sh = S.sh;
+  Player.tok++; clearTimeout(Player.timer); Player.on = false;
+  if (sh) sh.playing = false;
+  shSync();
+  ttsFailNote(failed);
 }
 // While playing, only the highlighted sentence and the play button change (a full redraw would cut off a drag
 // on the speed slider and move a screen reader back to the top).
@@ -6273,8 +6393,9 @@ function shPlayFrom(i) {
     if (idx >= p.sents.length) { sh.playing = false; sh.idx = -1; Player.on = false; shSync(); announce('播完了'); return; }
     sh.idx = idx;
     shSync();
-    shSpeak(p.sents[idx].en, ms => {
+    shSpeak(p.sents[idx].en, (ms, failed) => {
       if (tok !== Player.tok) return;
+      if (failed) { shFailed(failed); return; }
       Player.timer = setTimeout(() => step(idx + 1), sh.mode === 'pause' ? clamp((ms || 2500) * 1.25 + 600, 1500, 15000) : 250);
     });
   };
@@ -6290,7 +6411,7 @@ function shPlayOne(i) {
   try { speechSynthesis.cancel(); } catch (_) { /* nothing playing */ }
   sh.playing = false; sh.idx = i; Player.on = true;
   shSync();
-  shSpeak(p.sents[i].en, () => { if (tok === Player.tok) Player.on = false; });
+  shSpeak(p.sents[i].en, (ms, failed) => { if (tok !== Player.tok) return; Player.on = false; if (failed) shFailed(failed); });
 }
 function shStop() {
   Player.tok++;
@@ -6421,8 +6542,8 @@ function playerView() {
 /* ---- 4/3/2: the same talk three times, in 4, 3 and 2 minutes ---- */
 const F432_SECS = [240, 180, 120];
 const F432_TOPICS = [
-  { k: 'intro', g: 'life', zh: '自我介紹', en: 'introduce yourself: your work, where you live and what you enjoy',
-    pts: ['Who are you, and where do you live?', 'What do you do at work?', 'What do you enjoy in your free time?'], pz: '你是誰、住哪裡／你的工作／你喜歡做什麼' },
+  { k: 'intro', g: 'life', zh: '我住的地方', en: 'where you live now: what it is like and what you enjoy there',
+    pts: ['Where do you live, and how long have you lived there?', 'What do you like about it?', 'What do you enjoy doing there in your free time?'], pz: '住在哪裡、住多久了／喜歡那裡的哪一點／空閒時在那裡做什麼' },
   { k: 'hometown', g: 'life', zh: '我的家鄉', en: 'your hometown',
     pts: ['Where is it?', 'What is it known for?', 'What would you show a visitor?'], pz: '在哪裡／有名的是什麼／會帶朋友去看什麼' },
   { k: 'weekend', g: 'life', zh: '平常的週末', en: 'a typical weekend',
@@ -6441,19 +6562,19 @@ const F432_TOPICS = [
     pts: ['What is it like?', 'Can you tell a funny story about it?', 'What has it taught you?'], pz: '牠是什麼樣子／一件好笑的事／牠讓你學到什麼' },
   { k: 'memory', g: 'life', zh: '難忘的經驗', en: 'a memorable experience',
     pts: ['What happened?', 'Who was there?', 'Why do you still remember it?'], pz: '發生什麼事／有誰在／為什麼還記得' },
-  { k: 'show', g: 'life', zh: '推薦一部劇或電影', en: 'a show or film you would recommend, and why',
+  { k: 'show', g: 'life', zh: '推薦一部劇或電影', en: 'a show or movie you would recommend, and why',
     pts: ['What is it about?', 'What do you like about it?', 'Who would enjoy it?'], pz: '在講什麼／你喜歡哪裡／適合誰看' },
   { k: 'learn', g: 'life', zh: '最近在學的東西', en: 'something you are learning these days',
-    pts: ['What are you learning?', 'How do you practise?', 'What is hard about it?'], pz: '在學什麼／怎麼練習／難在哪裡' },
-  { k: 'job', g: 'work', zh: '我的工作', en: 'what you do at work and what a typical day looks like',
-    pts: ['What does your company do?', 'What do you do on a typical day?', 'What do you enjoy most?'], pz: '公司做什麼／平常一天做什麼／最喜歡的部分' },
+    pts: ['What are you learning?', 'How do you practice?', 'What is hard about it?'], pz: '在學什麼／怎麼練習／難在哪裡' },
+  { k: 'job', g: 'work', zh: '以前的一份工作', en: 'a job you had before: what the company did, what you did there and what you learned',
+    pts: ['What did the company do?', 'What did you do there?', 'What did you learn?'], pz: '公司做什麼／你在那裡做什麼／學到什麼' },
   { k: 'launch', g: 'work', zh: '參與過的產品上市', en: 'a product launch you were part of',
     pts: ['What was the product?', 'What was your role?', 'What was the result, and what would you change?'], pz: '是什麼產品／你的角色／結果和想改的地方' },
   { k: 'team', g: 'work', zh: '一次團隊合作', en: 'a time you worked well in a team',
     pts: ['What was the goal?', 'Who was involved?', 'How did you solve a problem together?'], pz: '目標是什麼／有誰參與／怎麼一起解決問題' },
   { k: 'challenge', g: 'work', zh: '工作上的挑戰', en: 'a challenge you faced at work',
     pts: ['What happened?', 'How did you handle it?', 'What would you do differently?'], pz: '發生什麼事／你怎麼處理／下次會怎麼做' },
-  { k: 'aiterm', g: 'work', zh: '用白話解釋一個 AI 名詞', en: 'one AI term, such as RAG or fine-tuning, explained in plain words for someone who is not technical',
+  { k: 'aiterm', g: 'work', zh: '用白話解釋一個 AI 名詞', en: 'one AI term, such as speech-to-text or OCR, explained in plain words for someone who is not technical',
     pts: ['What does it mean, in one sentence?', 'What can you compare it to in everyday life?', 'When is it useful, and what are its limits?'], pz: '用一句話說它是什麼／可以拿生活中的什麼來比喻／什麼時候有用、限制是什麼' },
   { k: 'metric', g: 'work', zh: '解釋一個儀表板指標', en: 'one metric on a dashboard you use at work',
     pts: ['What does it measure?', 'What is the recent trend?', 'What action did you take?'], pz: '量的是什麼／最近的趨勢／你們做了什麼' },
@@ -6465,7 +6586,7 @@ const canRecord = () => !window.claude && !!(navigator.mediaDevices && navigator
 const Rec = { stream: null, mr: null, chunks: [] };
 let f432Timer = 0, audioCtx = null;
 // lesson: the unit whose talk this is (its topic and three points; see lessonTalk).
-function f432New() { return { topic: 'intro', custom: '', lesson: '', state: 'setup', phase: 0, endsAt: 0, left: 0, recOn: canRecord(), recs: [], recErr: '', points: null }; }
+function f432New() { return { topic: 'hometown', custom: '', lesson: '', state: 'setup', phase: 0, endsAt: 0, left: 0, recOn: canRecord(), recs: [], recErr: '', points: null }; }
 function f432Reset() {
   clearInterval(f432Timer);
   recRelease();
@@ -6695,6 +6816,7 @@ function f432View() {
         el('input', { id: 'f432-custom', class: 'input', maxlength: '120', value: F.custom, 'data-fk': 'f432-custom', placeholder: '例如：我們團隊正在做的產品', oninput: e => { F.custom = e.target.value; F.lesson = ''; } })));
     }
     const tp = topicPts(F); if (tp) set.append(tp);
+    const says = F.lesson ? unitSaysBox(F.lesson) : null; if (says) set.append(says);
     if (S.sampleState === 'ok') set.append(el('div', { class: 'start-row' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'f432-points', 'aria-disabled': F.points === 'loading' ? 'true' : null, onclick: f432Points }, F.points && F.points !== 'loading' ? '換一組重點' : t.pts || F.lesson ? '請教練給說法和重點' : '請教練給 3 個重點')));
     const pb = pointsBox(F); if (pb) set.append(pb);
     if (canRecord()) set.append(el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: F.recOn, 'data-fk': 'f432-rec', onchange: e => { F.recOn = e.target.checked; } }), '每次都錄音（錄音只留在這個畫面，可以下載）'));
@@ -6729,8 +6851,8 @@ function f432View() {
         focusHeading('#today-dyn .card-title'); // the setup again: from its title, the topics come next
       } }, '換主題再練') : null));
   const parts = [head, timer];
-  const pb = pointsBox(F), tp = topicPts(F);
-  if ((pb || tp) && F.state !== 'done') parts.push(el('section', { class: 'card' }, tp, pb));
+  const pb = pointsBox(F), tp = topicPts(F), says = F.lesson ? unitSaysBox(F.lesson) : null;
+  if ((pb || tp || says) && F.state !== 'done') parts.push(el('section', { class: 'card' }, tp, pb, says));
   if (F.recs.some(Boolean)) {
     // Each recording keeps its own player, so a redraw (a refresh in the background) does not stop it while it plays.
     parts.push(el('section', { class: 'card' },
@@ -7082,6 +7204,9 @@ const dayStore = d => Object.assign({ plans: d.plans, items: onlyTrue(d.items), 
 // A day from a backup file must be a real date from 2020 on, and not later than tomorrow (a damaged or hand-made file
 // must not create documents for months that cannot exist).
 const importDay = k => DATE_RE.test(k) && dkey(parseD(k)) === k && k >= '2020-01-01' && k <= dkey(addDays(new Date(), 1));
+// A review schedule from a file is one this page could have made (see rateCard): real review days, the next one due
+// i days after the last (a day of slack). A damaged or hand-made file cannot put a phrase off for years.
+const importSched = e => importDay(e.f) && importDay(e.t) && e.f <= e.t && e.d >= e.t && e.d <= dkey(addDays(parseD(e.t), e.i + 1));
 // A review from a backup file is checked like one made here, so a damaged file cannot break the 紀錄 tab.
 function importSession(s) {
   if (!s || typeof s !== 'object' || !s.id || !importDay(String(s.date))) return null;
@@ -7097,7 +7222,7 @@ async function applyBackup() {
   // them (see heldSuperseded), though they may well be newer.
   if (Store.mode === 'db' && heldInfo()) { toast('這台裝置上還有連不上雲端時留下的變更：先在今日頁按「存到雲端」（或「不要了」），再匯入備份檔。'); return; }
   S.uploading = true; fillSettings();
-  const docs = imp.docs, n = { phrases: 0, inbox: 0, days: 0, sess: 0, shadow: 0, settings: '' };
+  const docs = imp.docs, n = { phrases: 0, inbox: 0, days: 0, sess: 0, shadow: 0, srs: 0, settings: '' };
   let full = false;
   try {
     // Every document the file touches must have been read here first, so the merge is applied to what is really
@@ -7123,6 +7248,7 @@ async function applyBackup() {
       const add = Object.fromEntries(Object.entries(lessons).filter(([id, d]) => importDay(d) && !lessonDone(id)));
       if (Object.keys(add).length) { S.settings.course = Object.assign({}, S.settings.course, add); Store.patch('settings', S.settings, { course: add }); n.lessons = Object.keys(add).length; }
     }
+    const hadPhrases = new Set(S.phrases.map(p => p.id)); // a schedule for one of these is news; one for a phrase the file brings is not
     if (docs.phrases) {
       const patch = { map: {} };
       let bytes = docBytes(phrasesFull()); // measured once, then each phrase added (the whole list each time was slow)
@@ -7158,9 +7284,9 @@ async function applyBackup() {
     if (docs.srs) {
       const patch = { map: {} };
       for (const [id, e] of Object.entries(normSrs(docs.srs))) {
-        if (!S.phrases.some(p => p.id === id)) continue;
+        if (!S.phrases.some(p => p.id === id) || !importSched(e)) continue;
         const cur = S.srs[id];
-        if (!cur || (e.t || '') > (cur.t || '')) { S.srs[id] = e; patch.map[id] = e; }
+        if (!cur || (e.t || '') > (cur.t || '')) { S.srs[id] = e; patch.map[id] = e; if (cur || hadPhrases.has(id)) n.srs++; } // counted for a phrase that was here before
       }
       if (Object.keys(patch.map).length) Store.patch('srs', srsFull(), patch);
     }
@@ -7240,7 +7366,11 @@ async function applyBackup() {
   if (n.shadow) parts.push('跟讀短文 ' + n.shadow + ' 篇');
   if (n.lessons) parts.push('完成的課 ' + n.lessons + ' 堂');
   const took = n.settings === 'all' ? '備份檔裡的設定' : n.settings === 'about' ? '備份檔裡的「關於我」' : '';
-  toast((parts.length ? '已合併：新增' + parts.join('、') + (took ? '，並帶入' + took : '') : took ? '已合併：帶入' + took : '已合併，沒有新的資料')
+  const said = [];
+  if (parts.length) said.push('新增' + parts.join('、'));
+  if (n.srs) said.push('更新 ' + n.srs + ' 句的複習進度');
+  if (took) said.push((said.length ? '並帶入' : '帶入') + took);
+  toast((said.length ? '已合併：' + said.join('，') : '已合併，沒有新的資料')
     + (n.settings === 'unknown' ? '。這次讀不到你原本的設定，備份檔裡的設定沒有帶入' : '')
     + (full ? '。這裡放不下的資料（例如已滿的收藏、隨手記、跟讀短文或某個月的對話複習）沒有加進來' : ''));
   refreshStreak(); renderAll(); fillSettings();
@@ -7747,10 +7877,40 @@ const VIEW_SS = 'kaikou:view';
 // A message for the page that loads next in this tab (see retryCloud).
 const NOTE_SS = 'kaikou:note';
 function takeNote() { try { const v = sessionStorage.getItem(NOTE_SS); sessionStorage.removeItem(NOTE_SS); return v; } catch (_) { return null; } }
+// A lesson (or the course list) open before a reload opens again, with what was revealed and ticked on it (iPhone
+// Safari reloads a tab left in the background; the page also reloads when it is updated).
+function restoreTool(v) {
+  if (!v || S.tool) return;
+  const marks = v.marks && typeof v.marks === 'object' && !Array.isArray(v.marks) ? v.marks : {};
+  for (const [id, x] of Object.entries(marks).slice(0, LESSONS)) {
+    if (!lessonOk(id) || !x || typeof x !== 'object') continue;
+    const m = { shown: new Set(), can: new Set() };
+    for (const k of Array.isArray(x.shown) ? x.shown.slice(0, 50) : []) if (typeof k === 'string' || typeof k === 'number') m.shown.add(k);
+    for (const i of Array.isArray(x.can) ? x.can.slice(0, 10) : []) if (Number.isInteger(i)) m.can.add(i);
+    S.lessonMarks.set(id, m);
+  }
+  const L = v.lesson && typeof v.lesson === 'object' ? v.lesson : null;
+  // Opened in place: the tab shown before the reload stays (the lesson is there when the learner goes back to 今日).
+  if (L && unitOf(String(L.u)) && lessonOk(lessonId(String(L.u), Number(L.d)))) {
+    const u = String(L.u), d = Number(L.d), id = lessonId(u, d);
+    if (!S.lessonMarks.has(id)) S.lessonMarks.set(id, { shown: new Set(), can: new Set() });
+    const m = S.lessonMarks.get(id);
+    S.lesson = { u, d, from: L.from === 'course' ? 'course' : '', shown: m.shown, can: m.can };
+    S.tool = 'lesson';
+  } else if (v.course === true) S.tool = 'course';
+  else return;
+  if (S.tab === 'today') renderToday();
+}
 function viewSaved() { try { const v = JSON.parse(sessionStorage.getItem(VIEW_SS) || 'null'); return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; } }
 function viewSave() {
   if (!S.ready) return; // before that the page has not shown what was saved yet
-  try { sessionStorage.setItem(VIEW_SS, JSON.stringify({ tab: S.tab, draft: String(($('#msg-input') || {}).value || '').slice(0, 1000) })); } catch (_) { /* optional */ }
+  // The open lesson (also when a tool it opened, or another tab, is on screen) and what was revealed and ticked on
+  // every lesson (day 5 sends the learner back to an earlier day).
+  const L = S.lesson && (S.tool === 'lesson' || S.toolFrom === 'lesson') ? S.lesson : null;
+  const tool = L ? { lesson: { u: L.u, d: L.d, from: L.from } } : S.tool === 'course' ? { course: true } : null;
+  const marks = {};
+  for (const [id, m] of S.lessonMarks) if (m.shown.size || m.can.size) marks[id] = { shown: [...m.shown].slice(0, 50), can: [...m.can] };
+  try { sessionStorage.setItem(VIEW_SS, JSON.stringify(Object.assign({ tab: S.tab, draft: String(($('#msg-input') || {}).value || '').slice(0, 1000) }, tool, Object.keys(marks).length ? { marks } : null))); } catch (_) { /* optional */ }
 }
 async function boot(data) {
   if (S.booted) return;
@@ -7793,6 +7953,7 @@ async function boot(data) {
   }
   S.ready = true;
   updateSync();
+  restoreTool(data);
   // A streak that reaches back beyond the months read so far needs older months first: the page is drawn now and the
   // count follows (shown as … meanwhile).
   if (streakInfo(todayKey()).need) { S.streakPending = true; renderAll(); }
@@ -7820,7 +7981,7 @@ async function boot(data) {
   if (data && typeof data.draft === 'string' && data.draft && S.chat) { const ta = $('#msg-input'); if (ta && !ta.value) { ta.value = data.draft; autosize(ta); } }
   if (S.tab === 'coach' && S.chat) scrollToEnd(true);
 }
-if (window.__kaikouTest) window.__kaikouTest = { COURSE, LIBRARY, PHRASEBOOK, LESSON_DAYS, normCourse, nextLesson, lessonAfter, normSents, pickSettings, stressText, parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats, leaves, timeAt, stampTimes, mergeTimes, heldOver, takeHeld, recordHeld, heldSuperseded, stillHeld, ERR_TYPES, errCode, chatErrs, errCounts, knownErrs, normErrs, normChat, reviewPrompt, SCENES, sceneOf, F432_TOPICS, STARTERS, MEETING, chatDoc, hintPrompt, translatable, speakable, coachLines, storedSess, mapLimit, applyChat, renderAll };
+if (window.__kaikouTest) window.__kaikouTest = { COURSE, LIBRARY, PHRASEBOOK, LESSON_DAYS, normCourse, nextLesson, lessonAfter, normSents, pickSettings, stressText, quizList, safeHint, recastEg, importSched, parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats, leaves, timeAt, stampTimes, mergeTimes, heldOver, takeHeld, recordHeld, heldSuperseded, stillHeld, ERR_TYPES, errCode, chatErrs, errCounts, knownErrs, normErrs, normChat, reviewPrompt, SCENES, sceneOf, F432_TOPICS, STARTERS, MEETING, chatDoc, hintPrompt, translatable, speakable, coachLines, storedSess, mapLimit, applyChat, renderAll };
 
 boot(viewSaved()).catch(err => { console.error(err); setSync('error'); });
 })();

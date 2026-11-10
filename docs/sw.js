@@ -1,6 +1,6 @@
 // 開口練習室（GitHub Pages 版）的 service worker：加到主畫面後，沒有網路也能打開頁面。
-// - 頁面本身（./ 與 ./index.html）：先向網路拿最新版並存一份；網路斷了、伺服器出錯（5xx），或 4 秒內沒有回應，
-//   就先用存下來的那份。網站搬家（轉址）或頁面不在了，照網路的回應走，不會一直停在舊的那份。
+// - 頁面本身（./ 與 ./index.html）：先向網路拿最新版，完整的（有結尾的 </html>）才存一份；網路斷了、伺服器出錯
+//   （5xx），或 4 秒內沒有回應，就先用存下來的那份。網站搬家（轉址）或頁面不在了，照網路的回應走，不會一直停在舊的那份。
 // - manifest 與圖示：先用存下來的，同時在背景更新，下次打開就是新的。
 // - 其他檔案和其他網站（字型、Claude API）一律不經過這裡。
 // - 存不了、讀不到存下的檔案時（磁碟滿了、快取壞了），照樣向網路拿，不會讓頁面打不開。
@@ -9,9 +9,14 @@ const CACHE = 'kaikou-v1';
 const SHELL = ['./', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
 const PAGE = new URL('./', self.location).href;
 
+// The page goes through the same check as later (see keepPage): a half-saved page on the site when this worker is
+// installed does not replace the last whole copy.
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.filter(u => u !== './'))
+    .then(() => fetch('./', { cache: 'no-cache' }).then(res => (res.ok ? res.text().then(t => (whole(t) ? c.put(PAGE, new Response(t, { headers: { 'content-type': res.headers.get('content-type') || 'text/html' } })) : null)) : null)).catch(() => {})))
+    .then(() => self.skipWaiting()));
 });
+const whole = t => t.slice(-2048).includes('</html>');
 
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys()
@@ -39,10 +44,16 @@ function keep(e, key, res) {
   e.waitUntil(caches.open(CACHE).then(c => c.put(key, copy)).catch(() => {}));
 }
 
-// The app page is stored under one key, and only when the answer really is the HTML page.
+// The app page is stored under one key, and only when the answer really is the whole HTML page: a page cut off on its
+// way (or published only half saved) must not become the copy opened offline.
+function keepPage(e, res) {
+  const copy = res.clone(), type = res.headers.get('content-type') || 'text/html';
+  e.waitUntil(copy.text().then(t => (whole(t)
+    ? caches.open(CACHE).then(c => c.put(PAGE, new Response(t, { headers: { 'content-type': type } }))) : null)).catch(() => {}));
+}
 async function page(e) {
   const network = fetch(e.request).then(res => {
-    if (res.ok && (res.headers.get('content-type') || '').includes('text/html')) keep(e, PAGE, res);
+    if (res.ok && (res.headers.get('content-type') || '').includes('text/html')) keepPage(e, res);
     return res;
   });
   const saved = await stored(PAGE);

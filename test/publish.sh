@@ -19,6 +19,8 @@ setline() { awk -v n="$2" -v t="$3" 'NR == n { print t; next } { print }' "$1" >
 seed() { # a fresh bare "GitHub" with this repo and the script (executable), another clone, and the learner's clone
   rm -rf "$T/remote.git" "$T/work" "$T/other"
   git clone -q --bare "$REPO" "$T/remote.git"
+  # Its main is this repo's current commit, whatever branch this copy is on (the script publishes only from main).
+  git --git-dir="$T/remote.git" update-ref refs/heads/main "$(git -C "$REPO" rev-parse HEAD)" && git --git-dir="$T/remote.git" symbolic-ref HEAD refs/heads/main
   git clone -q "$T/remote.git" "$T/other"
   cp "$SCRIPT_SRC" "$T/other/$CMD"
   (cd "$T/other" && git config user.name Seed && git config user.email seed@example.com && git add "$CMD" && git update-index --chmod=+x "$CMD" && git commit -qm "add mac script" && git push -q origin HEAD:main)
@@ -146,6 +148,26 @@ ok "S20 staged markers: refuses before committing, unstages, publishes nothing" 
 # S21 a commit made some other way holds conflict markers
 seed; R0=$(remote_head); (cd "$T/work" && printf '<<<<<<< HEAD\n<!-- a -->\n=======\n<!-- b -->\n>>>>>>> other\n' >> docs/index.html && git commit -qam "merged in VS Code"); run 'y\n'
 ok "S21 markers in a local commit: not pushed, the commit stays on this computer" '[ "$(code)" = 1 ] && has "衝突標記" && [ "$(remote_head)" = "$R0" ] && ! markers_on_github'
+
+# S22 the page was renamed (moved away): the site would be gone, so nothing is pushed
+seed; R0=$(remote_head); mv "$T/work/docs/index.html" "$T/work/docs/index-old.html"; run 'y\n'
+ok "S22 page renamed: refuses to push, the site stays as it was" '[ "$(code)" = 1 ] && has "沒有 docs/index.html" && [ "$(remote_head)" = "$R0" ]'
+
+# S23 the page was saved only half way (cut off): not pushed
+seed; R0=$(remote_head); head -c 200000 "$T/work/docs/index.html" > "$T/half" && mv "$T/half" "$T/work/docs/index.html"; run 'y\n'
+ok "S23 page cut off: refuses to push" '[ "$(code)" = 1 ] && has "不完整" && [ "$(remote_head)" = "$R0" ]'
+
+# S24 new files in docs/: only pages, code and icons go out; a backup file, a recording or a note stays here
+seed; (cd "$T/work" && echo '{"about":"private"}' > docs/kaikou-backup-2026-11-10.json && echo rec > "docs/4-3-2-第1次.webm" && echo note > docs/notes.txt && echo '// new' > docs/extra.js); run 'y\n'
+ok "S24 only pages, code and icons from docs/ are published" '[ "$(code)" = 0 ] && git --git-dir=$T/remote.git cat-file -e main:docs/extra.js && ! git --git-dir=$T/remote.git cat-file -e main:docs/kaikou-backup-2026-11-10.json 2>/dev/null && ! git --git-dir=$T/remote.git cat-file -e main:docs/notes.txt 2>/dev/null && [ -z "$(git --git-dir=$T/remote.git ls-tree --name-only main -- docs/ | grep 4-3-2)" ] && [ -e "$T/work/docs/notes.txt" ]'
+
+# S26 the only .js file of docs/ was deleted: no raw git error about a pattern without a match; the site check says why
+seed; R0=$(remote_head); rm "$T/work/docs/sw.js"; run 'y\n'
+ok "S26 docs/sw.js deleted: explains that the site would break, publishes nothing" '[ "$(code)" = 1 ] && has "沒有 docs/sw.js" && ! has "did not match" && [ "$(remote_head)" = "$R0" ]'
+
+# S25 the folder is on another branch: nothing is committed or pushed
+seed; R0=$(remote_head); (cd "$T/work" && git checkout -qb feature && echo '<!-- s25 -->' >> docs/index.html && git commit -qam "on a branch"); run 'y\ny\n'
+ok "S25 not on main: refuses, publishes nothing" '[ "$(code)" = 1 ] && has "不在 main 分支上" && [ "$(remote_head)" = "$R0" ]'
 
 echo "passed $pass, failed $fail"
 rm -rf "$T"

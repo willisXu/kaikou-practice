@@ -8,7 +8,7 @@
 //                           invalid_argument (db.d.ts: a call below the minimum level)
 //   window.__mockSeed(store, P, dk, back)   an init script may define this to change the seeded cloud
 //   failWrites: { name: { n, code } }   the next n writes to that document reject with that code
-//   failReads: { name: n }               the next n reads of that document reject "unavailable"
+//   failReads: { name: n | { n, code } } the next n reads of that document reject "unavailable" (or that code)
 //   refuse: 'text'          sample() rejects "refused" when the learner's last message contains this text
 //   slowMs: 600             each streamed chunk of a coach reply takes this long (to test Stop)
 //   persist: true           the cloud store survives a reload of the tab (kept in sessionStorage)
@@ -124,7 +124,9 @@ window.__kaikouTest = true;
           const nth = starts[name] = (starts[name] || 0) + 1;
           const d = (cfg.readDelay || {})[name];
           await new Promise(r => setTimeout(r, (Array.isArray(d) ? d[nth - 1] : d) || 20));
-          if (cfg.failReads[name] > 0) { cfg.failReads[name]--; window.__dbCalls.push({ op: 'get', name, code: 'unavailable' }); throw err('unavailable', 'injected'); }
+          const fr = cfg.failReads[name];
+          if (fr && typeof fr === 'object' && fr.n > 0) { fr.n--; window.__dbCalls.push({ op: 'get', name, code: fr.code || 'unavailable' }); throw err(fr.code || 'unavailable', 'injected'); }
+          if (fr > 0) { cfg.failReads[name]--; window.__dbCalls.push({ op: 'get', name, code: 'unavailable' }); throw err('unavailable', 'injected'); }
           window.__dbCalls.push({ op: 'get', name, code: '' });
           return snap(path);
         },

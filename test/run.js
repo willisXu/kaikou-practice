@@ -3972,6 +3972,29 @@ function serve(root) {
     });
   }
 
+  if (want('6b')) {
+    // A voice that cannot speak pauses the conversation and says why; 繼續說 tries the reply again.
+    const KEY = 'sk-ant-api03-' + 'TESTONLY'.repeat(6) + '-AA';
+    const said = p => p.evaluate(() => window.__spoken.filter(x => /What did you do last weekend/.test(x.text)).length);
+    const b = await open(base + '#coach', { viewport: { width: 400, height: 860 }, serviceWorkers: 'block' }, 'voice-tts-fail', null, speech);
+    await giveKey(b.page, KEY);
+    await b.page.route('https://api.anthropic.com/v1/messages', route => sseReply(route, 'Hi! What did you do last weekend?\n###\n{"none": true}'));
+    await b.page.evaluate(() => { window.__ttsFail = 'synthesis-failed'; });
+    await b.page.click('#start-voice');
+    await until(b.page, () => window.__kaikouTest.Voice.phase === 'paused', null, 8000).catch(() => {});
+    const failed = await b.page.evaluate(() => ({ phase: window.__kaikouTest.Voice.phase, text: document.querySelector('#voice-bar').textContent, owed: window.__kaikouTest.Voice.owed }));
+    await b.page.evaluate(() => { window.__ttsFail = ''; window.__spoken.length = 0; });
+    await b.page.click('[data-fk="vb-go"]');
+    await until(b.page, () => window.__spoken.some(x => /What did you do last weekend/.test(x.text)), null, 5000).catch(() => {});
+    const retried = await said(b.page);
+    await b.ctx.close();
+    check('語音對話：朗讀失敗時暫停並說明原因，按繼續說再唸一次', () => {
+      eq([failed.phase, failed.owed], ['paused', 'Hi! What did you do last weekend?']);
+      assert.ok(failed.text.includes('朗讀失敗了'), failed.text);
+      eq(retried, 1);
+    });
+  }
+
   // ---------- 6c. A browser with speech recognition but no speech voice ----------
   if (want('6c')) {
     const noVoice = speech + ';Object.defineProperty(window, "speechSynthesis", { value: undefined, configurable: true }); window.SpeechSynthesisUtterance = undefined;';
@@ -4431,7 +4454,25 @@ function serve(root) {
     await page.waitForTimeout(4000); // the late answer arrives
     srv.delay = 0;
     const late = await page.evaluate(async b => { const r = await caches.match(b); return r ? /test-version" content="v3"/.test(await r.text()) : null; }, base);
+    // A page cut off on its way (or published only half saved) is shown as it came, but not stored: offline, the last
+    // whole page opens.
+    const v4 = full.replace('<head>', '<head><meta name="test-version" content="v4">');
+    srv.page = v4.slice(0, v4.indexOf('<script>'));
+    await page.goto(base);
+    await page.waitForTimeout(600);
+    const cut = await page.evaluate(async b => { const r = await caches.match(b); return r ? /test-version" content="v3"/.test(await r.text()) : null; }, base);
+    // A new version of the service worker installed meanwhile does not store the cut page either.
+    srv.swHead = '// a new version of the worker';
+    await page.evaluate(() => navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {}));
+    await page.waitForTimeout(1500);
+    const cutInstall = await page.evaluate(async b => { const r = await caches.match(b); return r ? /test-version" content="v3"/.test(await r.text()) : null; }, base);
+    srv.swHead = '';
     srv.page = null;
+    srv.down = true;
+    await page.goto(base);
+    await ready();
+    const cutOffline = await version();
+    srv.down = false;
     await ctx.close();
     check('加到主畫面：manifest 與圖示正確，service worker 讓頁面沒有網路也能打開，設定裡有安裝說明', () => {
       eq(man, { name: '開口練習室', short: '開口', display: 'standalone', start: './', icons: ['image/png', 'image/png', 'image/png'], touch: true });
@@ -4450,6 +4491,7 @@ function serve(root) {
       assert.ok(slow.ms < 6500 && slow.version !== 'v3', JSON.stringify(slow));
       eq(late, true);
     });
+    check('加到主畫面：沒有傳完整的頁面（少了結尾）照樣顯示，但不會存成離線用的那份（新版的 service worker 安裝時也一樣）；沒有網路時打開的還是上一份完整的', () => eq([cut, cutInstall, cutOffline], [true, true, 'v3']));
   }
   if (want('8')) {
     // The browser's cache storage stops working once the service worker runs (a full disk, a damaged store): the page
@@ -4771,7 +4813,7 @@ function serve(root) {
     });
     check('收藏的「說英文的常見錯誤」：31 種分三級，最近改過的標出次數，問答的例子先列出問句', () => eq(list, {
       sums: ['重要會影響意思（9 種，最近改過 1 種）', '常見聽得懂但不對（12 種，最近改過 1 種）', '更自然不是錯，是更自然或更有禮貌的說法（10 種）'], open: [true, false, false], items: 31,
-      a1: ['最近 30 天改過 5 次', '說錯：Yesterday I send the samples to the lab.', '說對：Yesterday I sent the samples to the lab.', false],
+      a1: ['最近 30 天改過 5 次', '說錯：Yesterday I send the demo link to the client.', '說對：Yesterday I sent the demo link to the client.', false],
       a5: ["You didn't get my email?", "說錯：Yes, I didn't get it.", "說對：No, I didn't.", false], focus: 'err-group-A', wide: false,
     }));
     // The practice started above has no sentence of the learner yet: it is replaced. One with a sentence is not.
@@ -4875,8 +4917,8 @@ function serve(root) {
         sceneOf: [!!T.sceneOf('news'), T.sceneOf('custom'), T.sceneOf('')],
       };
     });
-    check('情境、話題與救急包的內容：26 個情境（客戶專案 9、工作 9、生活 8）都有程度、任務和 5 句完整的說法，客戶專案裡你是 FDE；19 個話題都有三個要點；救急包 16 句、會議救急包 11 句', () => {
-      eq(pure.counts, [26, 9, 9, 8, true, 'custom']);
+    check('情境、話題與救急包的內容：27 個情境（客戶專案 10、工作 9、生活 8）都有程度、任務和 5 句完整的說法，客戶專案裡你是 FDE；19 個話題都有三個要點；救急包 16 句、會議救急包 11 句', () => {
+      eq(pure.counts, [27, 10, 9, 8, true, 'custom']);
       eq(pure.fde, []);
       eq([pure.badScene, pure.badTopic, pure.badPack], [[], [], []]);
       eq(pure.topics, [19, true, 'custom']);
@@ -4918,7 +4960,7 @@ function serve(root) {
     const customFree = await T(helpOf);
     await page.click('[data-fk="mode-role"]');
     check('角色扮演的選單：情境分成客戶專案、工作和生活；選了情境會看到任務、建議程度和用得上的說法，可以收藏；自訂情境沒有，但提醒可以拿來做會前演練', () => {
-      eq(groups, [['什麼情境・客戶專案', 9], ['什麼情境・工作', 9], ['什麼情境・生活', 8], [null, 1]]);
+      eq(groups, [['什麼情境・客戶專案', 10], ['什麼情境・工作', 9], ['什麼情境・生活', 8], [null, 1]]);
       eq(names, ['客戶專案', '工作', '生活']);
       eq(client, ['客戶需求訪談建議程度 B1–B2', true, 'Could you walk me through how your team finds answers today?']);
       eq(card, { top: '每日站會建議程度 A2–B1', goal: '你的任務：用三句話報告昨天做了什麼、今天要做什麼、卡在哪裡，再回答一個追問。', phrases: 5, first: '昨天我完成了第一輪測試。', stars: 5, folded: true, fold: '用得上的說法（5 句）' });
@@ -5071,10 +5113,11 @@ function serve(root) {
     await notBusy(page);
     const r = await page.evaluate(() => {
       const me = window.__kaikouTest.S.chat.turns.filter(t => t.r === 'm').pop();
-      return { told: (/keeps working on ([^.]*)\./.exec(window.__lastRules) || [])[1], fx: me.fx.map(f => [f.code, !!f.hint]) };
+      return { told: (/keeps working on ([^.]*)\./.exec(window.__lastRules) || [])[1], fx: me.fx.map(f => [f.code, !!f.hint]),
+        recast: [window.__lastRules.includes('When you correct an A item (except the patterns that get a hint, below), also use the right form naturally in your reply, without'), window.__lastRules.includes('(like "Oh')] };
     });
     await ctx.close();
-    check('只有告訴教練的 6 個句型（改最多次的）先給提示；第 7 個以後照常直接給更好的說法', () => eq(r, { told: 'A1, A2, A3, A4, A5, A6', fx: [['A1', true], ['B2', false]] }));
+    check('只有告訴教練的 6 個句型（改最多次的）先給提示；第 7 個以後照常直接給更好的說法；回覆裡自然用出正確說法的規則不包括要提示的句型（也不拿它們當例子）', () => eq(r, { told: 'A1, A2, A3, A4, A5, A6', fx: [['A1', true], ['B2', false]], recast: [true, false] }));
   }
 
   if (want('12')) {
@@ -5351,7 +5394,7 @@ function serve(root) {
       const norm = s => s.toLowerCase().replace(/[’']/g, "'").replace(/[^a-z0-9' ]/g, ' ').replace(/\s+/g, ' ').trim();
       const words = s => new Set(norm(s).split(' '));
       const stems = ['deploy', 'handl', 'dropp', 'added', 'chang', 'ticket', 'second', 'mistake', 'test', 'prompt', 'last', 'next', 'average', 'integrat', 'pilot'];
-      const drilled = X.PRON.slice(8).flatMap(p => [].concat(p.pairs ? p.pairs.flat() : p.stress.map(x => x[0]), p.sents.flatMap(x => norm(x).split(' ')))).concat(X.COURSE.flatMap(u => u.focus));
+      const drilled = X.PRON.slice(8).flatMap(p => [].concat(p.pairs ? p.pairs.flat() : p.stress.concat(p.quiz || []).map(x => x[0]), p.sents.flatMap(x => norm(x).split(' ')))).concat(X.COURSE.flatMap(u => u.focus));
       const other = new Set([].concat(X.STARTERS.map(x => x[0]), X.MEETING.map(x => x[0]), X.SCENES.flatMap(s => (s.say || []).map(x => x[0]))).map(norm));
       const book = X.PHRASEBOOK.flatMap(s => s.say.map(x => norm(x[0])));
       const lines = X.LIBRARY.flatMap(p => p.lines).concat(X.PHRASEBOOK.flatMap(s => s.say.map(([en, zh]) => ['', en, zh])));
@@ -5361,18 +5404,22 @@ function serve(root) {
         linked: X.COURSE.filter(u => {
           const lib = X.LIBRARY.find(x => x.k === u.k), set = X.PHRASEBOOK.find(x => x.k === u.k), p = X.PRON.find(x => x.k === u.pron);
           return lib && set && set.say.length === 6 && p && X.sceneOf(u.scene) && u.can.length === 3 && u.talk.pts.length === 3 && u.talk.pz.split('／').length === 3 && !!u.talk.en
-            && u.focus.length === 4 && u.focus.every(w => words(lib.lines.map(l => l[1]).join(' ')).has(w)) && lib.lines.some(l => l[0] === 'You');
+            && u.focus.length === 4 && u.focus.every(w => words(lib.lines.map(l => l[1]).join(' ')).has(w)) && lib.lines.some(l => l[0] === 'You')
+            && Array.isArray(u.vary) && u.vary.length === 3 && u.vary.every(t => /[\u4e00-\u9fff]/.test(t));
         }).length,
         lib: [X.LIBRARY.length, new Set(X.LIBRARY.map(x => x.k)).size, X.LIBRARY.every(x => x.lines.length >= 6 && x.lines.length <= 30)],
         sizes: lines.every(([who, en, zh]) => en.length <= 240 && zh.length <= 160 && /[.?!]$/.test(en) && !/[’‘“”]/.test(en) && (!who || who.length <= 20)),
         book: [X.PHRASEBOOK.length, book.length, new Set(book).size, book.filter(x => other.has(x))],
         pron: [X.PRON.length, X.PRON.map(p => p.k).join(' '), X.PRON.filter(p => p.pairs).every(p => p.pairs.length === 6 && new Set(p.pairs.flat()).size === 12 && p.sents.length === 3)],
         stress: X.PRON.find(p => p.k === 'stress').stress.map(x => X.stressText(x)).join(' '),
-        stressOk: X.PRON.find(p => p.k === 'stress').stress.every(([w, syl, i]) => syl.join('') === w && i >= 0 && i < syl.length),
+        stressOk: (p => p.stress.concat(p.quiz).every(([w, syl, i]) => syl.join('') === w && i >= 0 && i < syl.length) && !p.quiz.some(q => p.stress.some(x => x[0] === q[0])) && p.quiz.length === 8)(X.PRON.find(p => p.k === 'stress')),
         diag: drilled.filter(w => stems.some(s => w.startsWith(s))),
         self: lines.filter(([, en]) => { const v = X.compareSaid(en, en); return v.hit !== v.total; }).map(l => l[1]),
         heard: [r('Eighty-five percent of the ratings were positive.', '85% of the ratings were positive'), r("Hi, I'm in room twelve.", "hi I'm in room 12"),
           r('The assistant now resolves 38% of questions on its own.', 'the assistant now resolves 38 percent of questions on its own'), r('About 20% of users.', 'about twenty percent of users'), r('About 20% of users.', 'about 20 of users')],
+        // Words written together on one side and apart on the other are the same when said.
+        joined: [r('First, open the app and log in.', 'first open the app and login'), r('Send it by email.', 'send it by e-mail'), r('Want to connect on LinkedIn?', 'want to connect on linked in'),
+          r('About 20% of users.', 'about 20 per cent of users'), r('Log in first.', 'log first')],
       };
     });
     await ctx.close();
@@ -5388,6 +5435,7 @@ function serve(root) {
       eq(c.diag, []);
       eq(c.self, []);
       eq(c.heard, [[7, 7], [5, 5], [10, 10], [4, 4], [3, 4]]);
+      eq(c.joined, [[7, 7], [4, 4], [5, 5], [4, 4], [2, 3]]);
     });
   }
   if (want('13')) {
@@ -5431,8 +5479,11 @@ function serve(root) {
     const phone = await horiz(page);
     const redrawn = await T(() => { window.__kaikouTest.renderAll(); return document.activeElement.dataset.fk; });
     await shot(page, '50-lesson-day1-phone.png', true);
-    // Day 1: the dialogue in the player, to listen first (no script, one sentence after another), and back.
+    // Day 1: the dialogue in the player, to listen first (no script, one sentence after another), and back. The player
+    // is drawn at once (the focus never passes through the passage list first).
+    await T(() => { window.__focused = []; document.addEventListener('focusin', e => window.__focused.push(e.target.textContent)); });
     await page.click('[data-fk="l-listen"]');
+    const focused = await T(() => window.__focused.slice());
     const player = await T(() => ({ title: document.querySelector('#today-dyn h2').textContent, who: [...document.querySelectorAll('#today-dyn .sent-who')].slice(0, 2).map(n => n.textContent),
       hidden: document.querySelectorAll('#today-dyn .sent-en.hide').length, n: document.querySelectorAll('#today-dyn .sent').length, mode: window.__kaikouTest.S.sh.mode,
       src: document.querySelector('#today-dyn .card .help').textContent, back: document.querySelector('[data-fk="tool-back"]').textContent }));
@@ -5501,7 +5552,10 @@ function serve(root) {
     const act1 = await T(() => [document.activeElement.dataset.fk, document.activeElement.textContent]);
     await shot(page, '52-lesson-day4-phone.png', true);
     await page.click('[data-fk="l-coach"]');
-    const coach = await T(() => ({ tab: window.__kaikouTest.S.tab, setup: [window.__kaikouTest.S.setup.mode, window.__kaikouTest.S.setup.scene], chip: (document.querySelector('[data-fk="chip-smalltalk"]') || {}).getAttribute && document.querySelector('[data-fk="chip-smalltalk"]').getAttribute('aria-pressed') }));
+    const coach = await T(() => ({ tab: window.__kaikouTest.S.tab, setup: [window.__kaikouTest.S.setup.mode, window.__kaikouTest.S.setup.scene], chip: (document.querySelector('[data-fk="chip-smalltalk"]') || {}).getAttribute && document.querySelector('[data-fk="chip-smalltalk"]').getAttribute('aria-pressed'),
+      focus: document.activeElement.id, inView: (() => { const c = document.querySelector('#coach-dyn .scene-card').getBoundingClientRect().top, de = document.documentElement;
+        return c >= document.querySelector('.tabs').getBoundingClientRect().bottom && (c <= parseFloat(getComputedStyle(de).scrollPaddingTop) + 1 || scrollY + innerHeight >= de.scrollHeight - 1)
+          && document.querySelector('#start-btn').getBoundingClientRect().bottom <= innerHeight; })() }));
     // Day 5: the unit's own topic and points in 4/3/2 (and what the coach is asked for); back to the lesson.
     await page.click('#t-today');
     await page.click('[data-fk="lday-5"]');
@@ -5548,8 +5602,9 @@ function serve(root) {
       eq(d1.people, '對話裡的人：你（Alex）、Maria（客戶的售後服務主管）、Ken（客戶的 IT 主管）');
       eq(d1.days[0], '第 1 天：聽懂對話，學 6 句');
       eq(phone, false);
-      eq(player, { title: 'Before and after a kickoff call', who: ['Maria', '你'], hidden: 15, n: 15, mode: 'flow', src: '教材庫・A2–B1・15 句', back: '回到這一課' });
+      eq(player, { title: 'Before and after a kickoff call', who: ['Maria', '你'], hidden: 16, n: 16, mode: 'flow', src: '教材庫・A2–B1・16 句', back: '回到這一課' });
       eq(backAt, ['lesson', '開會前後的閒聊：聽懂對話，學 6 句']);
+      eq(focused.includes('影子跟讀'), false, JSON.stringify(focused));
       eq([lib.src, 'sents' in lib, lib.title], ['lib', false, 'Before and after a kickoff call']); // (its text comes from the library)
       eq([allToast, after - before, allLabel, again], ['已加入收藏 6 句', 6, ['都收藏了', 'l-all'], '這幾句都已經在收藏裡了']);
       eq([oneOff, redrawn], [['這 6 句全部收藏', true], 'lesson-head']);
@@ -5559,15 +5614,15 @@ function serve(root) {
       eq(doneFocus, 'l-next');
       eq([undone, undoneHere, undoFocus], [{ 'u1-1': null }, { u: 'u1', d: 1 }, 'l-done']);
     });
-    check('第 2–5 天：發音課在收藏打開、「回到這一課」回來（句子複習還在進行時先說明、不打開）；看英文把焦點移到英文；不看稿跟讀；自己演時你的句子先只有中文；到教練時選好這一課的情境；4/3/2 用這一課的主題和三個要點（焦點在標題），請教練給重點時給的是這個主題', () => {
+    check('第 2–5 天：發音課在收藏打開、「回到這一課」回來（句子複習還在進行時先說明、不打開）；看英文把焦點移到英文；不看稿跟讀；自己演時你的句子先只有中文；到教練時選好這一課的情境（情境從分頁按鈕下方開始，「開始對話」也在畫面上，焦點在它上面）；4/3/2 用這一課的主題和三個要點（焦點在標題），請教練給重點時給的是這個主題', () => {
       eq(focusWords, ['thanks', 'think', 'this', 'there']);
       eq(pron, { tab: 'saved', k: 'th', back: '回到這一課', focus: 'th：think 不是 sink' });
       eq(pronBack, ['today', 'lesson', '開會前後的閒聊：跟讀對話，練發音', false]);
       eq([hidden3, shown3], [0, [1, 'l3-en-0', 'Can you hear me okay?']]);
-      eq(blind, [false, 'pause', 15]);
-      eq(act, { me: 7, others: 8, shown: 0, first: '可以，很清楚。謝謝你們邀請我。' });
+      eq(blind, [false, 'pause', 16]);
+      eq(act, { me: 7, others: 9, shown: 0, first: '可以，很清楚。謝謝你們邀請我。' });
       eq(act1, ['l4-en-1', 'Yes, loud and clear. Thanks for having me.']);
-      eq(coach, { tab: 'coach', setup: ['role', 'smalltalk'], chip: 'true' });
+      eq(coach, { tab: 'coach', setup: ['role', 'smalltalk'], chip: 'true', focus: 'start-btn', inView: true });
       eq(duringDrill, ['today', false, '收藏分頁的句子複習還在進行：先做完或按「先到這裡」，再打開發音課']);
       eq(talk, { focus: '4/3/2 口說', topic: 'custom', custom: '外國同事來你的城市出差', pts: ['Where should they stay?', 'What should they eat?', 'What can they do on a free evening?'], back: '回到這一課' });
       assert.ok(asked.includes('Topic: a colleague from abroad is visiting your city on a business trip'), asked.slice(0, 300));
@@ -5639,7 +5694,7 @@ function serve(root) {
     const q = [];
     for (let i = 0; i < 6; i++) {
       await until(page, n => window.__spoken.length >= n, i + 1);
-      const s = await T(() => { const X = window.__kaikouTest, z = X.S.pron.quiz, [pi, side] = z.q[z.i], item = X.PRON.find(p => p.k === 'stress').stress[pi];
+      const s = await T(() => { const X = window.__kaikouTest, z = X.S.pron.quiz, [pi, side] = z.q[z.i], item = X.quizList(X.PRON.find(p => p.k === 'stress'))[pi];
         return { said: window.__spoken[window.__spoken.length - 1].text, word: item[0], side, right: side === item[2], opts: [...document.querySelectorAll('.quiz-opt')].map(b => b.textContent).join('|'), syl: item[1].join('|') }; });
       q.push(s);
       await page.click('[data-fk="quiz-' + (i === 0 ? (s.side + 1) % s.opts.split('|').length : s.side) + '"]');
@@ -5648,8 +5703,9 @@ function serve(root) {
     }
     const score = await T(() => [document.querySelector('[data-fk="quiz-score"]').textContent, window.__kaikouTest.pronStats().stress.quiz]);
     await page.click('[data-fk="quiz-again"]');
-    await T(() => { const X = window.__kaikouTest, z = X.S.pron.quiz; z.q[0] = [7, 3]; X.renderAll(); });
+    await T(() => { const X = window.__kaikouTest, z = X.S.pron.quiz; z.q[0] = [3, 1]; X.renderAll(); }); // available: 4 syllables, the longest
     const five = [await T(() => document.querySelectorAll('.quiz-opt').length), await horiz(page)];
+    const cardWords = await T(() => window.__kaikouTest.PRON.find(p => p.k === 'stress').stress.map(x => x[0]));
     await page.click('[data-fk="pron-back"]');
     const listed = await T(() => document.querySelector('[data-fk="pron-stress"] span').textContent);
     await ctx.close();
@@ -5659,12 +5715,12 @@ function serve(root) {
       eq(saved, ['已加入收藏 6 句', 6]);
       eq(stress.hidden, true);
     });
-    check('發音課第 11 課字重音：重音的音節大寫，螢幕閱讀器聽到字和第幾個音節；小測驗播一個字、選重音的音節，答錯說出正確的唸法，結果記下來；五個音節的字在手機上也不超出畫面', () => {
+    check('發音課第 11 課字重音：重音的音節大寫，螢幕閱讀器聽到字和第幾個音節；小測驗播一個字、選重音的音節，答錯說出正確的唸法，結果記下來；小測驗問的是卡片上沒有的字；最長的字在手機上也不超出畫面', () => {
       eq([stress.n, stress.first, stress.sr], [8, 'tech·NOL·o·gy', 'technology，重音在第 2 個音節']);
-      assert.ok(q.filter(x => typeof x === 'object').every(x => x.said === x.word && x.opts === x.syl && x.right), JSON.stringify(q));
+      assert.ok(q.filter(x => typeof x === 'object').every(x => x.said === x.word && x.opts === x.syl && x.right && !cardWords.includes(x.word)), JSON.stringify(q));
       assert.ok(/^重音在「[A-Z]+」：/.test(q[1]), q[1]);
       eq(score, ['聽對 5 / 6', [5, 6]]);
-      eq(five, [5, false]);
+      eq(five, [4, false]);
       assert.ok(/今天練過・聽辨 5 \/ 6/.test(listed), listed);
     });
   }
@@ -5672,7 +5728,11 @@ function serve(root) {
     // 13f. A backup file brings its lessons done (only real ones from real days); none done here is undone or moved.
     const seed = "window.__mockSeed = (store, P, dk) => { const s = store.get(P('settings')); s.course = { 'u1-1': dk(new Date()) }; };";
     const { ctx, page } = await open(ARTIFACT, { viewport: { width: 1000, height: 800 } }, 'course-import', null, seed);
-    const file = { app: 'kaikou-practice', v: 1, at: new Date().toISOString(), docs: { settings: { _part: true, plan: '20', level: 'B1', course: { 'u1-1': '2026-10-01', 'u1-2': '2026-10-02', 'u99-1': '2026-10-03', 'u1-3': 'soon', 'u1-4': '2099-01-01' } } } };
+    // Two phrases with their review schedules: one the page could have made, one put off to the year 2999 (not taken).
+    const [idA, idB, idC] = await page.evaluate(() => ['Let us begin.', 'See you soon.', 'Talk soon.'].map(window.__kaikouTest.phraseId));
+    const file = { app: 'kaikou-practice', v: 1, at: new Date().toISOString(), docs: { settings: { _part: true, plan: '20', level: 'B1', course: { 'u1-1': '2026-10-01', 'u1-2': '2026-10-02', 'u99-1': '2026-10-03', 'u1-3': 'soon', 'u1-4': '2099-01-01' } },
+      phrases: { map: { [idA]: { id: idA, en: 'Let us begin.', zh: '開始吧。', at: Date.now() - 864e5 }, [idB]: { id: idB, en: 'See you soon.', zh: '待會見。', at: Date.now() - 864e5 }, [idC]: { id: idC, en: 'Talk soon.', zh: '再聊。', at: Date.now() - 864e5 } } },
+      srs: { map: { [idA]: { d: '2026-10-11', i: 6, r: 2, l: 0, f: '2026-10-01', t: '2026-10-05' }, [idB]: { d: '2999-12-31', i: 365, r: 9, l: 0, f: '2026-10-01', t: '2999-12-30' } } } } };
     await page.click('#btn-settings');
     await page.setInputFiles('#set-import-file', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(file)) });
     await until(page, () => !!document.querySelector('[data-fk="imp-go"]'), null, 4000);
@@ -5682,6 +5742,15 @@ function serve(root) {
     const toastText = await page.textContent('#toast');
     await until(page, () => !window.__kaikouTest.Store.busyDoc('settings'));
     const course = await page.evaluate(() => window.__store.get('data/users/u_test/settings').course);
+    await until(page, () => !window.__kaikouTest.Store.busyDoc('srs'));
+    const sched = await page.evaluate(ids => ids.map(id => !!(window.__store.get('data/users/u_test/srs') || { map: {} }).map[id]), [idA, idB]);
+    // A second file with a schedule for a phrase saved here before (without one): the toast says it was updated.
+    const file3 = { app: 'kaikou-practice', v: 1, at: new Date().toISOString(), docs: { srs: { map: { [idC]: { d: '2026-10-12', i: 6, r: 2, l: 0, f: '2026-10-02', t: '2026-10-06' } } } } };
+    await page.setInputFiles('#set-import-file', { name: 'c.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(file3)) });
+    await until(page, () => !!document.querySelector('[data-fk="imp-go"]'), null, 4000);
+    await page.click('[data-fk="imp-go"]');
+    await until(page, () => !window.__kaikouTest.S.importing && /複習進度|沒有新的資料/.test(document.querySelector('#toast').textContent), null, 6000).catch(() => {});
+    const toast3 = await page.textContent('#toast');
     await ctx.close();
     // Settings still the defaults here (lessons done do not count as a choice) take the file's; the lessons stay.
     const seed2 = "window.__mockSeed = (store, P, dk) => { store.set(P('settings'), { course: { 'u1-1': dk(new Date()) } }); };";
@@ -5699,6 +5768,9 @@ function serve(root) {
       assert.ok(summary.includes('2 堂完成的課'), summary);
       assert.ok(toastText.includes('完成的課 1 堂'), toastText);
       eq(course, { 'u1-1': dayKey(0), 'u1-2': '2026-10-02' });
+      eq(sched, [true, false]); // the schedule put off to 2999 is left out
+      assert.ok(!toastText.includes('複習進度'), toastText); // the schedules of phrases the file brings are not news
+      eq(toast3, '已合併：更新 1 句的複習進度');
       eq(all.toast, '已合併：新增完成的課 1 堂，並帶入備份檔裡的設定');
       eq([all.here, all.cloud], [['B2', { 'u1-1': dayKey(0), 'u2-1': '2026-10-05' }], ['B2', { 'u1-1': dayKey(0), 'u2-1': '2026-10-05' }]]);
     });
@@ -5708,16 +5780,20 @@ function serve(root) {
     const { ctx, page } = await open(base, { viewport: { width: 400, height: 860 }, serviceWorkers: 'block' }, 'course-web');
     await page.click('[data-fk="lesson-go"]');
     await page.click('[data-fk="lday-4"]');
-    const noCoach = await page.evaluate(() => [!!document.querySelector('[data-fk="l-coach"]'), [...document.querySelectorAll('#today-dyn .help')].map(n => n.textContent).some(t => t.includes('現在不能用 AI 教練'))]);
+    const noCoach = await page.evaluate(() => [!!document.querySelector('[data-fk="l-coach"]'), [...document.querySelectorAll('#today-dyn .help')].map(n => n.textContent).some(t => t.includes('要先到設定輸入 Claude API 金鑰，教練才能和你演這個情境')),
+      !!document.querySelector('[data-fk="tool-key"]'), document.querySelectorAll('#today-dyn .vary-list li').length]);
     await page.click('[data-fk="l-done"]');
     await page.waitForTimeout(500);
     await page.reload();
     await page.waitForFunction(() => window.__kaikouTest && window.__kaikouTest.S && window.__kaikouTest.S.ready, null, { timeout: 10000 });
-    const r = await page.evaluate(() => [document.querySelector('.course-card').textContent.includes('今天的課完成了'), JSON.parse(localStorage.getItem('kaikou:settings')).course]);
+    const again = await page.evaluate(() => [window.__kaikouTest.S.tool, window.__kaikouTest.S.lesson && window.__kaikouTest.S.lesson.d, document.querySelector('#today-dyn h2').textContent]);
+    await page.click('[data-fk="tool-back"]');
+    const r = await page.evaluate(() => [document.querySelector('.course-card').textContent.includes('今天的課完成了'), JSON.parse(localStorage.getItem('kaikou:settings')).course, document.activeElement.dataset.fk]);
     await ctx.close();
-    check('網頁版（沒有雲端、沒有金鑰）：第 4 天說明可以自己演，完成的課存在這個瀏覽器，重新整理後還在', () => {
-      eq(noCoach, [false, true]);
-      eq(r, [true, { 'u1-4': dayKey(0) }]);
+    check('網頁版（沒有雲端、沒有金鑰）：第 4 天照對話、換個情況自己演，和教練演要先輸入金鑰（有按鈕）；完成的課存在這個瀏覽器；重新整理後回到同一課，回今日頁時焦點在今天的課', () => {
+      eq(noCoach, [false, true, true, 3]);
+      eq(again, ['lesson', 4, '開會前後的閒聊：角色扮演']);
+      eq(r, [true, { 'u1-4': dayKey(0) }, 'lesson-go']);
     });
   }
   if (want('13')) {
@@ -5725,15 +5801,15 @@ function serve(root) {
     const { ctx, page } = await open(ARTIFACT, { viewport: { width: 400, height: 860 } }, 'course-unread', { failReads: { settings: 99 } }, noFocusRefresh);
     const r = await page.evaluate(() => [document.querySelector('.course-card').textContent, !!document.querySelector('[data-fk="lesson-go"]'), !document.querySelector('[data-fk="course-all"]').disabled]);
     await page.click('[data-fk="course-all"]');
-    const list = await page.evaluate(() => [(document.querySelector('#today-dyn .notice') || {}).textContent, !!document.querySelector('#today-dyn .tool-head .tag')]);
+    const list = await page.evaluate(() => [(document.querySelector('#today-dyn .notice') || {}).textContent, !!document.querySelector('#today-dyn .tool-head .tag'), document.querySelectorAll('#today-dyn .day-btn.next').length]);
     await page.click('[data-fk="cday-u1-1"]');
     await page.click('[data-fk="l-done"]');
     const lesson = await page.evaluate(() => [!!document.querySelector('[data-fk="l-undo"]'), [...document.querySelectorAll('#today-dyn .help')].some(n => n.textContent.startsWith('還讀不到你的課程進度'))]);
     await ctx.close();
-    check('還讀不到設定時，「今天的課」不猜你上到哪一課（全部課程照樣可以打開，說明讀不到）；完成的課照樣記下，但不能標成還沒完成', () => {
+    check('還讀不到設定時，「今天的課」和全部課程都不猜你上到哪一課（全部課程照樣可以打開，說明讀不到）；完成的課照樣記下，但不能標成還沒完成', () => {
       assert.ok(r[0].includes('還讀不到你的課程進度'), r[0]);
       eq(r.slice(1), [false, true]);
-      eq(list, ['還讀不到你的課程進度：讀到之後就會標出完成過的課。', false]);
+      eq(list, ['還讀不到你的課程進度：讀到之後就會標出完成過的課。', false, 0]);
       eq(lesson, [false, true]);
     });
   }
@@ -5755,6 +5831,134 @@ function serve(root) {
     check('連不上雲端時：這個瀏覽器沒有設定的副本就不猜上到哪一課；在這裡完成又取消的課不留下要存到雲端的變更，之前完成、在這裡取消的課存成取消', () => {
       eq(unknown, [true, false]);
       eq(held, { 'u1-2': null });
+    });
+  }
+
+  if (want('13')) {
+    // 13j. Lessons and what the cloud already has: a lesson that reaches the cloud loses its "done only here" mark (an
+    //      undo made later without the cloud is then sent as undone, not dropped); a lesson the cloud has as done keeps
+    //      the day it was done there; a review schedule from a file must be one the page could have made; a read
+    //      refused as too many at once is tried again.
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 400, height: 860 } }, 'course-marks', { failReads: { settings: { n: 1, code: 'resource_exhausted' } } }, noFocusRefresh);
+    const r = await page.evaluate(() => {
+      const X = window.__kaikouTest;
+      localStorage.setItem('kaikou:held', JSON.stringify({ uid: X.Store.uid, docs: { settings: { course: { 'u1-1': '2026-11-10' } }, 'log-2026-11': { days: { '2026-11-10': { items: { ai: true } } } } }, fresh: { settings: { 'course|u1-1': 1 } } }));
+      X.heldSuperseded('settings', { course: { 'u1-1': '2026-11-11' } });
+      const h = JSON.parse(localStorage.getItem('kaikou:held') || 'null');
+      localStorage.removeItem('kaikou:held');
+      const over = X.heldOver({ settings: { course: { 'u1-1': '2026-10-01', 'u1-3': null } } }, { settings: { course: { 'u1-1': '2026-11-11', 'u1-2': '2026-11-11', 'u1-3': '2026-11-11', 'u1-4': null }, level: 'B2' } }, false);
+      const ok = e => X.importSched(Object.assign({ f: '2026-10-01', t: '2026-10-05', i: 6, d: '2026-10-11' }, e));
+      return {
+        marks: h && h.fresh && h.fresh.settings ? Object.keys(h.fresh.settings) : 'none',
+        held: h ? Object.keys(h.docs) : 'none',
+        over: over.settings,
+        sched: [ok({}), ok({ d: '2999-12-31', t: '2999-12-30', i: 365 }), ok({ d: '2027-06-01' }), ok({ t: '' }), ok({ f: '2026-10-06' }), ok({ d: '2026-10-12' })],
+        read: [X.S.settingsRead, window.__dbCalls.filter(c => c.op === 'get' && c.name === 'settings').slice(0, 2).map(c => c.code || 'ok')],
+        hint: [X.safeHint({ you: 'Yesterday I send the report', better: 'Yesterday I sent the report', hint: '用 sent' }), X.safeHint({ you: 'Yesterday I send the report', better: 'Yesterday I sent the report', hint: '這是昨天的事，send 要怎麼改？' }), X.safeHint({ you: 'a', better: 'b' })],
+        recast: [X.recastEg([]), X.recastEg(['A1']), X.recastEg(['A1', 'A4', 'A2'])],
+      };
+    });
+    await ctx.close();
+    check('完成的課和雲端：在雲端完成的課不再標成「只在這裡完成」（之後連不上雲端時取消，會存成取消）；雲端已經完成的課留著雲端的日期；備份檔的複習進度要是這個頁面排得出來的；一次太多讀取被拒絕時再讀一次', () => {
+      eq(r.marks, []);
+      eq(r.held, ['log-2026-11']);
+      eq(r.over, { course: { 'u1-2': '2026-11-11', 'u1-3': '2026-11-11', 'u1-4': null }, level: 'B2' });
+      eq(r.sched, [true, false, false, false, false, true]);
+      eq(r.read, [true, ['resource_exhausted', 'ok']]);
+    });
+    check('小提示裡寫出了改好的字（例如「用 sent」）就不用它，改用句型本身的提示；規則裡自然用正確說法的例子不用要提示的句型', () => {
+      eq(r.hint, ['', '這是昨天的事，send 要怎麼改？', '']);
+      eq(r.recast, [' (like "Oh, you sent them yesterday?")', ' (like "Oh, you\'re busy this week?")', '']);
+    });
+  }
+  if (want('13')) {
+    // 13k. A lesson keeps the learner's place: what was ticked on day 5 stays after going to day 4 and back, and a
+    //      reload opens the same lesson with it. Day 4: the dialogue, then the changed facts, then the coach (which
+    //      this page cannot use: it says why). The unit's toast comes only once its 5 lessons are all done. A 4/3/2
+    //      from the lesson has the unit's 6 sentences at hand and asks before leaving between rounds.
+    const seed = "window.__mockSeed = (store, P, dk, back) => { const s = Object.assign({ plan: '20', level: 'B1' }, store.get(P('settings'))); s.course = { 'u1-1': dk(back(4)), 'u1-2': dk(back(3)), 'u1-3': dk(back(2)), 'u1-4': dk(back(1)) }; store.set(P('settings'), s); };";
+    const { ctx, page } = await open(ARTIFACT, { viewport: { width: 400, height: 860 } }, 'course-place', { persist: true, failUse: ['sample'] }, seed);
+    const T = (fn, arg) => page.evaluate(fn, arg);
+    const ticks = () => T(() => [...document.querySelectorAll('[data-fk^="lcan-"]')].map(b => b.getAttribute('aria-checked')));
+    await page.click('[data-fk="lesson-go"]');
+    const at = await T(() => [window.__kaikouTest.S.lesson.u, window.__kaikouTest.S.lesson.d]);
+    await page.click('[data-fk="lcan-0"]');
+    await page.click('[data-fk="lcan-2"]');
+    await page.click('[data-fk="lday-4"]');
+    const d4 = await T(() => ({ steps: [...document.querySelectorAll('#today-dyn .card-title')].map(h => h.textContent).filter(t => /^\d/.test(t)),
+      vary: document.querySelectorAll('#today-dyn .vary-list li').length, says: [!!document.querySelector('[data-fk="l4-says"]'), document.querySelector('[data-fk="l4-says"]').parentNode.open],
+      scene: [...document.querySelectorAll('#today-dyn .card')].find(c => c.textContent.includes('和教練演（要用 AI）')).textContent, coachBtn: !!document.querySelector('[data-fk="l-coach"]') }));
+    await page.click('[data-fk="lday-5"]');
+    const kept = await ticks();
+    // Back to day 3 (as day 5 suggests), then on another tab: a reload keeps the open lesson and day 5's ticks.
+    await page.click('[data-fk="lday-3"]');
+    await page.click('#t-coach');
+    await page.reload();
+    await page.waitForFunction(() => window.__kaikouTest && window.__kaikouTest.S && window.__kaikouTest.S.ready, null, { timeout: 10000 });
+    const after = await T(() => [window.__kaikouTest.S.tab, window.__kaikouTest.S.tool, window.__kaikouTest.S.lesson && window.__kaikouTest.S.lesson.u, window.__kaikouTest.S.lesson && window.__kaikouTest.S.lesson.d]);
+    await page.click('#t-today');
+    await page.click('[data-fk="lday-5"]');
+    const reloaded = [after, await ticks()];
+    await page.click('[data-fk="l-done"]');
+    const unitToast = await T(() => document.querySelector('#toast').textContent);
+    await page.click('[data-fk="tool-back"]');
+    await page.click('[data-fk="course-all"]');
+    await page.click('[data-fk="cday-u2-5"]');
+    await page.click('[data-fk="l-done"]');
+    const dayToast = await T(() => document.querySelector('#toast').textContent);
+    await page.click('[data-fk="l-talk"]');
+    const talk = await T(() => [document.querySelectorAll('#today-dyn .say-list li').length, (document.querySelector('[data-fk="f432-says"]') || {}).textContent]);
+    await page.click('[data-fk="f432-go"]');
+    await until(page, () => window.__kaikouTest.S.f432.state === 'run');
+    await page.click('[data-fk="f432-end"]');
+    await until(page, () => window.__kaikouTest.S.f432.state === 'gap');
+    await page.click('[data-fk="tool-back"]');
+    const asked = await T(() => [window.__kaikouTest.S.tool, document.querySelector('[data-fk="tool-back"]').textContent]);
+    await page.waitForTimeout(700); // a second tap at once is taken as a double tap, not as the confirmation
+    await page.click('[data-fk="tool-back"]');
+    const left = await T(() => [window.__kaikouTest.S.tool, window.__kaikouTest.S.lesson && window.__kaikouTest.S.lesson.u]);
+    await ctx.close();
+    check('一課記得你做到哪裡：第 5 天勾的目標換到第 4 天再回來還在；回到第 3 天、切到教練分頁後重新整理，回到今日還是那一課，第 5 天勾的也還在；第 4 天照對話演、換個情況演，再和教練演（不能用教練時說明原因）；單元的 5 課都完成才說單元完成', () => {
+      eq(at, ['u1', 5]);
+      eq(d4.steps, ['1照對話演一次（不用 AI）', '2換個情況再演一次（不用 AI）', '3和教練演（要用 AI）']);
+      eq([d4.vary, d4.says, d4.coachBtn], [3, [true, false], false]);
+      assert.ok(d4.scene.includes('情境：') && d4.scene.includes('你的任務：') && d4.scene.includes('這個畫面拿不到 Claude 的 AI 回覆'), d4.scene);
+      eq(kept, ['true', 'false', 'true']);
+      eq(reloaded, [['coach', 'lesson', 'u1', 3], ['true', 'false', 'true']]);
+      eq([unitToast, dayToast], ['第 1 單元的 5 課都完成了！', '完成了：第 2 單元第 5 天']);
+    });
+    check('從課裡打開的 4/3/2：這個單元的 6 句就在畫面上；講完一次、還沒講下一次時離開，先問一次（講過的會清掉），再按一次才回到這一課', () => {
+      eq(talk, [6, '這個單元的 6 句（講的時候試著用上）']);
+      eq(asked, ['f432', '再按一次離開（講過的 1 次會清掉）']);
+      eq(left, ['lesson', 'u2']);
+    });
+  }
+  if (want('13')) {
+    // 13l. A voice that cannot speak (an online voice without a network): the player stops at the first sentence and
+    //      says why, instead of running through the dialogue in silence; a speaker button says why too.
+    const { ctx, page } = await open(ARTIFACT_SPEECH, { viewport: { width: 400, height: 860 } }, 'tts-fail');
+    const T = (fn, arg) => page.evaluate(fn, arg);
+    await page.click('[data-fk="lesson-go"]');
+    await page.click('[data-fk="l-listen"]');
+    await T(() => { window.__ttsFail = 'network'; window.__spoken.length = 0; });
+    await page.click('[data-fk="sh-play"]');
+    await page.waitForTimeout(1200);
+    const player = await T(() => [window.__spoken.length, window.__kaikouTest.S.sh.playing, document.querySelector('#toast').textContent, document.querySelector('[data-fk="sh-play"]').textContent]);
+    await T(() => { window.__kaikouTest.TTS.failAt = 0; document.querySelector('#toast').textContent = ''; });
+    await page.click('[data-fk="shp-2"]');
+    await page.waitForTimeout(300);
+    const one = await T(() => [document.querySelector('#toast').textContent.startsWith('朗讀失敗了'), window.__kaikouTest.S.sh.playing]);
+    await page.click('[data-fk="tool-back"]');
+    await T(() => { window.__kaikouTest.TTS.failAt = 0; window.__ttsFail = 'not-allowed'; });
+    await page.click('#today-dyn [data-fk^="spk:l1:"]');
+    await page.waitForTimeout(300);
+    const button = await T(() => document.querySelector('#toast').textContent);
+    await ctx.close();
+    check('朗讀失敗時（例如要連網的聲音連不上）：跟讀停在第一句並說明原因，不會一句一句無聲地跳完；喇叭按鈕也會說明', () => {
+      eq(player.slice(0, 2), [1, false]);
+      assert.ok(player[2].startsWith('朗讀失敗了') && player[3].includes('從頭播放'), JSON.stringify(player));
+      eq(one, [true, false]);
+      eq(button, '瀏覽器這次不讓頁面出聲：按一下喇叭按鈕再試一次。');
     });
   }
 

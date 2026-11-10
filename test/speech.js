@@ -8,7 +8,8 @@
 //   Every start() is recorded in window.__srStarts with its language.
 // - speechSynthesis: speak() "says" the text (start, then end after a few ms per character) and records it in
 //   window.__spoken; cancel() interrupts what is playing. With window.__ttsDrop set, no events reach the page
-//   (speaking still goes back to false at the end), like some Chrome voices.
+//   (speaking still goes back to false at the end), like some Chrome voices. With window.__ttsFail set to an error
+//   ('network', 'synthesis-failed'…), each utterance fails with it instead of being said (an online voice offline).
 // - window.__speechLog lists what happened in order: 'say:<text>', 'said', 'cut' (speech) and 'listen', 'heard:<text>',
 //   'stop-listen' (recognition), so a test can check that the microphone never listened while a voice was speaking.
 (function () {
@@ -62,6 +63,11 @@
       current = rec;
       if (u.text.trim()) { window.__spoken.push({ text: u.text, rate: u.rate }); log('say:' + u.text); }
       this.speaking = true;
+      if (window.__ttsFail) {
+        const error = window.__ttsFail;
+        rec.timers.push(setTimeout(() => { if (current === rec) current = null; this.speaking = false; log('failed'); if (u.onerror) u.onerror({ error }); }, 10));
+        return;
+      }
       // window.__ttsDrop: like some Chrome voices, the speech plays but no start or end event ever reaches the page.
       const drop = !!window.__ttsDrop;
       rec.timers.push(setTimeout(() => { if (u.onstart && !drop) u.onstart({}); }, 5));

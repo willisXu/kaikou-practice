@@ -1,12 +1,15 @@
 #!/bin/bash
 # 開口練習室：把這個資料夾的變更發布到公開的 GitHub repo willisXu/kaikou-practice（Mac 版，點兩下就會在「終端機」裡執行）。
 # 和 推送到GitHub.bat（Windows 版）做一樣的事：
-# - 只發布 docs/、test/、tools/ 與 repo 裡原有的檔案，這個資料夾裡其他新檔案只留在這台電腦。
+# - 只發布 repo 裡原有的檔案，和 docs/、test/、tools/ 裡新的網頁、程式與圖示（依副檔名，見 ALLOW）；其他新檔案
+#   （例如匯出的備份檔、4/3/2 的錄音、合併工具留下的檔案）可能有私人的內容，只留在這台電腦。
+# - 只從 main 分支發布；要發布的版本少了網站的檔案、或 docs/index.html 不完整時不推送。
 # - 這台電腦上用別的方式做的、還沒上 GitHub 的 commit，會先列出來，按 Y 才一起發布。
 # - 推送成功後，GitHub Pages 約 1 分鐘後更新。
 # 只用 macOS 內建的 bash 3.2 就有的功能。
 
 cd "$(dirname "$0")" || exit 1
+export GIT_PAGER=cat PAGER=cat # 列出很多檔案時不要停在分頁程式（less）等人按 q
 COMMITTED=0
 OURTIME=
 
@@ -53,6 +56,18 @@ markers() {
   git diff --check "$@" 2>/dev/null | grep "conflict marker"
 }
 
+# 網站的檔案都在 HEAD 裡，首頁也是完整的（最後有 </html>）：被搬走、改名或只存了一半的 docs/index.html 推上去，網站就打不開了。
+site_ok() {
+  local f
+  for f in docs/index.html docs/sw.js docs/manifest.webmanifest; do
+    if ! git cat-file -e "HEAD:$f" 2>/dev/null; then echo "要發布的版本裡沒有 $f（可能被搬走或改了名字），推上去網站會壞掉。"; return 1; fi
+  done
+  if ! git show HEAD:docs/index.html | tail -c 1024 | grep -q '</html>'; then
+    echo "要發布的 docs/index.html 不完整（最後沒有 </html>，可能只存了一半），推上去網站會壞掉。"
+    return 1
+  fi
+}
+
 # commit 上的名字和 email 會公開在 GitHub 上。還沒設定時，問一次並只存在這個資料夾的設定裡。
 need_identity() {
   [ -n "$(git config user.name)" ] && [ -n "$(git config user.email)" ] && return 0
@@ -94,12 +109,21 @@ if [ -n "$(git ls-files -u)" ]; then
   echo "發布出去的話網站會壞掉。請找人幫忙解決衝突後，再點一次這個檔案。"
   finish 1
 fi
+# 只從 main 發布：在別的分支上發布，會把那個分支的東西推到 GitHub 的 main。
+BRANCH=$(git symbolic-ref -q --short HEAD)
+if [ "$BRANCH" != main ]; then
+  echo "這個資料夾現在不在 main 分支上（${BRANCH:-沒有在任何分支上}），所以這次什麼都沒做。"
+  echo "在別的分支上發布，會把那個分支的東西推到 GitHub 的 main。請先切回 main（例如在 VS Code 左下角選 main），再點一次這個檔案。"
+  finish 1
+fi
 
 echo "== [1/3] 要發布的變更"
-for d in docs test tools; do
-  if [ -d "$d" ]; then git add -A -- "$d" || failed; fi
-done
+# repo 裡原有的檔案（改過的、刪掉的），加上 docs/、test/、tools/ 裡新的網頁、程式和圖示（git 的 glob 不會跨資料夾）。
+# 新檔案一個一個加：某一類一個都沒有時（例如 docs/ 裡唯一的 .js 被刪掉了），git add 不會因為「沒有符合的檔案」而停下來，
+# 下面的檢查才能說明哪裡不對。
 git add -u || failed
+git -c core.quotepath=false ls-files -z -o --exclude-standard -- ':(glob)docs/*.html' ':(glob)docs/*.js' ':(glob)docs/*.webmanifest' ':(glob)docs/icons/*.png' \
+  ':(glob)test/*.js' ':(glob)test/*.sh' ':(glob)tools/*.js' | while IFS= read -r -d '' f; do git add -- "$f" || exit 1; done || failed
 if [ -n "$(markers --cached)" ]; then
   echo
   markers --cached
@@ -115,7 +139,7 @@ else
   echo
   git -c core.quotepath=false status --short
   echo
-  echo "開頭是 ?? 的不會發布，只留在這個資料夾。"
+  echo "開頭是 ?? 的不會發布，只留在這個資料夾（docs/、test/、tools/ 裡只有網頁、程式和圖示會發布）。"
   if ! ask "要把其他變更發布到公開的 GitHub repo 嗎？"; then
     git reset -q
     echo
@@ -186,6 +210,10 @@ if [ -n "$(markers origin/main HEAD)" ]; then
   echo
   echo "要發布的 commit 裡還留著衝突標記（<<<<<<<、=======、>>>>>>> 這類的行，見上面），發布出去的話網站會壞掉。"
   echo "這次沒有發布任何東西，commit 只留在這台電腦。請找人幫忙解決衝突後，再點一次這個檔案。"
+  finish 1
+fi
+if ! site_ok; then
+  echo "這次沒有發布任何東西，commit 只留在這台電腦。請把檔案放回去（或改回完整的版本）後，再點一次這個檔案。"
   finish 1
 fi
 

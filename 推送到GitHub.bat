@@ -1,11 +1,15 @@
 @echo off
 rem Kaikou practice room: publish your changes to the public GitHub repo willisXu/kaikou-practice.
-rem Only docs\, test\, tools\ and files that are already in the repo are published.
-rem Anything else you put in this folder stays on this computer.
+rem Only files that are already in the repo, and new pages, code and icons in docs\, test\ and tools\ (by file type)
+rem are published. Anything else you put in this folder (an exported backup, a 4/3/2 recording, files left by a merge
+rem tool) may be private and stays on this computer. Publishing happens only from the main branch, and never when the
+rem version to publish lacks the site's files or holds an incomplete docs\index.html.
 rem Commits made on this computer some other way are listed and published only after you say Y.
 rem GitHub Pages updates about a minute after a successful push.
 chcp 65001 >nul
 cd /d "%~dp0"
+rem Long lists must not stop in a pager waiting for q.
+set "GIT_PAGER=cat"
 set "COMMITTED=0"
 
 where git >nul 2>nul
@@ -24,11 +28,21 @@ if exist ".git\REVERT_HEAD" goto unfinished
 rem A file whose conflict is not solved yet (for example after changes set aside were taken back, as VS Code does when
 rem it pulls): staging it would mark the conflict solved and publish its conflict markers, which break the page.
 for /f %%u in ('git ls-files -u') do goto conflicted
+rem Publish only from main: publishing from another branch would push that branch onto main on GitHub.
+set "BRANCH="
+for /f "delims=" %%b in ('git symbolic-ref -q --short HEAD') do set "BRANCH=%%b"
+if not "%BRANCH%"=="main" goto notmain
 
 echo == [1/3] Changes to publish
-for %%d in (docs test tools) do if exist "%%d\" git add -A -- "%%d"
+rem Files already in the repo (changed or deleted), and new pages, code and icons in docs\, test\ and tools\ (Git's
+rem glob does not cross folders). New files are added one by one: when one kind has none at all (the only .js in docs\
+rem deleted, say), git add does not stop for want of a match, and the checks below can say what is wrong.
 git add -u
 if errorlevel 1 goto failed
+for /f "delims=" %%f in ('git -c "core.quotepath=false" ls-files -o --exclude-standard -- ":(glob)docs/*.html" ":(glob)docs/*.js" ":(glob)docs/*.webmanifest" ":(glob)docs/icons/*.png" ":(glob)test/*.js" ":(glob)test/*.sh" ":(glob)tools/*.js"') do (
+    git add -- "%%f"
+    if errorlevel 1 goto failed
+)
 git diff --cached --check | findstr /c:"conflict marker"
 if not errorlevel 1 goto stagedmarkers
 git diff --cached --quiet
@@ -40,7 +54,8 @@ goto sync
 echo.
 git -c core.quotepath=false status --short
 echo.
-echo Lines starting with ?? are NOT published; they stay in this folder only.
+echo Lines starting with ?? are NOT published; they stay in this folder only (in docs\, test\ and tools\, only
+echo pages, code and icons are published).
 choice /c YN /m "Publish the other changes to the public GitHub repo"
 if errorlevel 2 goto cancelled
 rem The name and email on a commit are public on GitHub. When this computer has none set, ask once and keep them
@@ -120,6 +135,20 @@ if errorlevel 2 goto keptlocal
 :push
 git diff --check origin/main HEAD | findstr /c:"conflict marker"
 if not errorlevel 1 goto commitmarkers
+rem The site's files must be there and the page complete (it holds the closing html tag, which comes last): a
+rem docs\index.html moved, renamed or saved only half way breaks the site.
+for %%f in (docs/index.html docs/sw.js docs/manifest.webmanifest) do (
+    git cat-file -e "HEAD:%%f" 2>nul
+    if errorlevel 1 goto brokensite
+)
+git show HEAD:docs/index.html > "%TEMP%\kaikou-index-check.html"
+if errorlevel 1 goto brokensite
+findstr /c:"</html>" "%TEMP%\kaikou-index-check.html" >nul
+if errorlevel 1 (
+    del "%TEMP%\kaikou-index-check.html" 2>nul
+    goto brokensite
+)
+del "%TEMP%\kaikou-index-check.html" 2>nul
 echo.
 echo == [3/3] Push to GitHub
 git push origin HEAD:main
@@ -172,6 +201,22 @@ echo.
 echo The files to publish still hold conflict markers (see the lines above). Publishing them would
 echo break the page, so nothing was done. Ask for help to solve the conflict, then run this script again.
 goto done
+
+:notmain
+if not defined BRANCH set "BRANCH=no branch"
+echo.
+echo This folder is not on the main branch (it is on: %BRANCH%), so nothing was done.
+echo Publishing from another branch would push that branch onto main on GitHub. Switch back to main
+echo (for example in the bottom-left corner of VS Code), then run this script again.
+goto done
+
+:brokensite
+echo.
+echo The version to publish lacks docs\index.html, docs\sw.js or docs\manifest.webmanifest, or its docs\index.html
+echo is incomplete (it does not end with the closing html tag; it may have been saved only half way). Publishing it
+echo would break the site, so nothing was published: the commits stay on this computer only. Put the files back
+echo (or restore the complete page), then run this script again.
+goto failed
 
 :commitmarkers
 echo.

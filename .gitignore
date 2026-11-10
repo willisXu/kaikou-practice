@@ -6,7 +6,19 @@ test/shots/
 test/*.html
 node_modules/
 
+# 從 App 下載的私人檔案（備份檔有「關於我」和對話裡的句子）與合併工具留下的檔案：不能發布到公開的 repo
+kaikou-backup-*.json
+4-3-2-*
+*_LOCAL_*
+*_REMOTE_*
+*_BASE_*
+*_BACKUP_*
+*.orig
+*.rej
+
 # 編輯器、Office 暫存與系統檔
+._*
+*.swp
 .claude/
 .vscode/
 ~$*
