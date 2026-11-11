@@ -1,0 +1,26 @@
+# Render Blueprint：開口練習室的教練伺服器（server/）。
+# 在 Render 按 New → Blueprint，選這個 repo，Render 會照這裡建立服務；步驟見 README 的「教練伺服器」。
+# - ANTHROPIC_API_KEY：建立時 Render 會請你貼上（Claude Console 的 API 金鑰，sk-ant-api 開頭），不會寫在這個檔案裡。
+# - ACCESS_CODE：Render 自動產生一組隨機的存取碼，到服務的 Environment 頁面複製，貼到網頁版的設定。
+# - 免費方案：閒置 15 分鐘會休眠，之後第一次使用要等約 1 分鐘醒來。
+services:
+  - type: web
+    name: kaikou-coach
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: server
+    buildCommand: npm install --omit=dev --no-audit --no-fund
+    startCommand: node index.js
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - server/**
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ACCESS_CODE
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        value: https://willisxu.github.io

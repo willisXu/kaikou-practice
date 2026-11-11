@@ -161,6 +161,10 @@ ok "S23 page cut off: refuses to push" '[ "$(code)" = 1 ] && has "不完整" && 
 seed; (cd "$T/work" && echo '{"about":"private"}' > docs/kaikou-backup-2026-11-10.json && echo rec > "docs/4-3-2-第1次.webm" && echo note > docs/notes.txt && echo '// new' > docs/extra.js); run 'y\n'
 ok "S24 only pages, code and icons from docs/ are published" '[ "$(code)" = 0 ] && git --git-dir=$T/remote.git cat-file -e main:docs/extra.js && ! git --git-dir=$T/remote.git cat-file -e main:docs/kaikou-backup-2026-11-10.json 2>/dev/null && ! git --git-dir=$T/remote.git cat-file -e main:docs/notes.txt 2>/dev/null && [ -z "$(git --git-dir=$T/remote.git ls-tree --name-only main -- docs/ | grep 4-3-2)" ] && [ -e "$T/work/docs/notes.txt" ]'
 
+# S27 new files of the coach server: its code goes out; a .env with a key, or a note, stays here
+seed; (cd "$T/work" && echo '// new' > server/extra.js && echo 'ANTHROPIC_API_KEY=not-a-real-key' > server/.env && echo note > server/notes.txt); run 'y\n'
+ok "S27 new server code is published; server/.env and other new files there stay here" '[ "$(code)" = 0 ] && git --git-dir=$T/remote.git cat-file -e main:server/extra.js && ! git --git-dir=$T/remote.git cat-file -e main:server/.env 2>/dev/null && ! git --git-dir=$T/remote.git cat-file -e main:server/notes.txt 2>/dev/null'
+
 # S26 the only .js file of docs/ was deleted: no raw git error about a pattern without a match; the site check says why
 seed; R0=$(remote_head); rm "$T/work/docs/sw.js"; run 'y\n'
 ok "S26 docs/sw.js deleted: explains that the site would break, publishes nothing" '[ "$(code)" = 1 ] && has "沒有 docs/sw.js" && ! has "did not match" && [ "$(remote_head)" = "$R0" ]'

@@ -1,8 +1,9 @@
 #!/bin/bash
 # 開口練習室：把這個資料夾的變更發布到公開的 GitHub repo willisXu/kaikou-practice（Mac 版，點兩下就會在「終端機」裡執行）。
 # 和 推送到GitHub.bat（Windows 版）做一樣的事：
-# - 只發布 repo 裡原有的檔案，和 docs/、test/、tools/ 裡新的網頁、程式與圖示（依副檔名，見 ALLOW）；其他新檔案
-#   （例如匯出的備份檔、4/3/2 的錄音、合併工具留下的檔案）可能有私人的內容，只留在這台電腦。
+# - 只發布 repo 裡原有的檔案、docs/、test/、tools/ 裡新的網頁、程式與圖示，和教練伺服器新的程式、package.json 與
+#   render.yaml（依副檔名）；其他新檔案（例如匯出的備份檔、4/3/2 的錄音、合併工具留下的檔案、放金鑰的 server/.env）
+#   可能有私人的內容，只留在這台電腦。
 # - 只從 main 分支發布；要發布的版本少了網站的檔案、或 docs/index.html 不完整時不推送。
 # - 這台電腦上用別的方式做的、還沒上 GitHub 的 commit，會先列出來，按 Y 才一起發布。
 # - 推送成功後，GitHub Pages 約 1 分鐘後更新。
@@ -118,12 +119,14 @@ if [ "$BRANCH" != main ]; then
 fi
 
 echo "== [1/3] 要發布的變更"
-# repo 裡原有的檔案（改過的、刪掉的），加上 docs/、test/、tools/ 裡新的網頁、程式和圖示（git 的 glob 不會跨資料夾）。
+# repo 裡原有的檔案（改過的、刪掉的），加上 docs/、test/、tools/ 裡新的網頁、程式和圖示，和教練伺服器的程式、
+# package.json 與 render.yaml（git 的 glob 不會跨資料夾）。
 # 新檔案一個一個加：某一類一個都沒有時（例如 docs/ 裡唯一的 .js 被刪掉了），git add 不會因為「沒有符合的檔案」而停下來，
 # 下面的檢查才能說明哪裡不對。
 git add -u || failed
 git -c core.quotepath=false ls-files -z -o --exclude-standard -- ':(glob)docs/*.html' ':(glob)docs/*.js' ':(glob)docs/*.webmanifest' ':(glob)docs/icons/*.png' \
-  ':(glob)test/*.js' ':(glob)test/*.sh' ':(glob)tools/*.js' | while IFS= read -r -d '' f; do git add -- "$f" || exit 1; done || failed
+  ':(glob)test/*.js' ':(glob)test/*.sh' ':(glob)tools/*.js' ':(glob)server/*.js' ':(glob)server/package.json' ':(glob)render.yaml' \
+  | while IFS= read -r -d '' f; do git add -- "$f" || exit 1; done || failed
 if [ -n "$(markers --cached)" ]; then
   echo
   markers --cached
@@ -139,7 +142,7 @@ else
   echo
   git -c core.quotepath=false status --short
   echo
-  echo "開頭是 ?? 的不會發布，只留在這個資料夾（docs/、test/、tools/ 裡只有網頁、程式和圖示會發布）。"
+  echo "開頭是 ?? 的不會發布，只留在這個資料夾（docs/、test/、tools/ 裡只有網頁、程式和圖示會發布，server/ 裡只有程式和 package.json）。"
   if ! ask "要把其他變更發布到公開的 GitHub repo 嗎？"; then
     git reset -q
     echo

@@ -1,7 +1,7 @@
 @echo off
 rem Kaikou practice room: publish your changes to the public GitHub repo willisXu/kaikou-practice.
-rem Only files that are already in the repo, and new pages, code and icons in docs\, test\ and tools\ (by file type)
-rem are published. Anything else you put in this folder (an exported backup, a 4/3/2 recording, files left by a merge
+rem Only files that are already in the repo, new pages, code and icons in docs\, test\ and tools\, and the coach
+rem server's code, package.json and render.yaml (by file type) are published. Anything else you put in this folder (an exported backup, a 4/3/2 recording, files left by a merge
 rem tool) may be private and stays on this computer. Publishing happens only from the main branch, and never when the
 rem version to publish lacks the site's files or holds an incomplete docs\index.html.
 rem Commits made on this computer some other way are listed and published only after you say Y.
@@ -34,12 +34,12 @@ for /f "delims=" %%b in ('git symbolic-ref -q --short HEAD') do set "BRANCH=%%b"
 if not "%BRANCH%"=="main" goto notmain
 
 echo == [1/3] Changes to publish
-rem Files already in the repo (changed or deleted), and new pages, code and icons in docs\, test\ and tools\ (Git's
-rem glob does not cross folders). New files are added one by one: when one kind has none at all (the only .js in docs\
+rem Files already in the repo (changed or deleted), new pages, code and icons in docs\, test\ and tools\, and the coach
+rem server's code, package.json and render.yaml (Git's glob does not cross folders). New files are added one by one: when one kind has none at all (the only .js in docs\
 rem deleted, say), git add does not stop for want of a match, and the checks below can say what is wrong.
 git add -u
 if errorlevel 1 goto failed
-for /f "delims=" %%f in ('git -c "core.quotepath=false" ls-files -o --exclude-standard -- ":(glob)docs/*.html" ":(glob)docs/*.js" ":(glob)docs/*.webmanifest" ":(glob)docs/icons/*.png" ":(glob)test/*.js" ":(glob)test/*.sh" ":(glob)tools/*.js"') do (
+for /f "delims=" %%f in ('git -c "core.quotepath=false" ls-files -o --exclude-standard -- ":(glob)docs/*.html" ":(glob)docs/*.js" ":(glob)docs/*.webmanifest" ":(glob)docs/icons/*.png" ":(glob)test/*.js" ":(glob)test/*.sh" ":(glob)tools/*.js" ":(glob)server/*.js" ":(glob)server/package.json" ":(glob)render.yaml"') do (
     git add -- "%%f"
     if errorlevel 1 goto failed
 )

@@ -16,6 +16,11 @@ kaikou-backup-*.json
 *.orig
 *.rej
 
+# 放金鑰或存取碼的設定檔（教練伺服器在自己電腦上試的時候）：不能發布
+.env
+.env.*
+*.pem
+
 # 編輯器、Office 暫存與系統檔
 ._*
 *.swp

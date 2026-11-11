@@ -44,7 +44,7 @@ function check(name, fn) {
 const eq = (actual, expected) => assert.deepStrictEqual(actual, expected);
 // npm test -- 3b,6 (or ONLY=3b,6) runs just those sections (each section's blocks are wrapped in want()). The argument
 // works in every shell, Windows' too.
-const SECTIONS = ['1', '2', '3', '3b', '4', '5', '6', '6b', '6c', '7', '8', '9', '10', '11', '12', '13'];
+const SECTIONS = ['1', '2', '3', '3b', '4', '5', '6', '6b', '6c', '7', '8', '9', '10', '11', '12', '13', '14'];
 const ONLY = String(process.argv[2] || process.env.ONLY || '').split(',').map(s => s.trim()).filter(Boolean);
 if (ONLY.some(s => !SECTIONS.includes(s))) {
   console.error('ONLY: unknown section ' + ONLY.filter(s => !SECTIONS.includes(s)).join(', ') + ' (sections: ' + SECTIONS.join(', ') + ')');
@@ -120,7 +120,9 @@ function serve(root) {
     await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
     // The browser logs the deliberate API failures of the API key scenarios (401, 400, 402, 403, 429, 500) as errors;
     // anything else counts.
-    const expected = t => /ERR_FAILED|net::/.test(t) || (/^apikey/.test(tag) && /status of (40[0-3]|429|500)\b/.test(t));
+    // So does the coach server's (401, 503) and its stand-in for a server that is still waking up (no CORS).
+    const expected = t => /ERR_FAILED|net::/.test(t) || (/^apikey/.test(tag) && /status of (40[0-3]|429|500)\b/.test(t))
+      || (/^server/.test(tag) && (/status of (401|503)\b/.test(t) || /blocked by CORS policy/.test(t)));
     page.on('console', m => { if (m.type() === 'error' && !expected(m.text())) errors.push('[' + tag + '] console: ' + m.text()); });
     page.on('pageerror', e => errors.push('[' + tag + '] pageerror: ' + e.message));
     await page.addInitScript(c => { window.__kaikouTest = true; if (c) window.__mockCfg = c; }, init || null);
@@ -564,7 +566,8 @@ function serve(root) {
     const before = await page.evaluate(() => ({ title: (document.querySelector('#coach-dyn .card-title') || {}).textContent, btn: !!document.querySelector('[data-fk="open-key"]') }));
     await shot(page, '11-pages-no-key.png');
     await page.click('[data-fk="open-key"]');
-    await until(page, () => document.activeElement && document.activeElement.id === 'set-api-key', null, 3000);
+    // Nothing set up yet: 開啟設定 leads to the coach server's address first (the key is right below).
+    await until(page, () => document.activeElement && document.activeElement.id === 'set-srv-url', null, 3000);
     const empty = await page.evaluate(() => ({ field: !document.querySelector('#set-api-field').hidden, state: document.querySelector('#set-api-state').textContent, remove: !document.querySelector('#set-api-clear').hidden }));
     await page.fill('#set-api-key', 'sk-ant-usr-not-an-api-key-1234567890');
     await page.click('#set-api-save');
@@ -5780,7 +5783,7 @@ function serve(root) {
     const { ctx, page } = await open(base, { viewport: { width: 400, height: 860 }, serviceWorkers: 'block' }, 'course-web');
     await page.click('[data-fk="lesson-go"]');
     await page.click('[data-fk="lday-4"]');
-    const noCoach = await page.evaluate(() => [!!document.querySelector('[data-fk="l-coach"]'), [...document.querySelectorAll('#today-dyn .help')].map(n => n.textContent).some(t => t.includes('要先到設定輸入 Claude API 金鑰，教練才能和你演這個情境')),
+    const noCoach = await page.evaluate(() => [!!document.querySelector('[data-fk="l-coach"]'), [...document.querySelectorAll('#today-dyn .help')].map(n => n.textContent).some(t => t.includes('要先到設定填教練伺服器或 Claude API 金鑰，教練才能和你演這個情境')),
       !!document.querySelector('[data-fk="tool-key"]'), document.querySelectorAll('#today-dyn .vary-list li').length]);
     await page.click('[data-fk="l-done"]');
     await page.waitForTimeout(500);
@@ -5961,6 +5964,596 @@ function serve(root) {
       eq(button, '瀏覽器這次不讓頁面出聲：按一下喇叭按鈕再試一次。');
     });
   }
+
+  // ===== 14. The coach server (server/index.js) =====
+  // A stand-in for the Claude API on this computer (up.answer changes how it answers), and the server started with given
+  // settings (its log lines are kept: no key, code or content may be in them). The key and the code are made up.
+  async function coachKit() {
+    const { createApp, config, problem, MODELS, FIELDS, MAX_BODY, CODE_RE, KEY_RE } = require('../server/index.js');
+    const KEY = 'sk-ant-api03-' + 'TESTONLY'.repeat(6) + '-AA';
+    const CODE = 'test-code-' + 'X'.repeat(24);
+    const up = { calls: [], answer: null, closed: 0 };
+    const upSrv = http.createServer((req, res) => {
+      let raw = '';
+      req.on('data', c => { raw += c; });
+      req.on('end', () => {
+        let body = {};
+        try { body = JSON.parse(raw); } catch (_) { body = {}; }
+        up.calls.push({ url: req.url, headers: req.headers, body, raw });
+        res.on('close', () => { if (!res.writableFinished) up.closed++; });
+        const a = up.answer;
+        if (a && a.status && a.html) { res.writeHead(a.status, { 'content-type': 'text/html' }); res.end('<html><title>Bad gateway</title></html>'); return; }
+        if (a && a.status) { res.writeHead(a.status, { 'content-type': 'application/json' }); res.end(JSON.stringify({ type: 'error', error: a.error })); return; }
+        const msgs = body.messages || [];
+        const all = sse(msgs.length === 1 ? 'Hi! What did you do last weekend?\n###\n{"none": true}' : 'That sounds lovely. Tell me more!\n###\n{"none": true}');
+        res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+        if (a && a.slow) { // the first events now, the rest later (or never, when the caller stops first)
+          const cut = all.indexOf('event: content_block_delta');
+          res.write(all.slice(0, cut));
+          const t = setTimeout(() => res.end(all.slice(cut)), a.slow);
+          res.on('close', () => clearTimeout(t));
+          return;
+        }
+        res.end(all);
+      });
+    });
+    await new Promise(r => upSrv.listen(0, '127.0.0.1', r));
+    const upstream = 'http://127.0.0.1:' + upSrv.address().port;
+    const logs = [], apps = [];
+    const start = async env => {
+      const app = createApp(config(Object.assign({ ANTHROPIC_BASE_URL: upstream, ALLOWED_ORIGINS: new URL(base).origin }, env)), l => logs.push(l));
+      await new Promise(r => app.listen(0, '127.0.0.1', r));
+      apps.push(app);
+      return 'http://127.0.0.1:' + app.address().port;
+    };
+    const main = await start({ ANTHROPIC_API_KEY: KEY, ACCESS_CODE: CODE });
+    const close = () => { for (const a of apps.concat(upSrv)) { a.closeAllConnections(); a.close(); } };
+    return { MODELS, FIELDS, MAX_BODY, CODE_RE, KEY_RE, config, problem, KEY, CODE, up, upstream, logs, start, main, close };
+  }
+  const SV = want('14') ? await coachKit() : null;
+  // 設定 → 教練伺服器: the address and the code, saved, then (with ok) the check that it answers.
+  async function saveServer(page, url, code, ok) {
+    if (!(await page.evaluate(() => document.querySelector('#settings').open))) await page.click('#btn-settings');
+    await page.fill('#set-srv-url', url);
+    await page.fill('#set-srv-code', code);
+    await page.click('#set-srv-save');
+    await until(page, re => new RegExp(re).test(document.querySelector('#set-srv-state').textContent), ok || '^(已連上|連上了|.* 還沒設定好|.* 不接受這個網站|連不上)', 15000);
+  }
+
+  if (want('14')) {
+    // 14a. The server on its own: who may call, what goes on to the API, the stream, what it refuses, its setup, limits.
+    const { up, KEY, CODE, main, start, logs } = SV;
+    const site = new URL(base).origin;
+    const auth = c => ({ authorization: 'Bearer ' + c });
+    const post = (url, body, h) => fetch(url + '/v1/messages', { method: 'POST', headers: Object.assign({ 'content-type': 'application/json', origin: site }, h || {}), body: typeof body === 'string' ? body : JSON.stringify(body) });
+    const json = async r => ({ status: r.status, type: ((await r.json().catch(() => ({}))).error || {}).type });
+    const ok = { model: 'claude-haiku-5-5', max_tokens: 2048, thinking: { type: 'disabled' }, stream: true, messages: [{ role: 'user', content: 'Hello' }] };
+
+    const health = await fetch(main + '/health', { headers: { origin: site } });
+    const healthOther = await fetch(main + '/health', { headers: { origin: 'http://elsewhere.test' } });
+    const healthNone = await (await fetch(main + '/health')).json();
+    const pre = await fetch(main + '/v1/messages', { method: 'OPTIONS', headers: { origin: site, 'access-control-request-method': 'POST', 'access-control-request-headers': 'authorization,content-type' } });
+    const who = {
+      health: [health.status, health.headers.get('access-control-allow-origin') === site, await health.json()],
+      other: [healthOther.status, healthOther.headers.get('access-control-allow-origin'), await healthOther.json(), healthNone],
+      pre: [pre.status, /authorization/.test(pre.headers.get('access-control-allow-headers') || ''), pre.headers.get('access-control-allow-origin') === site],
+      elsewhere: await json(await post(main, ok, Object.assign(auth(CODE), { origin: 'http://elsewhere.test' }))),
+      none: await json(await post(main, ok)),
+      wrong: await json(await post(main, ok, auth(CODE + 'x'))),
+      lost: [(await fetch(main + '/nope')).status, (await fetch(main + '/v1/messages')).status, (await fetch(main + '/')).status],
+      reached: up.calls.length,
+    };
+
+    // What goes on to the API, and the answer passed on piece by piece.
+    up.answer = { slow: 700 };
+    const t0 = Date.now();
+    const res = await post(main, ok, auth(CODE));
+    const reader = res.body.getReader();
+    const first = await reader.read();
+    const tFirst = Date.now() - t0;
+    let rest = '';
+    for (;;) { const x = await reader.read(); if (x.done) break; rest += Buffer.from(x.value).toString(); }
+    const tAll = Date.now() - t0;
+    up.answer = null;
+    const call = up.calls[up.calls.length - 1];
+    const sent = {
+      status: res.status, type: res.headers.get('content-type'), cors: res.headers.get('access-control-allow-origin') === site,
+      streamed: tAll >= 650 && tFirst < tAll - 300, whole: (Buffer.from(first.value).toString() + rest).includes('message_stop'),
+      key: call.headers['x-api-key'] === KEY, version: call.headers['anthropic-version'], path: call.url,
+      passed: ['authorization', 'origin', 'anthropic-dangerous-direct-browser-access', 'cookie'].filter(h => h in call.headers),
+      same: call.raw === JSON.stringify(ok),
+    };
+
+    // A body with a key written twice is checked by its last value, and only that value goes on.
+    const twice = '{"model":"claude-opus-5-5","model":"claude-haiku-5-5","max_tokens":999999,"max_tokens":2048,"stream":true,"messages":[{"role":"user","content":"Hello"}]}';
+    const twiceRes = await post(main, twice, auth(CODE));
+    await twiceRes.arrayBuffer();
+    const twiceRaw = up.calls[up.calls.length - 1].raw;
+    // Only the coach's own kind of request reaches the API.
+    const before = up.calls.length;
+    const refused = {
+      model: await json(await post(main, Object.assign({}, ok, { model: 'claude-opus-5-5' }), auth(CODE))),
+      tokens: await json(await post(main, Object.assign({}, ok, { max_tokens: 4096 }), auth(CODE))),
+      tools: await json(await post(main, Object.assign({}, ok, { tools: [{ type: 'web_search_20250305', name: 'web_search' }] }), auth(CODE))),
+      empty: await json(await post(main, Object.assign({}, ok, { messages: [] }), auth(CODE))),
+      notJson: await json(await post(main, '{"model":', auth(CODE))),
+      big: await post(main, Object.assign({}, ok, { messages: [{ role: 'user', content: 'x'.repeat(SV.MAX_BODY) }] }), auth(CODE)).then(json, e => ({ status: 'closed: ' + e.message })),
+      // The same without a length given beforehand (sent in pieces): stopped while it comes in.
+      bigPieces: await new Promise(resolve => {
+        const u = new URL(main + '/v1/messages');
+        const rq = http.request({ host: u.hostname, port: u.port, path: u.pathname, method: 'POST', headers: Object.assign({ 'content-type': 'application/json', 'transfer-encoding': 'chunked' }, auth(CODE)) }, r => {
+          let b = ''; r.on('data', c => { b += c; }); r.on('end', () => { let t; try { t = JSON.parse(b).error.type; } catch (_) { t = ''; } resolve({ status: r.statusCode, type: t }); });
+        });
+        rq.on('error', e => resolve({ status: 'closed: ' + e.message }));
+        const piece = 'x'.repeat(64 * 1024);
+        rq.write('{"model":"claude-haiku-5-5","max_tokens":10,"messages":[{"role":"user","content":"');
+        for (let i = 0; i * piece.length < SV.MAX_BODY + piece.length; i++) rq.write(piece);
+        rq.end('"}]}');
+      }),
+    };
+    refused.reached = up.calls.length - before;
+
+    // The API's own errors come back as they are; an API that cannot be reached is told; the caller stopping stops the API.
+    up.answer = { status: 529, error: { type: 'overloaded_error', message: 'Overloaded' } };
+    const busyRes = await post(main, ok, auth(CODE));
+    const busy = [busyRes.status, await busyRes.json()];
+    up.answer = { status: 502, html: true };
+    const edge = await json(await post(main, ok, auth(CODE)));
+    up.answer = { slow: 8000 };
+    const ac = new AbortController();
+    const cutRes = await fetch(main + '/v1/messages', { method: 'POST', headers: Object.assign({ 'content-type': 'application/json', origin: site }, auth(CODE)), body: JSON.stringify(ok), signal: ac.signal });
+    await cutRes.body.getReader().read();
+    const closedBefore = up.closed;
+    ac.abort();
+    const t1 = Date.now();
+    while (up.closed === closedBefore && Date.now() - t1 < 3000) await new Promise(r => setTimeout(r, 50));
+    const stopped = up.closed > closedBefore;
+    up.answer = null;
+    const gone = await start({ ANTHROPIC_API_KEY: KEY, ACCESS_CODE: CODE, ANTHROPIC_BASE_URL: 'http://127.0.0.1:9' });
+    const noApi = await json(await post(gone, ok, auth(CODE)));
+
+    // Set up wrong: not usable, and says which setting to fix (a wrong code is still told first).
+    const noCode = await start({ ANTHROPIC_API_KEY: KEY, ACCESS_CODE: '' });
+    const short = await start({ ANTHROPIC_API_KEY: KEY, ACCESS_CODE: 'short-code' });
+    const notKey = await start({ ANTHROPIC_API_KEY: 'sk-ant-usr-not-an-api-key-1234567890', ACCESS_CODE: CODE });
+    const oddCode = await start({ ANTHROPIC_API_KEY: KEY, ACCESS_CODE: 'test-code-\u200b' + 'Ｘ'.repeat(20) });
+    const anyWay = await start({ ANTHROPIC_API_KEY: KEY, ACCESS_CODE: CODE, ALLOWED_ORIGINS: ' ' + site.toUpperCase() + '/ , not a site' });
+    const setup = {
+      ready: [(await (await fetch(noCode + '/health')).json()).ready, (await (await fetch(notKey + '/health')).json()).ready],
+      noCode: await json(await post(noCode, ok, auth('y'.repeat(30)))),
+      short: await json(await post(short, ok, auth('short-code'))),
+      notKey: await json(await post(notKey, ok, auth(CODE))),
+      notKeyWrong: await json(await post(notKey, ok, auth(CODE + 'x'))),
+      oddCode: await json(await post(oddCode, ok, auth('y'.repeat(30)))),
+      anyWay: (await post(anyWay, ok, auth(CODE))).status,
+      halfSite: (c => [c.origins, c.ignored, /^ALLOWED_ORIGINS/.test(SV.problem(c))])(SV.config({ ANTHROPIC_API_KEY: KEY, ACCESS_CODE: CODE, ALLOWED_ORIGINS: 'willisxu.github.io' })),
+      check: [(await fetch(main + '/v1/check', { headers: auth(CODE) })).status, (await fetch(main + '/v1/check', { headers: auth('nope') })).status, (await fetch(notKey + '/v1/check', { headers: auth(CODE) })).status],
+    };
+
+    // So many requests a minute and a day (a wrong code does not use them up). The three requests of the minute run again
+    // (with a new server) when they happened to cross into the next minute.
+    let minute = null;
+    for (let i = 0; i < 3 && !minute; i++) {
+      const lim = await start({ ANTHROPIC_API_KEY: KEY, ACCESS_CODE: CODE, RATE_PER_MIN: '2' });
+      const m = Math.floor(Date.now() / 60000), r = [];
+      for (const c of [CODE + 'x', CODE, CODE, CODE]) { const x = await post(lim, ok, auth(c)); r.push([x.status, x.headers.get('retry-after') !== null]); await x.arrayBuffer(); }
+      if (Math.floor(Date.now() / 60000) === m) minute = r;
+    }
+    const day = await start({ ANTHROPIC_API_KEY: KEY, ACCESS_CODE: CODE, RATE_PER_DAY: '1', RATE_PER_MIN: '50' });
+    const perDay = [];
+    for (let i = 0; i < 2; i++) { const x = await post(day, ok, auth(CODE)); perDay.push(x.status); await x.arrayBuffer(); }
+    // The page's models and token limits (API_MODELS in docs/index.html).
+    const same = [(/const SRV_CODE_RE = \/(.+)\/;/.exec(full) || [])[1] === SV.CODE_RE.source, full.includes('if (!/' + SV.KEY_RE.source + '/.test(v))')];
+    const block = full.slice(full.indexOf('const API_MODELS = {'), full.indexOf('};', full.indexOf('const API_MODELS = {')));
+    const pageModels = {};
+    for (const m of block.matchAll(/model: '([\w.-]+)', max_tokens: (\d+)/g)) pageModels[m[1]] = Number(m[2]);
+
+    check('教練伺服器：/health 不用存取碼；只有允許的網站拿得到回應，別的網站一律拒絕；沒有存取碼或存取碼不對時拒絕，什麼都不會送到 Claude API', () => {
+      eq(who.health, [200, true, { ok: true, ready: true, site: true }]);
+      eq(who.other, [200, '*', { ok: true, ready: true, site: false }, { ok: true, ready: true, site: null }]);
+      eq(who.pre, [204, true, true]);
+      eq([who.elsewhere, who.none, who.wrong], [{ status: 403, type: 'kaikou_origin' }, { status: 401, type: 'kaikou_code' }, { status: 401, type: 'kaikou_code' }]);
+      eq(who.lost, [404, 405, 200]);
+      eq(who.reached, 0);
+    });
+    check('教練伺服器：存取碼對了才轉給 Claude API（金鑰由伺服器加上，存取碼和網站的資訊不轉出去，內容一字不改）；回覆一段一段照樣傳回；/health 任何網站都讀得到，說那個網站能不能用', () => {
+      eq(sent, { status: 200, type: 'text/event-stream; charset=utf-8', cors: true, streamed: true, whole: true, key: true, version: '2023-06-01', path: '/v1/messages', passed: [], same: true });
+    });
+    check('教練伺服器：只接受網頁版的模型、欄位和長度，太長（有沒有先說長度都一樣）或不是 JSON 的內容不轉出去；同一個欄位寫兩次時，轉出去的就是檢查過的那個', () => {
+      const no = { status: 400, type: 'kaikou_request' };
+      eq(refused, { model: no, tokens: no, tools: no, empty: no, notJson: no, big: { status: 413, type: 'kaikou_too_large' }, bigPieces: { status: 413, type: 'kaikou_too_large' }, reached: 0 });
+      eq([twiceRes.status, twiceRaw.split('"model"').length - 1, twiceRaw.split('"max_tokens"').length - 1, JSON.parse(twiceRaw).model, JSON.parse(twiceRaw).max_tokens], [200, 1, 1, 'claude-haiku-5-5', 2048]);
+    });
+    check('教練伺服器：Claude API 的錯誤照原樣傳回（不是它平常的錯誤時說連不上）；連不上 Claude API 時說明；呼叫的一方停止時也停止 Claude API 的回覆（沒寫完的不計費）', () => {
+      eq(busy, [529, { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }]);
+      eq(noApi, { status: 502, type: 'kaikou_upstream' });
+      eq(edge, { status: 502, type: 'kaikou_upstream' });
+      eq(stopped, true);
+    });
+    check('教練伺服器：沒有存取碼、存取碼太短或有英數字和符號以外的字、金鑰不是 Claude Console 的 API 金鑰（例如 Claude 帳號的登入憑證）時不能用，/health 說還沒設定好；存取碼不對的照樣先說不對；ALLOWED_ORIGINS 怎麼寫都認得，不是完整網址的會說出來', () => {
+      const cfg = { status: 503, type: 'kaikou_config' };
+      eq(setup, { ready: [false, false], noCode: cfg, short: cfg, notKey: cfg, notKeyWrong: { status: 401, type: 'kaikou_code' }, oddCode: cfg, anyWay: 200, halfSite: [[], ['willisxu.github.io'], true], check: [204, 401, 503] });
+    });
+    check('教練伺服器：每分鐘、每天的請求次數有上限，到了回 429 並說多久後再試（存取碼不對的不算次數）；模型、上限、存取碼和金鑰的格式跟網頁版的一樣；紀錄裡沒有金鑰、存取碼和內容', () => {
+      eq(minute, [[401, false], [200, false], [200, false], [429, true]]);
+      eq(perDay, [200, 429]);
+      eq(pageModels, SV.MODELS);
+      eq(same, [true, true]);
+      eq([logs.length > 20, logs.filter(l => l.includes(KEY) || l.includes(CODE) || l.includes('Hello')).length], [true, 0]);
+    });
+  }
+
+  if (want('14')) {
+    // 14b. The web version through the server: 設定 (the address and the code), the coach's answers, no key in the browser.
+    const { up, KEY, CODE, main } = SV;
+    const { ctx, page } = await open(base + '#coach', { viewport: { width: 1000, height: 800 }, colorScheme: 'light', serviceWorkers: 'block' }, 'server-pages');
+    const page2 = await addPage(ctx, base + '#coach', 'server-pages-2');
+    const seen = [];
+    page.on('request', r => { if (r.url().startsWith(main)) seen.push({ path: r.url().slice(main.length), method: r.method(), auth: r.headers().authorization || '', key: r.headers()['x-api-key'] || '' }); });
+    await page.route('https://api.anthropic.com/**', r => { seen.push({ direct: true }); return r.abort(); });
+    const toastText = () => page.evaluate(() => document.querySelector('#toast').textContent);
+    const stored = () => page.evaluate(() => localStorage.getItem('kaikou:coach-server'));
+    await page.click('[data-fk="open-key"]');
+    await until(page, () => document.activeElement && document.activeElement.id === 'set-srv-url', null, 3000);
+    const empty = await page.evaluate(() => ({ field: !document.querySelector('#set-srv-field').hidden, state: document.querySelector('#set-srv-state').textContent, remove: !document.querySelector('#set-srv-clear').hidden }));
+    await page.fill('#set-srv-url', 'http://kaikou.example'); // http:// only for this computer
+    await page.fill('#set-srv-code', CODE);
+    await page.click('#set-srv-save');
+    const badUrl = [await toastText(), await stored()];
+    await page.fill('#set-srv-url', main + '/');
+    await page.fill('#set-srv-code', 'too-short');
+    await page.click('#set-srv-save');
+    const badCode = [await toastText(), await stored()];
+    // Enter in the address goes on to the code; Enter there saves.
+    await page.fill('#set-srv-code', '');
+    await page.press('#set-srv-url', 'Enter');
+    const toCode = await page.evaluate(() => document.activeElement.id);
+    await page.fill('#set-srv-code', CODE);
+    await page.press('#set-srv-code', 'Enter');
+    await until(page, () => /^已連上/.test(document.querySelector('#set-srv-state').textContent), null, 15000);
+    const saved = await page.evaluate(() => ({ stored: JSON.parse(localStorage.getItem('kaikou:coach-server')), code: document.querySelector('#set-srv-code').value, url: document.querySelector('#set-srv-url').value,
+      state: document.querySelector('#set-srv-state').textContent, remove: !document.querySelector('#set-srv-clear').hidden, key: document.querySelector('#set-api-state').textContent, sample: window.__kaikouTest.S.sampleState }));
+    await until(page2, () => window.__kaikouTest.S.sampleState === 'ok', null, 3000).catch(() => {});
+    const other = await page2.evaluate(() => window.__kaikouTest.S.sampleState);
+    await shot(page, '60-pages-coach-server.png');
+    await page.click('#set-done');
+    // A chat through the server.
+    const callsBefore = up.calls.length;
+    await until(page, () => { const b = document.querySelector('#start-btn'); return !!b && !b.disabled; }, null, 3000);
+    await page.click('#start-btn');
+    await notBusy(page);
+    await page.fill('#msg-input', 'We went hiking');
+    await page.click('#send-btn');
+    await notBusy(page);
+    const chat = await page.evaluate(() => window.__kaikouTest.S.chat.turns.map(t => t.r + ': ' + t.t));
+    const via = up.calls.slice(callsBefore);
+    const browserKey = await page.evaluate(() => localStorage.getItem('kaikou:api-key'));
+    // 設定 opened again: the server is checked again. A code typed but not saved is not kept. Clearing this browser's
+    // practice data keeps the server.
+    await page.evaluate(() => { window.__kaikouTest.S.srvCheck.old = true; });
+    await page.click('#btn-settings');
+    await until(page, () => { const c = window.__kaikouTest.S.srvCheck; return !!c && !c.old && c.state === 'ok'; }, null, 8000).catch(() => {});
+    const again = await page.evaluate(() => { const c = window.__kaikouTest.S.srvCheck; return !!c && !c.old && c.state; });
+    await page.fill('#set-srv-code', 'typed-but-not-saved-1234567890');
+    await page.click('#set-done');
+    await page.click('#btn-settings');
+    const typed = await page.evaluate(() => document.querySelector('#set-srv-code').value);
+    await page.click('#set-clear');
+    await page.waitForTimeout(650);
+    await Promise.all([page.waitForEvent('load'), page.click('#set-clear')]);
+    await page.waitForFunction(() => window.__kaikouTest && window.__kaikouTest.S && window.__kaikouTest.S.ready, null, { timeout: 10000 });
+    const kept = await page.evaluate(() => [JSON.parse(localStorage.getItem('kaikou:coach-server') || 'null'), window.__kaikouTest.S.sampleState]);
+    await ctx.close();
+    check('網頁版＋教練伺服器：再打開設定時再確認一次；打了沒存的存取碼關掉設定就不留；清除這個瀏覽器裡的練習資料不會刪掉教練伺服器', () => {
+      eq([again, typed], ['ok', '']);
+      eq(kept, [{ url: main, code: CODE }, 'ok']);
+    });
+    check('網頁版＋教練伺服器：在設定填網址和存取碼（格式不對的不存；網址按 Enter 到存取碼），存好後確認連得上；另一個分頁也立刻能用教練', () => {
+      eq(empty, { field: true, state: '還沒有設定教練伺服器。', remove: false });
+      eq([/https:\/\//.test(badUrl[0]), badUrl[1]], [true, null]);
+      eq([/存取碼/.test(badCode[0]), badCode[1]], [true, null]);
+      eq(toCode, 'set-srv-code');
+      eq(saved, { stored: { url: main, code: CODE }, code: '', url: main, state: '已連上 ' + new URL(main).host + '（存取碼結尾 ' + CODE.slice(-4) + '），AI 教練會經過它回覆。', remove: true, key: '用教練伺服器時不需要金鑰。', sample: 'ok' });
+      eq(other, 'ok');
+    });
+    check('網頁版＋教練伺服器：教練經過伺服器回覆，網頁只送出存取碼、金鑰由伺服器加上；瀏覽器裡沒有 API 金鑰，也不直接連 Claude API', () => {
+      eq(chat, ['c: Hi! What did you do last weekend?', 'm: We went hiking', 'c: That sounds lovely. Tell me more!']);
+      eq(via.map(c => [c.headers['x-api-key'] === KEY, Object.keys(c.body).every(k => SV.FIELDS.has(k)), 'authorization' in c.headers]), [[true, true, false], [true, true, false]]);
+      eq(seen.filter(s => s.method === 'POST').map(s => [s.path, s.auth === 'Bearer ' + CODE, s.key]), [['/v1/messages', true, ''], ['/v1/messages', true, '']]);
+      eq([seen.filter(s => s.direct).length, browserKey], [0, null]);
+    });
+  }
+
+  if (want('14')) {
+    // 14c. A wrong code, a server without its key, a server that does not answer: what the page says, and where it leads.
+    const { CODE, main, start } = SV;
+    const bare = await start({ ACCESS_CODE: CODE }); // no key on this one
+    const { ctx, page } = await open(base + '#coach', { viewport: { width: 1000, height: 800 }, serviceWorkers: 'block' }, 'server-errors');
+    const noteNow = () => page.evaluate(() => ({ note: (document.querySelector('#coach-note > span') || {}).textContent || '', retry: !!document.querySelector('#coach-note [data-fk="retry"]'), fix: !!document.querySelector('#coach-note [data-fk="note-srv"]') }));
+    await saveServer(page, main, CODE + 'x');
+    const wrongState = await page.evaluate(() => document.querySelector('#set-srv-state').textContent);
+    await page.click('#set-done');
+    await page.click('#start-btn');
+    await notBusy(page);
+    const wrong = await noteNow();
+    await page.click('#coach-note [data-fk="note-srv"]');
+    await until(page, () => document.activeElement && document.activeElement.id === 'set-srv-code', null, 3000);
+    await page.fill('#set-srv-code', CODE);
+    await page.press('#set-srv-code', 'Enter');
+    await until(page, () => /^已連上/.test(document.querySelector('#set-srv-state').textContent), null, 15000);
+    await page.click('#set-done');
+    const fixed = await noteNow();
+    await page.click('#coach-note [data-fk="retry"]');
+    await notBusy(page);
+    const opened = await page.evaluate(() => window.__kaikouTest.S.chat.turns.map(t => t.r + ': ' + t.t));
+    // The API says the key on the server does not work: that is fixed on Render.
+    SV.up.answer = { status: 401, error: { type: 'authentication_error', message: 'invalid x-api-key' } };
+    await page.fill('#msg-input', 'We went hiking');
+    await page.click('#send-btn');
+    await notBusy(page);
+    const badKey = await noteNow();
+    SV.up.answer = null;
+    // A server that is up without its key.
+    await saveServer(page, bare, CODE);
+    const bareState = await page.evaluate(() => document.querySelector('#set-srv-state').textContent);
+    await page.click('#set-done');
+    await page.fill('#msg-input', 'We went hiking');
+    await page.click('#send-btn');
+    await notBusy(page);
+    const notReady = await noteNow();
+    // A server that does not serve this site (ALLOWED_ORIGINS without it): said at once, not after waiting for it.
+    const strange = await start({ ANTHROPIC_API_KEY: SV.KEY, ACCESS_CODE: CODE, ALLOWED_ORIGINS: 'https://elsewhere.example' });
+    const t0 = Date.now();
+    await saveServer(page, strange, CODE);
+    const strangeState = [await page.evaluate(() => document.querySelector('#set-srv-state').textContent), Date.now() - t0 < 8000];
+    await page.click('#set-done');
+    await page.fill('#msg-input', 'Are you there?');
+    await page.click('#send-btn');
+    await notBusy(page);
+    const notHere = await noteNow();
+    // A server that does not answer (waiting for it is cut short here).
+    await page.evaluate(() => { window.__kaikouTest.SRV.wake = 4000; });
+    await saveServer(page, 'http://127.0.0.1:9', CODE);
+    const downState = await page.evaluate(() => document.querySelector('#set-srv-state').textContent);
+    await page.click('#set-done');
+    await page.click('#coach-note [data-fk="retry"]', { timeout: 3000 });
+    await until(page, () => document.querySelector('#toast').textContent.startsWith('教練伺服器在休眠'), null, 6000).catch(() => {});
+    const waking = await page.evaluate(() => document.querySelector('#toast').textContent);
+    await notBusy(page);
+    const down = await noteNow();
+    await page.click('#coach-note [data-fk="note-srv"]');
+    await until(page, () => document.activeElement && document.activeElement.id === 'set-srv-url', null, 3000).catch(() => {});
+    const downFocus = await page.evaluate(() => document.activeElement.id);
+    await ctx.close();
+    const host = new URL(main).host;
+    check('網頁版＋教練伺服器：存取碼不對時設定和教練都說明，按「到設定修改」到存取碼欄位，改好後可以請教練開場；Render 上的金鑰不能用時說明到 Render 換', () => {
+      eq(wrongState, '連上了 ' + host + '，但存取碼不對：到 Render 服務的 Environment 複製 ACCESS_CODE，重新貼上。');
+      eq(wrong, { note: '教練伺服器的存取碼不對。到 Render 服務的 Environment 複製 ACCESS_CODE，在設定重新貼上。', retry: false, fix: true });
+      eq([fixed.note.includes('存取碼'), fixed.retry], [false, true]);
+      eq(opened, ['c: Hi! What did you do last weekend?']);
+      eq(badKey, { note: 'Render 上的 Claude API 金鑰無效或已停用：到 Claude Console 建一把新的，貼到 Render 服務 Environment 的 ANTHROPIC_API_KEY。', retry: false, fix: false });
+    });
+    check('網頁版＋教練伺服器：伺服器沒有金鑰時說明要到 Render 填；伺服器不接受這個網站時馬上說要加進 ALLOWED_ORIGINS；連不上時先等它醒來（有說明），等不到就說明並可以到設定看網址', () => {
+      eq(bareState, new URL(bare).host + ' 還沒設定好：到 Render 服務的 Environment 填好 ANTHROPIC_API_KEY 和 ACCESS_CODE。');
+      eq(notReady, { note: '教練伺服器還沒設定好：到 Render 服務的 Environment 填好 ANTHROPIC_API_KEY（Claude Console 的 API 金鑰）和 ACCESS_CODE。', retry: false, fix: false });
+      eq(strangeState, [new URL(strange).host + ' 不接受這個網站：到 Render 服務的 Environment，把 ' + new URL(base).origin + ' 加進 ALLOWED_ORIGINS（逗號分隔）。', true]);
+      eq(notHere, { note: '教練伺服器不接受這個網站：到 Render 服務的 Environment，把 ' + new URL(base).origin + ' 加進 ALLOWED_ORIGINS（逗號分隔）。', retry: false, fix: false });
+      eq(downState, '連不上 127.0.0.1:9：確認網址和網路，過一會兒再試（打開設定時會再試一次）。');
+      eq(waking, '教練伺服器在休眠，正在叫醒它（第一次要等約 1 分鐘）…');
+      eq([down.note.startsWith('連不上教練伺服器。'), down.retry, down.fix, downFocus], [true, true, true, 'set-srv-url']);
+    });
+  }
+
+  if (want('14')) {
+    // 14d. A sleeping server (Render's free plan): the page asks /health until it answers (Render shows a page of its own
+    // meanwhile: no CORS, not JSON) and only then sends the request; opening the page starts waking it.
+    const { CODE, main } = SV;
+    const target = new URL(main);
+    const sleepy = { until: 0, asleep: [], awake: [], htmlPost: false, dropPost: false, cutMid: false };
+    const proxy = http.createServer((req, res) => {
+      if (Date.now() < sleepy.until) {
+        sleepy.asleep.push(req.method + ' ' + req.url);
+        req.resume();
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        res.end('<!doctype html><title>Service waking up</title>');
+        return;
+      }
+      sleepy.awake.push(req.method + ' ' + req.url);
+      if (sleepy.dropPost && req.method === 'POST') { req.socket.destroy(); return; } // gone halfway (restarting, say)
+      if (sleepy.htmlPost && req.method === 'POST') { // a web page instead of the API's answer, readable by the page
+        req.resume();
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'access-control-allow-origin': req.headers.origin || '*' });
+        res.end('<!doctype html><title>Not the coach</title>');
+        return;
+      }
+      const fwd = http.request({ host: target.hostname, port: target.port, path: req.url, method: req.method, headers: req.headers }, r => {
+        res.writeHead(r.statusCode, r.headers);
+        // Cut off after the first piece of the answer (the server restarting in the middle of a reply).
+        if (sleepy.cutMid && req.method === 'POST') { r.once('data', c => { res.write(c); setTimeout(() => { res.destroy(); fwd.destroy(); }, 50); }); return; }
+        r.pipe(res);
+      });
+      fwd.on('error', () => res.destroy());
+      req.pipe(fwd);
+    });
+    await new Promise(r => proxy.listen(0, '127.0.0.1', r));
+    const sleepyUrl = 'http://127.0.0.1:' + proxy.address().port;
+    // The speech stand-ins: a reply read out without a voice would put its own message where the waking note was.
+    const { ctx, page } = await open(base + '#coach', { viewport: { width: 1000, height: 800 }, serviceWorkers: 'block' }, 'server-sleepy', null, speech);
+    await saveServer(page, sleepyUrl, CODE, '^已連上');
+    await page.click('#set-done');
+    // Asleep for a while, and nothing heard from it lately.
+    sleepy.until = Date.now() + 4500;
+    sleepy.asleep.length = 0; sleepy.awake.length = 0;
+    await page.evaluate(() => { window.__kaikouTest.SRV.awake = { url: '', at: 0 }; });
+    await page.click('#start-btn');
+    await until(page, () => document.querySelector('#toast').textContent.startsWith('教練伺服器在休眠') && !document.querySelector('#toast').hidden, null, 5000).catch(() => {});
+    const note = await page.evaluate(() => [document.querySelector('#toast').textContent, window.__kaikouTest.S.busy]);
+    await notBusy(page);
+    const after = await page.evaluate(() => ({ turns: window.__kaikouTest.S.chat.turns.map(t => t.r + ': ' + t.t), toast: !document.querySelector('#toast').hidden && document.querySelector('#toast').textContent.startsWith('教練伺服器在休眠') }));
+    const woke = { asleep: sleepy.asleep.filter(x => x.startsWith('POST')).length, health: sleepy.asleep.filter(x => x.includes('/health')).length > 0, posts: sleepy.awake.filter(x => x.startsWith('POST')).length };
+    // Awake now: the next sentence goes straight on (no /health first).
+    const healthBefore = sleepy.awake.filter(x => x.includes('/health')).length;
+    await page.fill('#msg-input', 'We went hiking');
+    await page.click('#send-btn');
+    await notBusy(page);
+    const straight = [sleepy.awake.filter(x => x.includes('/health')).length - healthBefore, sleepy.awake.filter(x => x.startsWith('POST')).length];
+    // Asleep again: 停止 while it wakes stops at once, and nothing is sent once it is awake.
+    sleepy.until = Date.now() + 60000;
+    await page.evaluate(() => { window.__kaikouTest.SRV.awake = { url: '', at: 0 }; });
+    const asked = sleepy.asleep.length;
+    await page.fill('#msg-input', 'Are you awake?');
+    await page.click('#send-btn');
+    // Stopped while it waits between two looks at /health (a press within 0.7 s of sending is taken as a double tap).
+    const t1 = Date.now();
+    while (sleepy.asleep.length === asked && Date.now() - t1 < 5000) await page.waitForTimeout(50);
+    await page.waitForTimeout(800);
+    const t2 = Date.now();
+    await page.click('#send-btn'); // 停止
+    await until(page, () => !window.__kaikouTest.S.busy, null, 5000).catch(() => {});
+    const stopIn = Date.now() - t2;
+    sleepy.until = 0;
+    await page.waitForTimeout(3500);
+    const stop = { fast: stopIn < 1500, posts: sleepy.awake.filter(x => x.startsWith('POST')).length, toast: await page.evaluate(() => !document.querySelector('#toast').hidden && document.querySelector('#toast').textContent.startsWith('教練伺服器在休眠')) };
+    // Another page opened (the server set): it starts waking the server at once.
+    const asleepBefore = sleepy.asleep.length;
+    sleepy.until = Date.now() + 60000;
+    const page3 = await addPage(ctx, base + '#today', 'server-sleepy-2');
+    await page3.waitForTimeout(600);
+    const onOpen = sleepy.asleep.slice(asleepBefore).some(x => x.startsWith('GET /health'));
+    sleepy.until = 0;
+    // An answer that is not the API's (a web page): the server is not there.
+    sleepy.htmlPost = true;
+    await page.fill('#msg-input', 'Anything else?');
+    await page.click('#send-btn');
+    await notBusy(page);
+    const notApi = await page.evaluate(() => (document.querySelector('#coach-note > span') || {}).textContent || '');
+    // After that the page asks /health again before the next try (it may have been restarting); the same after a
+    // connection cut off on the way.
+    sleepy.htmlPost = false;
+    const counts = () => [sleepy.awake.filter(x => x.includes('/health')).length, sleepy.awake.filter(x => x.startsWith('POST')).length];
+    let c0 = counts();
+    await page.click('#coach-note [data-fk="retry"]', { timeout: 3000 });
+    await notBusy(page);
+    const again = counts().map((n, i) => n - c0[i]);
+    sleepy.dropPost = true;
+    await page.fill('#msg-input', 'Still there?');
+    await page.click('#send-btn');
+    await notBusy(page);
+    const cut = await page.evaluate(() => (document.querySelector('#coach-note > span') || {}).textContent || '');
+    sleepy.dropPost = false;
+    c0 = counts();
+    await page.click('#coach-note [data-fk="retry"]', { timeout: 3000 });
+    await notBusy(page);
+    const againCut = counts().map((n, i) => n - c0[i]);
+    SV.up.answer = { slow: 3000 };
+    sleepy.cutMid = true;
+    await page.fill('#msg-input', 'One more?');
+    await page.click('#send-btn');
+    await notBusy(page);
+    const mid = await page.evaluate(() => (document.querySelector('#coach-note > span') || {}).textContent || '');
+    sleepy.cutMid = false;
+    SV.up.answer = null;
+    c0 = counts();
+    await page.click('#coach-note [data-fk="retry"]', { timeout: 3000 });
+    await notBusy(page);
+    const againMid = counts().map((n, i) => n - c0[i]);
+    await ctx.close();
+    proxy.closeAllConnections(); proxy.close();
+    check('網頁版＋教練伺服器：伺服器休眠時先叫醒它（顯示要等約 1 分鐘），醒了才送出；之後不用再等；等它醒來時按停止馬上停、醒了也不送出；打開頁面時就開始叫醒它；回來的不是 API 的回覆、連線斷掉或回覆傳到一半斷掉時，下次先確認它醒著', () => {
+      eq(note, ['教練伺服器在休眠，正在叫醒它（第一次要等約 1 分鐘）…', true]);
+      eq(after, { turns: ['c: Hi! What did you do last weekend?'], toast: false });
+      eq(woke, { asleep: 0, health: true, posts: 1 });
+      eq(straight, [0, 2]);
+      eq(onOpen, true);
+      eq(notApi.startsWith('連不上教練伺服器。'), true);
+      eq(stop, { fast: true, posts: 2, toast: false });
+      eq(again, [1, 1]);
+      eq([cut.startsWith('連不上教練伺服器。'), againCut], [true, [1, 1]]);
+      eq([mid, againMid], ['連線中斷了，再試一次。', [1, 1]]);
+    });
+  }
+
+  if (want('14')) {
+    // 14e. A key and a server both set (the server is used, the key is said to be unused); removing the server goes back
+    // to the key; 設定 on a phone.
+    const { CODE, main, up } = SV;
+    const BROWSER_KEY = 'sk-ant-api03-' + 'BROWSERONLY'.repeat(5) + '-AA';
+    const { ctx, page } = await open(base + '#coach', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, colorScheme: 'light', serviceWorkers: 'block' }, 'server-phone');
+    const direct = [];
+    await page.route('https://api.anthropic.com/v1/messages', r => { direct.push(r.request().headers()['x-api-key'] === BROWSER_KEY); return sseReply(r, 'Hi there! How was your day?\n###\n{"none": true}'); });
+    await giveKey(page, BROWSER_KEY);
+    await saveServer(page, main, CODE, '^已連上');
+    const both = await page.evaluate(() => {
+      const f = document.querySelector('#settings form');
+      return [document.querySelector('#set-api-state').textContent, document.documentElement.scrollWidth > innerWidth || f.scrollWidth > f.clientWidth];
+    });
+    await page.evaluate(() => document.querySelector('#set-srv-field').scrollIntoView());
+    await shot(page, '61-pages-coach-server-phone.png');
+    await page.click('#set-done');
+    const n0 = up.calls.length;
+    await page.click('#start-btn');
+    await notBusy(page);
+    const viaServer = [up.calls.length - n0, direct.length];
+    await page.click('#btn-settings');
+    await pressTwice(page, '#set-srv-clear');
+    await until(page, () => !localStorage.getItem('kaikou:coach-server'), null, 3000);
+    const removed = await page.evaluate(() => ({ state: document.querySelector('#set-srv-state').textContent, key: document.querySelector('#set-api-state').textContent, remove: !document.querySelector('#set-srv-clear').hidden, url: document.querySelector('#set-srv-url').value, focus: document.activeElement.id, toast: document.querySelector('#toast').textContent }));
+    await page.click('#set-done');
+    await page.fill('#msg-input', 'We went hiking');
+    await page.click('#send-btn');
+    await notBusy(page);
+    const viaKey = [up.calls.length - n0, direct];
+    await ctx.close();
+    check('網頁版＋教練伺服器：存了金鑰也設了伺服器時用伺服器（說金鑰用不到、建議移除）；移除伺服器後改用金鑰；手機上的設定不會超出畫面', () => {
+      eq(both, ['這個瀏覽器還存著一把金鑰（結尾 ' + BROWSER_KEY.slice(-4) + '），但 AI 教練現在經過教練伺服器回覆，用不到它，建議移除。', false]);
+      eq(viaServer, [1, 0]);
+      eq(removed, { state: '還沒有設定教練伺服器。', key: '已儲存一把金鑰（結尾 ' + BROWSER_KEY.slice(-4) + '），AI 教練會用它回覆。', remove: false, url: '', focus: 'set-srv-state', toast: '已移除教練伺服器' });
+      eq(viaKey, [1, [true]]);
+    });
+  }
+  if (want('14')) {
+    // 14f. Started the way Render starts it (node index.js in server/, PORT given): it answers, says it is ready without
+    // naming the key or the code, and stops at once when told to (SIGTERM). render.yaml says what README promises.
+    const { KEY, CODE, upstream } = SV;
+    const { spawn } = require('child_process');
+    const port = await new Promise(r => { const t = http.createServer().listen(0, '127.0.0.1', () => { const p = t.address().port; t.close(() => r(p)); }); });
+    const child = spawn(process.execPath, ['index.js'], { cwd: path.join(dir, '..', 'server'), env: Object.assign({}, process.env, { PORT: String(port), ANTHROPIC_API_KEY: KEY, ACCESS_CODE: CODE, ANTHROPIC_BASE_URL: upstream }) });
+    let said = '';
+    child.stdout.on('data', c => { said += c; });
+    child.stderr.on('data', c => { said += c; });
+    const exited = new Promise(r => child.on('exit', (code, sig) => r([code, sig])));
+    const t0 = Date.now();
+    while (!/port/.test(said) && Date.now() - t0 < 8000) await new Promise(r => setTimeout(r, 100));
+    const up = await fetch('http://127.0.0.1:' + port + '/health').then(r => r.json(), e => ({ error: e.message }));
+    // Told to stop while a reply is on its way: the reply still comes in whole, then it ends (a connection the reply leaves
+    // idle is closed within a second, not kept open for the next request).
+    SV.up.answer = { slow: 1500 };
+    const res = await fetch('http://127.0.0.1:' + port + '/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + CODE },
+      body: JSON.stringify({ model: 'claude-haiku-5-5', max_tokens: 2048, stream: true, messages: [{ role: 'user', content: 'Hello' }] }) });
+    const reader = res.body.getReader();
+    await reader.read();
+    child.kill('SIGTERM');
+    let rest = '';
+    for (;;) { const x = await reader.read().catch(() => ({ done: true })); if (x.done) break; rest += Buffer.from(x.value).toString(); }
+    const tEnd = Date.now();
+    SV.up.answer = null;
+    const end = await Promise.race([exited, new Promise(r => setTimeout(() => r('still running'), 8000))]);
+    const after = Date.now() - tEnd;
+    if (end === 'still running') child.kill('SIGKILL');
+    const yaml = fs.readFileSync(path.join(dir, '..', 'render.yaml'), 'utf8');
+    const pkg = JSON.parse(fs.readFileSync(path.join(dir, '..', 'server', 'package.json'), 'utf8'));
+    const has = re => re.test(yaml);
+    check('教練伺服器照 Render 的方式啟動（node index.js、給 PORT）：回應 /health、說可以使用了（不寫出金鑰和存取碼），收到 SIGTERM 時讓正在傳的回覆傳完再結束；render.yaml 是免費方案、從 server/ 啟動、檢查 /health、金鑰要自己填、存取碼自動產生、只給 GitHub Pages 用', () => {
+      eq([up, /可以使用了/.test(said), said.includes(KEY) || said.includes(CODE), end], [{ ok: true, ready: true, site: null }, true, false, [0, null]]);
+      eq([rest.includes('message_stop'), after < 3000], [true, true]);
+      eq([has(/^\s+- type: web$/m), has(/^\s+runtime: node$/m), has(/^\s+plan: free$/m), has(/^\s+rootDir: server$/m), has(/^\s+startCommand: node index\.js$/m), has(/^\s+healthCheckPath: \/health$/m),
+        has(/^\s+autoDeployTrigger: commit$/m), has(/^\s+- server\/\*\*$/m)], [true, true, true, true, true, true, true, true]);
+      eq([has(/- key: ANTHROPIC_API_KEY\n\s+sync: false\n/), has(/- key: ACCESS_CODE\n\s+generateValue: true\n/), (/- key: ALLOWED_ORIGINS\n\s+value: (\S+)/.exec(yaml) || [])[1], /sk-ant-\w+-[\w-]{20,}/.test(yaml)], // no key written in it
+        [true, true, SV.config({}).origins[0], false]);
+      eq([pkg.scripts.start, SV.config({}).origins[0]], ['node index.js', 'https://willisxu.github.io']);
+    });
+  }
+  if (SV) SV.close();
 
   srv.close();
   await browser.close();

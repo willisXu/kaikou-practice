@@ -1,0 +1,12 @@
+{
+  "name": "kaikou-coach-server",
+  "private": true,
+  "description": "開口練習室的教練伺服器：網頁版的 AI 教練經過這裡呼叫 Claude API，API 金鑰只放在伺服器上",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": "22.x || 24.x"
+  }
+}

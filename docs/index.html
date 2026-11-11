@@ -627,6 +627,14 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
       <p id="set-mic-state" class="help"></p>
       <div><button type="button" id="set-mic-on" class="btn small" hidden>重新啟用麥克風</button></div>
     </div>
+    <div class="field" id="set-srv-field" hidden>
+      <span class="label">教練伺服器</span>
+      <p class="help">在 Render 架好教練伺服器（步驟見 <a href="https://github.com/willisXu/kaikou-practice#readme" target="_blank" rel="noopener">README</a> 的「教練伺服器」）後，填上它的網址和存取碼：AI 教練會經過它回覆，Claude API 金鑰只放在 Render，不用存在這個瀏覽器。</p>
+      <div class="row"><label for="set-srv-url">網址</label><input id="set-srv-url" class="input" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://kaikou-coach.onrender.com"></div>
+      <div class="row"><label for="set-srv-code">存取碼</label><input id="set-srv-code" class="input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ACCESS_CODE" aria-describedby="set-srv-state"><button type="button" id="set-srv-save" class="btn small">儲存</button></div>
+      <p id="set-srv-state" class="help"></p>
+      <div><button type="button" id="set-srv-clear" class="btn small" hidden>移除教練伺服器</button></div>
+    </div>
     <div class="field" id="set-api-field" hidden>
       <label class="label" for="set-api-key">Claude API 金鑰</label>
       <p class="help">填了之後，這個網頁也能用 AI 教練。金鑰只存在這個瀏覽器，只會送到 Anthropic 的 API；用量算在你的 Claude API 帳單。公用電腦不要存。</p>
@@ -642,7 +650,7 @@ input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
     </div>
     <div class="field">
       <span class="label">備份與搬移</span>
-      <p class="help">把設定、打卡、收藏、隨手記、句子複習、對話複習（含你在對話裡說過的句子）和跟讀短文存成一個檔案（不含進行中的對話和 API 金鑰）。在另一台裝置或另一個版本匯入時，會和那裡的資料合併，不會刪掉任何東西。</p>
+      <p class="help">把設定、打卡、收藏、隨手記、句子複習、對話複習（含你在對話裡說過的句子）和跟讀短文存成一個檔案（不含進行中的對話、API 金鑰和教練伺服器）。在另一台裝置或另一個版本匯入時，會和那裡的資料合併，不會刪掉任何東西。</p>
       <div class="row"><button type="button" id="set-export" class="btn small">匯出備份檔</button><button type="button" id="set-import" class="btn small">匯入備份檔</button><input type="file" id="set-import-file" accept=".json,application/json" hidden></div>
       <div id="set-import-box" class="notice" hidden></div>
     </div>
@@ -1499,9 +1507,9 @@ const OPT_RE = /^\s*(casual|neutral|work|final)\s*[:：]\s*(.+)$/i;
 // Codes after which the chat cannot continue in this view at all.
 const BLOCK_CODES = ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'];
 // Codes where sending the same input again would not help.
-const NO_RETRY_CODES = ['refused', 'prompt_too_large', 'empty_completion', 'invalid_request', 'transform_error', 'key_invalid', 'key_missing', 'no_credit', 'model_missing', 'spend_limit', 'spend_cap'];
+const NO_RETRY_CODES = ['refused', 'prompt_too_large', 'empty_completion', 'invalid_request', 'transform_error', 'key_invalid', 'key_missing', 'no_credit', 'model_missing', 'spend_limit', 'spend_cap', 'server_code', 'server_config', 'server_key', 'server_forbidden', 'server_origin'];
 // Errors of the API key or account itself: asking the coach again cannot work until they are fixed.
-const ACCOUNT_CODES = ['key_invalid', 'key_missing', 'no_credit', 'model_missing', 'spend_limit', 'spend_cap'];
+const ACCOUNT_CODES = ['key_invalid', 'key_missing', 'no_credit', 'model_missing', 'spend_limit', 'spend_cap', 'server_code', 'server_config', 'server_key', 'server_forbidden', 'server_origin'];
 
 /* ================= state ================= */
 const S = {
@@ -3500,6 +3508,139 @@ const API_KEY_LS = 'kaikou:api-key';
 // read a key kept there), so a key is only kept and used on a web address (GitHub Pages).
 const KEY_HERE = /^https?:$/.test(location.protocol);
 const apiKey = () => (KEY_HERE ? String(lsGet(API_KEY_LS) || '').trim() : '');
+// The coach server (server/ in this repo, on Render): the coach calls the API through it and the API key stays on the
+// server. This browser keeps only the server's address and access code (kaikou:coach-server; on a web address only, as
+// a key). With a server set, a key stored here is not used.
+const SERVER_LS = 'kaikou:coach-server';
+// Letters, digits and signs, at least 16 (CODE_RE in server/index.js): a header cannot carry anything else.
+const SRV_CODE_RE = /^[\x21-\x7e]{16,}$/;
+// An https:// address (http:// only for this computer, to try a server out), as the server's origin.
+function serverOrigin(s) {
+  let u;
+  try { u = new URL(String(s || '').trim()); } catch (_) { return ''; }
+  const here = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(u.hostname);
+  if (!(u.protocol === 'https:' || (u.protocol === 'http:' && here)) || u.username || u.password) return '';
+  return u.origin;
+}
+function coachServer() {
+  if (!KEY_HERE) return null;
+  let v = null;
+  try { v = JSON.parse(lsGet(SERVER_LS) || 'null'); } catch (_) { v = null; }
+  const url = v && typeof v === 'object' ? serverOrigin(v.url) : '';
+  const code = v && typeof v.code === 'string' ? v.code.trim() : '';
+  return url && code ? { url, code } : null;
+}
+// Render's free plan puts the server to sleep after 15 minutes without a request, and waking it takes about a minute.
+// A server that has not answered for 10 minutes is asked /health first (for up to 100 seconds, with a note after a
+// couple of seconds), so a request of the coach is never sent into a server that is still starting. Opening the page
+// (or coming back to it) wakes the server beforehand.
+const SRV = { awake: { url: '', at: 0 }, warming: null, wake: 100000 }; // wake: how long to wait (shorter in the tests)
+const SRV_FRESH = 10 * 60000;
+const SRV_WAKE_MSG = '教練伺服器在休眠，正在叫醒它（第一次要等約 1 分鐘）…';
+const srvFresh = srv => SRV.awake.url === srv.url && Date.now() - SRV.awake.at < SRV_FRESH;
+// → 'ok', 'config' (up, without its key or code), 'origin' (up, but not for this site) or 'down'.
+async function serverHealth(srv, signal, ms) {
+  const ac = new AbortController(), stop = () => ac.abort();
+  if (signal) signal.addEventListener('abort', stop, { once: true });
+  const t = setTimeout(stop, ms);
+  try {
+    const r = await fetch(srv.url + '/health', { cache: 'no-store', signal: ac.signal });
+    const j = r.ok ? await r.json().catch(() => null) : null;
+    return j && j.ok === true ? (j.site === false ? 'origin' : j.ready === true ? 'ok' : 'config') : 'down';
+  } catch (_) {
+    return 'down';
+  } finally {
+    clearTimeout(t);
+    if (signal) signal.removeEventListener('abort', stop);
+  }
+}
+async function serverAwake(srv, signal, quiet) {
+  if (srvFresh(srv)) return;
+  const end = Date.now() + SRV.wake;
+  const note = quiet ? 0 : setTimeout(() => toast(SRV_WAKE_MSG, SRV.wake), 2500);
+  const stopped = () => { if (signal && signal.aborted) throw { code: 'cancelled', message: 'aborted' }; };
+  try {
+    for (;;) {
+      stopped();
+      if (navigator.onLine === false) throw { code: 'server_down', message: 'offline' };
+      const st = await serverHealth(srv, signal, Math.max(1000, end - Date.now()));
+      stopped();
+      if (st === 'ok') { SRV.awake = { url: srv.url, at: Date.now() }; return; }
+      if (st === 'config') throw { code: 'server_config', message: 'not ready' };
+      if (st === 'origin') throw { code: 'server_origin', message: 'not for this site' };
+      if (Date.now() + 3000 >= end) throw { code: 'server_down', message: 'no answer' };
+      await sleepOr(3000, signal); // 停止 does not wait for it
+    }
+  } finally {
+    clearTimeout(note);
+    toastDone(SRV_WAKE_MSG);
+  }
+}
+const sleepOr = (ms, signal) => new Promise(resolve => {
+  const done = () => { clearTimeout(t); if (signal) signal.removeEventListener('abort', done); resolve(); };
+  const t = setTimeout(done, ms);
+  if (signal) signal.addEventListener('abort', done, { once: true });
+});
+function serverWarm() {
+  const srv = coachServer();
+  if (!srv || SRV.warming || srvFresh(srv)) return;
+  SRV.warming = serverHealth(srv, null, SRV.wake).then(st => {
+    const now = coachServer();
+    if (st === 'ok' && now && now.url === srv.url) SRV.awake = { url: srv.url, at: Date.now() };
+  }).finally(() => { SRV.warming = null; });
+}
+// The server's own errors (type kaikou_…), and the API's answers passed on by it: those about the key are about the key
+// on the server. No JSON at all (Render answering for a server that is starting or gone): the server is not there.
+function serverError(status, body) {
+  const t = String(((body && body.error) || {}).type || '');
+  if (t === 'kaikou_code') return { code: 'server_code', message: 'access code' };
+  if (t === 'kaikou_config') return { code: 'server_config', message: 'not ready' };
+  if (t === 'kaikou_busy') return { code: 'server_busy', message: 'request limit' };
+  if (t === 'kaikou_too_large') return { code: 'prompt_too_large', message: 'too large' };
+  if (t === 'kaikou_upstream') return { code: 'upstream_error', message: 'the server could not reach the API' };
+  if (t.startsWith('kaikou_')) return { code: 'invalid_request', message: t };
+  if (!body || typeof body !== 'object') return { code: 'server_down', message: 'status ' + status };
+  const e = apiError(status, body);
+  if (e.code === 'key_invalid') return { code: 'server_key', message: e.message };
+  if (e.code === 'forbidden') return { code: 'server_forbidden', message: e.message };
+  return e;
+}
+// 設定: is the server up, and is the code right? S.srvCheck: { url, code, state: checking / ok / code / config / down }.
+async function serverCheck() {
+  const srv = coachServer();
+  if (!srv) { S.srvCheck = null; return; }
+  const mine = S.srvCheck = { url: srv.url, code: srv.code, state: 'checking' };
+  if ($('#settings').hasAttribute('open')) fillSettings();
+  let state = 'down';
+  try {
+    await serverAwake(srv, null, true);
+    const ac = new AbortController(), t = setTimeout(() => ac.abort(), 15000); // a check never hangs on 正在連線
+    try {
+      const r = await fetch(srv.url + '/v1/check', { headers: { authorization: 'Bearer ' + srv.code }, cache: 'no-store', signal: ac.signal });
+      state = r.status === 204 ? 'ok' : r.status === 401 ? 'code' : r.status === 503 ? 'config' : 'down';
+    } finally { clearTimeout(t); }
+  } catch (e) {
+    state = e && e.code === 'server_config' ? 'config' : e && e.code === 'server_origin' ? 'origin' : 'down';
+  }
+  if (S.srvCheck !== mine) return; // saved again or removed meanwhile
+  mine.state = state;
+  if (state === 'ok') SRV.awake = { url: srv.url, at: Date.now() };
+  else if (state === 'down') SRV.awake = { url: '', at: 0 };
+  if ($('#settings').hasAttribute('open')) { fillSettings(); announce(srvStateText()); }
+}
+function srvStateText() {
+  const srv = coachServer();
+  if (!srv) return lsGet(SERVER_LS) ? '存著的教練伺服器設定不完整，請重新填寫。' : '還沒有設定教練伺服器。';
+  const host = new URL(srv.url).host, c = S.srvCheck && S.srvCheck.url === srv.url && S.srvCheck.code === srv.code ? S.srvCheck.state : '';
+  const tail = '（存取碼結尾 ' + srv.code.slice(-4) + '）';
+  if (c === 'checking') return '正在連線到 ' + host + '…休眠中的話要等約 1 分鐘。';
+  if (c === 'ok') return '已連上 ' + host + tail + '，AI 教練會經過它回覆。';
+  if (c === 'code') return '連上了 ' + host + '，但存取碼不對：到 Render 服務的 Environment 複製 ACCESS_CODE，重新貼上。';
+  if (c === 'config') return host + ' 還沒設定好：到 Render 服務的 Environment 填好 ANTHROPIC_API_KEY 和 ACCESS_CODE。';
+  if (c === 'origin') return host + ' 不接受這個網站：到 Render 服務的 Environment，把 ' + location.origin + ' 加進 ALLOWED_ORIGINS（逗號分隔）。';
+  if (c === 'down') return '連不上 ' + host + '：確認網址和網路，過一會兒再試（打開設定時會再試一次）。';
+  return '已設定 ' + host + tail + '，AI 教練會經過它回覆。';
+}
 // The same turn rules as sample(); consecutive turns of one role are joined into one message.
 function apiMessages(input) {
   const out = [];
@@ -3536,24 +3677,40 @@ function apiError(status, body) {
 // Same contract as sample(): resolves { text, truncated }, streams through onText({ text }), rejects { code, text? }.
 async function apiSample(input, opts) {
   opts = opts || {};
-  const key = apiKey();
-  if (!key) throw { code: 'key_missing', message: 'no key' };
+  const srv = coachServer(), key = srv ? '' : apiKey();
+  if (!srv && !key) throw { code: 'key_missing', message: 'no key' };
   const m = API_MODELS[opts.modelTier === 'default' ? 'default' : 'quick'];
+  if (srv) await serverAwake(srv, opts.signal);
   let res;
   try {
-    res = await fetch(API_URL, {
+    res = await fetch(srv ? srv.url + '/v1/messages' : API_URL, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      // Through the coach server: its access code (the server adds the key and the API version).
+      headers: srv ? { 'content-type': 'application/json', authorization: 'Bearer ' + srv.code }
+        : { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({ model: m.model, max_tokens: m.max_tokens, thinking: m.thinking, stream: true, messages: apiMessages(input) }),
       signal: opts.signal,
     });
   } catch (e) {
-    throw e && e.name === 'AbortError' ? { code: 'cancelled', message: 'aborted' } : { code: 'upstream_error', message: 'network' };
+    if (e && e.name === 'AbortError') throw { code: 'cancelled', message: 'aborted' };
+    if (srv) SRV.awake = { url: '', at: 0 }; // gone (restarting, say): next time /health is asked first
+    throw { code: srv ? 'server_down' : 'upstream_error', message: 'network' };
   }
   if (!res.ok) {
     let body = null;
     try { body = await res.json(); } catch (_) { body = null; }
-    throw apiError(res.status, body);
+    const err = srv ? serverError(res.status, body) : apiError(res.status, body);
+    if (err.code === 'server_down') SRV.awake = { url: '', at: 0 };
+    throw err;
+  }
+  if (srv) {
+    // Not the API's answer (a page Render shows instead): the server is not there.
+    if (!/event-stream|json/.test(res.headers.get('content-type') || '')) {
+      SRV.awake = { url: '', at: 0 };
+      try { await res.body.cancel(); } catch (_) { /* gone */ }
+      throw { code: 'server_down', message: 'not an answer' };
+    }
+    SRV.awake = { url: srv.url, at: Date.now() };
   }
   // Server-sent events: content_block_delta carries the text, message_delta the stop reason, message_stop the end.
   let text = '', stop = '', buf = '', ended = false;
@@ -3590,11 +3747,15 @@ async function apiSample(input, opts) {
     // Stopped (an AbortError, whose old numeric code is 20) or cut off: the text received so far goes along.
     const aborted = (e && e.name === 'AbortError') || !!(opts.signal && opts.signal.aborted);
     if (!aborted && e && typeof e.code === 'string') throw e;
+    if (srv && !aborted) SRV.awake = { url: '', at: 0 }; // cut off (the server restarting, say): /health first next time
     throw Object.assign(aborted ? { code: 'cancelled', message: 'aborted' } : { code: 'upstream_error', message: 'stream' }, text ? { text } : {});
   }
   tellNow();
   // The connection closed before the reply was complete (no stop reason, no end): a cut-off reply, not a full one.
-  if (!stop && !ended) throw Object.assign({ code: 'upstream_error', message: 'stream ended early' }, text ? { text } : {});
+  if (!stop && !ended) {
+    if (srv) SRV.awake = { url: '', at: 0 };
+    throw Object.assign({ code: 'upstream_error', message: 'stream ended early' }, text ? { text } : {});
+  }
   if (stop === 'refusal') throw { code: 'refused', message: 'refused' };
   if (!text.trim()) throw { code: 'empty_completion', message: 'empty' };
   return { text, truncated: stop === 'max_tokens' };
@@ -3602,7 +3763,7 @@ async function apiSample(input, opts) {
 // Outside Claude only: with a stored key the coach works through the API, without one it stays off.
 function useApiKeyIfAny() {
   if (window.claude) return;
-  const on = !!apiKey();
+  const on = !!apiKey() || !!coachServer();
   S.sample = on ? apiSample : null;
   S.sampleState = on ? 'ok' : 'none';
 }
@@ -3613,9 +3774,15 @@ function keyChanged() {
   if ($('#settings').hasAttribute('open')) fillSettings();
   renderCoach(); renderToday(); renderInbox(); renderErrs(); updateStartBtn(); // an open shadowing or 4/3/2 tool offers the coach or not
 }
+// 開啟設定: to the server's address when nothing is set up yet, else to the key (one that does not work).
 function openKeySettings() {
+  const first = !coachServer() && !apiKey();
   $('#btn-settings').click();
-  setTimeout(() => { const k = $('#set-api-key'); if (k && !k.closest('[hidden]')) k.focus(); }, 50);
+  setTimeout(() => { const k = $(first ? '#set-srv-url' : '#set-api-key'); if (k && !k.closest('[hidden]')) k.focus(); }, 50);
+}
+function openServerSettings(code) {
+  $('#btn-settings').click();
+  setTimeout(() => { const k = $(code ? '#set-srv-code' : '#set-srv-url'); if (k && !k.closest('[hidden]')) k.focus(); }, 50);
 }
 
 // window.claude is there, but this view cannot use the coach (sample() is not offered: the page was opened by its
@@ -3626,7 +3793,14 @@ const noSampleMsg = what => '這個畫面拿不到 Claude 的 AI 回覆（可能
 function sampleErrMsg(e, ctx) {
   const c = e && e.code;
   if (c === 'key_invalid') return 'Claude API 金鑰無效或已停用，請到設定重新輸入。';
-  if (c === 'key_missing') return '還沒有輸入 Claude API 金鑰，請到設定輸入。';
+  if (c === 'key_missing') return '還沒有設定教練伺服器或 Claude API 金鑰，請到設定填寫。';
+  if (c === 'server_code') return '教練伺服器的存取碼不對。到 Render 服務的 Environment 複製 ACCESS_CODE，在設定重新貼上。';
+  if (c === 'server_config') return '教練伺服器還沒設定好：到 Render 服務的 Environment 填好 ANTHROPIC_API_KEY（Claude Console 的 API 金鑰）和 ACCESS_CODE。';
+  if (c === 'server_key') return 'Render 上的 Claude API 金鑰無效或已停用：到 Claude Console 建一把新的，貼到 Render 服務 Environment 的 ANTHROPIC_API_KEY。';
+  if (c === 'server_forbidden') return 'Claude API 拒絕了這次的要求：Render 上的金鑰可能沒有使用教練模型的權限，到 Claude Console 檢查。';
+  if (c === 'server_busy') return '教練伺服器這段時間的請求次數到上限了，等一下再試（上限是 Render 的 RATE_PER_MIN 和 RATE_PER_DAY，預設每分鐘 30 次、每天 600 次）。';
+  if (c === 'server_origin') return '教練伺服器不接受這個網站：到 Render 服務的 Environment，把 ' + location.origin + ' 加進 ALLOWED_ORIGINS（逗號分隔）。';
+  if (c === 'server_down') return '連不上教練伺服器。確認網路正常、設定裡的網址沒打錯；它休眠後第一次要等約 1 分鐘，稍後再試一次。';
   if (c === 'no_credit') return 'Claude API 的額度不足或付款有問題，請到 Claude Console 的 Billing 儲值或確認付款資料後再試。';
   if (c === 'spend_limit') return '已經到了你在 Claude Console 設定的花費上限。到 Console 的 Billing 調高或取消上限後，再試一次。';
   if (c === 'spend_cap') return '這個月的 Claude API 用量已經到了帳戶等級的上限，下個月 1 號（UTC）才會恢復；也可以到 Claude Console 申請提高上限。';
@@ -4721,14 +4895,19 @@ function placeToast() {
   }
   t.style.bottom = '';
 }
-function toast(msg) {
+function toast(msg, ms) {
   const t = $('#toast'); if (!t) return;
   t.textContent = msg; t.hidden = false;
   placeToast();
   t.classList.remove('show'); void t.offsetWidth; t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+  toastTimer = setTimeout(() => { t.hidden = true; }, ms || 2600);
   announce(msg);
+}
+// A long message (see serverAwake) goes as soon as what it waited for is over.
+function toastDone(msg) {
+  const t = $('#toast');
+  if (t && !t.hidden && t.textContent === msg) { clearTimeout(toastTimer); t.hidden = true; }
 }
 function storeText() {
   if (Store.mode === 'db') return '你的進度存在 Claude 的雲端，只有你看得到；手機和電腦開這個頁面會同步。';
@@ -5049,8 +5228,8 @@ function unavailableView() {
   }
   return el('section', { class: 'card' },
     el('h2', { class: 'card-title', text: 'AI 教練需要 Claude' }),
-    el('p', { class: 'help mt6', text: '從 Claude 的連結開啟這個頁面，教練會用你的 Claude 帳號回覆。在這個網頁上，也可以到設定輸入你自己的 Claude API 金鑰，用量算在 API 帳單。今日菜單與打卡照樣可以用。' }),
-    el('div', { class: 'start-row mt12' }, el('button', { type: 'button', class: 'btn primary', 'data-fk': 'open-key', onclick: openKeySettings }, '到設定輸入金鑰')));
+    el('p', { class: 'help mt6', text: '從 Claude 的連結開啟這個頁面，教練會用你的 Claude 帳號回覆。在這個網頁上，也可以到設定填你在 Render 架的教練伺服器（Claude API 金鑰只放在那裡），或輸入你自己的 Claude API 金鑰，用量算在 API 帳單。今日菜單與打卡照樣可以用。' }),
+    el('div', { class: 'start-row mt12' }, el('button', { type: 'button', class: 'btn primary', 'data-fk': 'open-key', onclick: openKeySettings }, '開啟設定')));
 }
 function startView() {
   const s = S.setup;
@@ -5381,17 +5560,20 @@ function renderCoachNote() {
   const needMsg = need === 'open' ? '對話還沒開始。' : need === 'reply' ? '教練還沒回覆你的上一句。' : need === 'cut' ? '教練的回覆中斷了。' : null;
   // A hint or a translation that failed says so, and a reply the coach still owes stays on offer next to it.
   const msg = (S.note && S.noteTask && needMsg ? S.note + needMsg : S.note)
-    || (S.sampleState === 'none' ? (window.claude ? noSampleMsg('回覆') : KEY_HERE ? '要從 Claude 的連結開啟，或到設定輸入 Claude API 金鑰，教練才能回覆。' : '直接打開檔案時教練不能回覆：請從 Claude 的連結開啟，或改開 GitHub Pages 的網址。') : null)
+    || (S.sampleState === 'none' ? (window.claude ? noSampleMsg('回覆') : KEY_HERE ? '要從 Claude 的連結開啟，或到設定填教練伺服器或 Claude API 金鑰，教練才能回覆。' : '直接打開檔案時教練不能回覆：請從 Claude 的連結開啟，或改開 GitHub Pages 的網址。') : null)
     || (S.sampleState === 'blocked' ? sampleErrMsg({ code: S.blockCode || 'not_granted' }) : null)
     || needMsg;
   if (!msg) { box.hidden = true; fill(box); return; }
   const showRetry = !!need && !(S.note && S.noteNoRetry && !S.noteTask);
   // Outside Claude, a missing or rejected API key is fixed in 設定.
   const keyFix = !window.claude && KEY_HERE && (S.note ? ['key_invalid', 'key_missing'].some(k => S.note === sampleErrMsg({ code: k })) : S.sampleState === 'none');
+  // A wrong access code or a server that cannot be reached is fixed in 設定 too (the rest is fixed on Render).
+  const srvFix = !window.claude && KEY_HERE && !!S.note && ['server_code', 'server_down'].find(k => S.note === sampleErrMsg({ code: k }));
   box.hidden = false;
   fill(box, el('span', { text: msg }),
     showRetry ? el('button', { type: 'button', class: 'btn small', 'data-fk': 'retry', onclick: () => { S.note = null; S.noteNoRetry = false; ask(); } }, need === 'open' ? '請教練開場' : '重新回覆') : null,
-    keyFix ? el('button', { type: 'button', class: 'btn small', 'data-fk': 'note-key', onclick: openKeySettings }, '到設定輸入金鑰') : null,
+    keyFix ? el('button', { type: 'button', class: 'btn small', 'data-fk': 'note-key', onclick: openKeySettings }, !coachServer() && !apiKey() ? '開啟設定' : '到設定輸入金鑰') : null,
+    srvFix ? el('button', { type: 'button', class: 'btn small', 'data-fk': 'note-srv', onclick: () => openServerSettings(srvFix === 'server_code') }, '到設定修改') : null,
     permsBtn('note-perms'));
 }
 function updateComposer() {
@@ -6289,8 +6471,8 @@ function aiUnavailable(what) {
   if (S.sampleState === 'blocked') return [el('p', { class: 'help', text: sampleErrMsg({ code: S.blockCode || 'not_granted' }) }), S.blockCode === 'not_granted' ? el('div', { class: 'start-row' }, permsBtn('tool-perms')) : null];
   if (window.claude) return [el('p', { class: 'help', text: noSampleMsg(what) })];
   if (!KEY_HERE) return [el('p', { class: 'help', text: '直接打開檔案時不能用 AI 教練：請從 Claude 的連結開啟，或改開 GitHub Pages 的網址並在設定輸入 Claude API 金鑰，教練才能' + what + '。' })];
-  return [el('p', { class: 'help', text: '在這個網頁上，要先到設定輸入 Claude API 金鑰，教練才能' + what + '。' }),
-    el('div', { class: 'start-row' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'tool-key', onclick: openKeySettings }, '到設定輸入金鑰'))];
+  return [el('p', { class: 'help', text: '在這個網頁上，要先到設定填教練伺服器或 Claude API 金鑰，教練才能' + what + '。' }),
+    el('div', { class: 'start-row' }, el('button', { type: 'button', class: 'btn small', 'data-fk': 'tool-key', onclick: openKeySettings }, '開啟設定'))];
 }
 
 /* ---- shadowing ---- */
@@ -7451,13 +7633,23 @@ function fillSettings() {
   $('#set-no-voice').hidden = TTS.ok;
   fillVoiceSelect();
   $('#set-store').textContent = storeText();
+  $('#set-srv-field').hidden = !!window.claude || !KEY_HERE;
+  if (!window.claude && KEY_HERE) {
+    const srv = coachServer(), url = $('#set-srv-url');
+    if (!url.dataset.edited && document.activeElement !== url) url.value = srv ? srv.url : '';
+    $('#set-srv-state').textContent = srvStateText();
+    const rm = $('#set-srv-clear');
+    rm.hidden = !lsGet(SERVER_LS);
+    rm.textContent = isArmed('srv-clear') ? '再按一次移除' : '移除教練伺服器';
+    rm.classList.toggle('danger', isArmed('srv-clear'));
+  }
   $('#set-api-field').hidden = !!window.claude;
   if (!window.claude) {
-    const k = apiKey(), stored = String(lsGet(API_KEY_LS) || '').trim();
+    const k = apiKey(), stored = String(lsGet(API_KEY_LS) || '').trim(), srv = coachServer();
     $('#set-api-file').hidden = KEY_HERE;
     $('#set-api-row').hidden = !KEY_HERE;
-    $('#set-api-state').textContent = k ? '已儲存一把金鑰（結尾 ' + k.slice(-4) + '），AI 教練會用它回覆。'
-      : stored ? '這個瀏覽器裡還留著一把之前存的金鑰（這裡不會用它），建議移除。' : KEY_HERE ? '還沒有儲存金鑰。' : '';
+    $('#set-api-state').textContent = k ? (srv ? '這個瀏覽器還存著一把金鑰（結尾 ' + k.slice(-4) + '），但 AI 教練現在經過教練伺服器回覆，用不到它，建議移除。' : '已儲存一把金鑰（結尾 ' + k.slice(-4) + '），AI 教練會用它回覆。')
+      : stored ? '這個瀏覽器裡還留著一把之前存的金鑰（這裡不會用它），建議移除。' : KEY_HERE ? (srv ? '用教練伺服器時不需要金鑰。' : '還沒有儲存金鑰。') : '';
     const rm = $('#set-api-clear');
     rm.hidden = !stored;
     rm.textContent = isArmed('api-clear') ? '再按一次移除' : '移除金鑰';
@@ -7486,7 +7678,7 @@ function fillSettings() {
 }
 // Removes the practice data this app stored in this browser (local mode only), then starts fresh. Other tabs of the
 // app that work from this browser start fresh too (see the storage listener), so none of them writes back what it shows.
-// The API key stays: it has its own 移除金鑰 button.
+// The API key and the coach server stay: they have their own 移除 buttons.
 const CLEARED_LS = 'kaikou:cleared';
 function clearLocalData() {
   lsSet(CLEARED_LS, String(Date.now())); // removed again below, with the rest
@@ -7499,7 +7691,7 @@ function startFresh(wipe) {
   if (wipe) {
     try {
       const keys = [];
-      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('kaikou:') && k !== API_KEY_LS && k !== KEY_GONE_LS) keys.push(k); }
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('kaikou:') && k !== API_KEY_LS && k !== SERVER_LS && k !== KEY_GONE_LS) keys.push(k); }
       for (const k of keys) localStorage.removeItem(k);
     } catch (_) { /* nothing stored */ }
   }
@@ -7580,6 +7772,8 @@ function bindStatic() {
   // short messages shown and read out go inside it meanwhile.
   const msgsHome = () => { const t = $('#toast'), l = $('#sr-live'); if (dlg.open) dlg.append(t, l); else dlg.after(t, l); };
   dlg.addEventListener('close', msgsHome);
+  // An address typed but not saved shows the saved one next time; an access code typed is not kept on the page.
+  dlg.addEventListener('close', () => { delete $('#set-srv-url').dataset.edited; $('#set-srv-code').value = ''; });
   // The dialog gives the focus back to the control that opened it; when that control is gone (到設定輸入金鑰 is
   // replaced once a key is saved), the focus goes to the text box of an open chat, or to the settings button.
   dlg.addEventListener('close', () => setTimeout(() => {
@@ -7595,6 +7789,7 @@ function bindStatic() {
     fillSettings();
     try { dlg.showModal(); } catch (_) { dlg.setAttribute('open', ''); }
     msgsHome();
+    if (!window.claude && coachServer() && !(S.srvCheck && S.srvCheck.state === 'checking')) serverCheck();
     // Settings that could not be read yet are read again (關於我 stays closed until then, so it cannot replace yours).
     if (!S.settingsRead) reloadDocs(['settings']).then(() => { if (dlg.open) fillSettings(); });
   });
@@ -7632,6 +7827,34 @@ function bindStatic() {
     toast('已儲存金鑰');
   };
   $('#set-api-save').addEventListener('click', saveKey);
+  const srvUrl = $('#set-srv-url'), srvCode = $('#set-srv-code');
+  srvUrl.addEventListener('input', () => { srvUrl.dataset.edited = '1'; });
+  const saveServer = () => {
+    if (!KEY_HERE || window.claude) return;
+    const url = serverOrigin(srvUrl.value), code = srvCode.value.trim(), had = coachServer();
+    if (!url) { toast('網址要是 https:// 開頭的完整網址，例如 https://kaikou-coach.onrender.com'); srvUrl.focus({ preventScroll: true }); return; }
+    if (!code) { toast(had && had.url === url ? '網址沒有變；要換存取碼的話，貼上新的再按儲存' : '先貼上存取碼再按儲存'); srvCode.focus({ preventScroll: true }); return; }
+    if (!SRV_CODE_RE.test(code)) { toast('這不像教練伺服器的存取碼：到 Render 服務的 Environment 複製 ACCESS_CODE（至少 16 個英數字或符號，沒有空白或其他字）'); return; }
+    lsSet(SERVER_LS, JSON.stringify({ url, code }));
+    const now = coachServer();
+    if (!now || now.url !== url || now.code !== code) { toast('這個瀏覽器不允許儲存資料，教練伺服器沒有存起來'); return; }
+    srvCode.value = '';
+    delete srvUrl.dataset.edited;
+    keyChanged();
+    toast('已儲存教練伺服器');
+    serverCheck();
+  };
+  $('#set-srv-save').addEventListener('click', saveServer);
+  // Enter in the address goes on to the code (or saves both when the code is there).
+  srvUrl.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); if (srvCode.value.trim()) saveServer(); else srvCode.focus({ preventScroll: true }); } });
+  srvCode.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); saveServer(); } });
+  $('#set-srv-clear').addEventListener('click', () => arm('srv-clear', () => {
+    lsDel(SERVER_LS); S.srvCheck = null;
+    delete srvUrl.dataset.edited; srvUrl.value = '';
+    keyChanged();
+    if (coarse()) focusHeading('#set-srv-state'); else srvUrl.focus({ preventScroll: true });
+    toast('已移除教練伺服器');
+  }, fillSettings));
   $('#set-api-key').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); saveKey(); } });
   $('#set-api-clear').addEventListener('click', () => arm('api-clear', () => {
     lsDel(API_KEY_LS); keyChanged();
@@ -7669,6 +7892,7 @@ function bindStatic() {
       return;
     }
     renderToday(); refreshStreak();
+    if (!window.claude) serverWarm();
     refresh();
     for (const n of Object.keys(Store.failed)) Store.flush(n);
   });
@@ -7686,7 +7910,7 @@ function bindStatic() {
   }, true);
   // In this-browser mode, a change saved by another tab of the app shows up here right away.
   window.addEventListener('storage', e => {
-    if (e.key === API_KEY_LS && !window.claude) { keyChanged(); return; } // saved or removed in another tab
+    if ((e.key === API_KEY_LS || e.key === SERVER_LS) && !window.claude) { keyChanged(); return; } // saved or removed in another tab
     if (Store.mode !== 'local' || !S.ready || !e.key || !e.key.startsWith('kaikou:')) return;
     if (e.key === CLEARED_LS) { if (e.newValue) startFresh(false); return; } // another tab cleared this browser's data
     const name = e.key.slice(7);
@@ -7933,6 +8157,7 @@ async function boot(data) {
   } else if (c) { S.sampleState = 'none'; } else {
     if (!KEY_HERE && lsGet(API_KEY_LS)) { lsDel(API_KEY_LS); lsSet(KEY_GONE_LS, '1'); } // see keyGoneNotice
     useApiKeyIfAny();
+    serverWarm(); // a sleeping coach server starts waking now, not when the coach is first asked
   }
   await Store.init();
   if (Store.mode === 'db') {
@@ -7981,7 +8206,7 @@ async function boot(data) {
   if (data && typeof data.draft === 'string' && data.draft && S.chat) { const ta = $('#msg-input'); if (ta && !ta.value) { ta.value = data.draft; autosize(ta); } }
   if (S.tab === 'coach' && S.chat) scrollToEnd(true);
 }
-if (window.__kaikouTest) window.__kaikouTest = { COURSE, LIBRARY, PHRASEBOOK, LESSON_DAYS, normCourse, nextLesson, lessonAfter, normSents, pickSettings, stressText, quizList, safeHint, recastEg, importSched, parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats, leaves, timeAt, stampTimes, mergeTimes, heldOver, takeHeld, recordHeld, heldSuperseded, stillHeld, ERR_TYPES, errCode, chatErrs, errCounts, knownErrs, normErrs, normChat, reviewPrompt, SCENES, sceneOf, F432_TOPICS, STARTERS, MEETING, chatDoc, hintPrompt, translatable, speakable, coachLines, storedSess, mapLimit, applyChat, renderAll };
+if (window.__kaikouTest) window.__kaikouTest = { COURSE, LIBRARY, PHRASEBOOK, LESSON_DAYS, normCourse, nextLesson, lessonAfter, normSents, pickSettings, stressText, quizList, safeHint, recastEg, importSched, parseCoach, streamPart, extractJson, status, minutesOf, streakInfo, cjkRatio, ankiText, buildTurns, rulesFor, S, Store, normReview, weekCount, normPhrases, normSessions, normInbox, phraseId, normDay, resolvePlan, isReviewed, apiMessages, apiError, apiSample, serverOrigin, coachServer, serverError, SRV, compareSaid, sayTokens, splitSentences, nextIvl, srsStats, drillQueue, normSrs, normShadow, Mic, Voice, Rec, TTS, PRON, PRON_ALTS, pronVerdict, pronStats, leaves, timeAt, stampTimes, mergeTimes, heldOver, takeHeld, recordHeld, heldSuperseded, stillHeld, ERR_TYPES, errCode, chatErrs, errCounts, knownErrs, normErrs, normChat, reviewPrompt, SCENES, sceneOf, F432_TOPICS, STARTERS, MEETING, chatDoc, hintPrompt, translatable, speakable, coachLines, storedSess, mapLimit, applyChat, renderAll };
 
 boot(viewSaved()).catch(err => { console.error(err); setSync('error'); });
 })();
